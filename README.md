@@ -7,4 +7,3 @@ Current status:
 - Runtime implementation has not started here yet.
 - The recommended implementation path is a standalone frontend subsite, such as `sluvo.shenlu.top`, that reuses the existing Shenlu backend, auth, project workspace, asset, generation, and task systems.
 
-Do not modify `frontend1/` for this work unless explicitly requested.
