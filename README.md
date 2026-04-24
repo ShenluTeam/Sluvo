@@ -11,4 +11,9 @@ Development docs:
 - `AGENTS.md`: repository rules for Codex and future agents.
 - `doc/PRD.md`: product requirements and scope.
 - `doc/API_DEVELOPMENT.md`: how the Sluvo frontend should call the existing Shenlu backend APIs.
+- `doc/DEVELOPMENT.md`: local setup and verification workflow.
+- `doc/UI_REQUIREMENTS.md`: product UI and interaction rules.
+- `doc/FRONTEND_ARCHITECTURE.md`: recommended frontend structure.
+- `doc/BACKEND_CONTRACTS.md`: backend API and model contracts reused from Shenlu.
+- `doc/CHANGELOG_DEV.md`: development changelog.
 

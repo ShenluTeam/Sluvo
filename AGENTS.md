@@ -16,6 +16,10 @@ When working in this repository, read these files first:
 1. `AGENTS.md`
 2. `doc/PRD.md`
 3. `doc/API_DEVELOPMENT.md`
+4. `doc/DEVELOPMENT.md`
+5. `doc/UI_REQUIREMENTS.md`
+6. `doc/FRONTEND_ARCHITECTURE.md`
+7. `doc/BACKEND_CONTRACTS.md`
 
 If backend behavior is unclear, inspect the existing backend in `E:\ljtpc\work\AIdrama\backend` instead of guessing.
 
@@ -110,11 +114,33 @@ Update `doc/API_DEVELOPMENT.md` when:
 - New Sluvo-specific API wrappers are added
 - Production deployment routing changes
 
+Update `doc/DEVELOPMENT.md` when:
+- local startup commands change
+- dev ports change
+- setup requirements change
+
+Update `doc/UI_REQUIREMENTS.md` when:
+- product interaction rules change
+- node types or task states change
+- copywriting rules change
+
+Update `doc/FRONTEND_ARCHITECTURE.md` when:
+- frontend stack changes
+- route structure changes
+- source directory ownership changes
+
+Update `doc/BACKEND_CONTRACTS.md` when:
+- Sluvo depends on a new backend endpoint
+- endpoint payload or ownership changes
+- model mapping changes
+
 Update `doc/PRD.md` when:
 - Product scope changes
 - MVP node types change
 - Feature status changes
 - Major milestones change
+
+Update `doc/CHANGELOG_DEV.md` for every non-trivial implementation or documentation task.
 
 ## Prohibited
 
