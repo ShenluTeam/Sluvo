@@ -1,0 +1,12 @@
+{
+  "name": "sluvo",
+  "private": true,
+  "workspaces": [
+    "apps/sluvo-web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace sluvo-web",
+    "build": "npm run build --workspace sluvo-web",
+    "preview": "npm run preview --workspace sluvo-web"
+  }
+}

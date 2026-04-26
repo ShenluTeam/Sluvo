@@ -42,6 +42,14 @@ npm run dev
 
 The dev server should use port `5174` unless there is a conflict.
 
+Current frontend location:
+
+```text
+E:\ljtpc\work\Sluvo\apps\sluvo-web
+```
+
+The root `package.json` uses npm workspaces, so `npm install` and `npm run dev` can be run from the repository root.
+
 ## 4. Backend Startup
 
 Run the existing backend separately:
