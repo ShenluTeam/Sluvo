@@ -15,6 +15,8 @@ The root homepage has two states:
 
 The logged-in homepage should still behave like a tool surface, not a traditional marketing landing page.
 
+The logged-in homepage must expose a clear logout action near the account controls.
+
 Design tone:
 - Clear
 - Fast
@@ -135,6 +137,7 @@ Avoid exposing backend terms in the UI unless needed for debugging:
 ## 8. Visual Rules
 
 - The homepage uses the Sluvo black/gold palette: `#050505`, `#0d0b07`, `#d6b56d`, and `#fff1c7`.
+- The logged-out homepage should position Sluvo as an AI Agent driven infinite canvas where Agents understand context, connect nodes, and advance creative workflow execution.
 - Homepage creation controls should feel actionable: prompt input, upload/script/character/storyboard actions, recent projects, and canvas entry points must look like real workspace affordances.
 - Keep cards at `8px` border radius or less unless a future design system changes this.
 - Use icons for common commands where appropriate.

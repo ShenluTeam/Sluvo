@@ -42,6 +42,12 @@ Frontend token storage:
 localStorage.shenlu_token
 ```
 
+Login uses the existing auth endpoint:
+
+| Capability | Method | Path |
+| --- | --- | --- |
+| Email/password login | POST | `/api/auth/login` |
+
 ## 4. Project Workspace APIs
 
 | Capability | Method | Path |

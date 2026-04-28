@@ -163,6 +163,14 @@ Do not introduce a second token key such as `sluvo_token` for MVP.
 
 If Sluvo owns a login page later, it should still call the existing Shenlu auth endpoints and store the returned token as `shenlu_token`.
 
+Current Sluvo login wrapper:
+
+```js
+loginWithPassword({ email, password })
+```
+
+It calls `POST /api/auth/login` and stores the returned `token` as `localStorage.shenlu_token`.
+
 ## 6. Backend APIs To Reuse First
 
 The existing backend should be the first source of truth.
