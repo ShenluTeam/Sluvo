@@ -1,13 +1,37 @@
 # Sluvo Development Changelog
 
+## 2026-04-29
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the logged-in homepage recent projects section to a mock empty state.
+- Removed mock recent project cards from the homepage and kept a single new-project placeholder entry.
+- Added a logout action to the logged-in homepage topbar.
+- Refined logged-out homepage copy into a more premium, mysterious Agent-canvas positioning while keeping the infinite canvas workflow clear.
+- Replaced the OiiOii-like logged-in showcase cards with a Sluvo-specific Agent capability panel.
+- Enhanced the logged-out homepage visual preview with an Agent Router core and role-specific Agent capability nodes.
+- Removed secondary brand subtitles from the Sluvo logo lockups and rearranged the logged-out Agent nodes into a more spacious orbital layout.
+- Removed the center Agent Canvas card from the logged-out preview and refined the hero copy spacing for a cleaner premium layout.
+
+Verification suggestions:
+- Run `npm run build`.
+- Set `localStorage.shenlu_token`, refresh `/`, and verify the recent projects section only shows the new-project placeholder.
+- Click logout from the logged-in homepage and verify it returns to the logged-out homepage.
+
 ## 2026-04-28
 
 Changed files:
+- `apps/sluvo-web/src/api/authApi.js`
 - `apps/sluvo-web/src/views/HomeView.vue`
 - `apps/sluvo-web/src/views/LoginView.vue`
 - `apps/sluvo-web/src/router/index.js`
 - `apps/sluvo-web/src/styles/base.css`
 - `apps/sluvo-web/src/styles/theme.css`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
 - `doc/FRONTEND_ARCHITECTURE.md`
 - `doc/UI_REQUIREMENTS.md`
 - `doc/CHANGELOG_DEV.md`
@@ -15,8 +39,8 @@ Changed files:
 Impact scope:
 - Added a dual-state Sluvo homepage at `/` and `/projects`.
 - Added a black/gold logged-out brand entry and a logged-in creation workbench using existing mock project summaries.
+- Replaced the temporary login placeholder with a black/gold email/password login surface backed by the existing `/api/auth/login` endpoint.
 - Restored direct canvas routing at `/projects/:projectId/canvas`.
-- Added a temporary Shenlu login placeholder route at `/login`.
 - Allowed homepage document scrolling while keeping the canvas view as a full-screen workspace.
 
 Verification suggestions:

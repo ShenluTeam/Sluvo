@@ -3,10 +3,11 @@
     <section v-if="!isAuthenticated" class="home-guest-shell">
       <nav class="home-nav" aria-label="Sluvo">
         <button class="home-brand" type="button" @click="scrollToTop">
-          <span class="home-brand__mark">S</span>
+          <span class="home-brand__mark">
+            <img :src="logoUrl" alt="" />
+          </span>
           <span>
             <strong>Sluvo</strong>
-            <small>by 神鹿影视 AI</small>
           </span>
         </button>
 
@@ -15,7 +16,7 @@
           <button class="home-nav__link" type="button" @click="openCanvas()">自由画布</button>
           <button class="home-nav__primary" type="button" @click="openLogin">
             <LogIn :size="17" />
-            登录神鹿账号
+            登录 Sluvo
           </button>
         </div>
       </nav>
@@ -24,13 +25,13 @@
         <div class="guest-hero__copy">
           <span class="guest-hero__eyebrow">
             <Sparkles :size="16" />
-            神鹿影视 AI 平台旗下的无限画布创作工作台
+            AI Agent 驱动的无限画布创作系统
           </span>
           <h1>Sluvo</h1>
-          <p class="guest-hero__lead">把剧本、角色、分镜、图片、视频和生成任务放进同一张可执行画布。</p>
+          <p class="guest-hero__lead">让灵感在节点间显影，由 Agent 读取上下文、编排路径，并把未成形的想象推进为可执行的创作链路。</p>
           <div class="guest-hero__actions">
             <button class="gold-button" type="button" @click="openLogin">
-              登录神鹿账号
+              登录 Sluvo
               <ArrowUpRight :size="18" />
             </button>
             <button class="quiet-button" type="button" @click="scrollToCapabilities">查看能力</button>
@@ -39,10 +40,12 @@
 
         <div class="guest-stage" aria-label="Sluvo workflow preview">
           <div class="guest-stage__beam" />
+          <div class="guest-stage__beam guest-stage__beam--vertical" />
           <article v-for="node in previewNodes" :key="node.title" class="preview-node" :class="node.className">
             <span>{{ node.kind }}</span>
             <strong>{{ node.title }}</strong>
             <small>{{ node.caption }}</small>
+            <em>{{ node.signal }}</em>
           </article>
         </div>
       </div>
@@ -58,7 +61,9 @@
 
     <section v-else class="home-workbench">
       <aside class="workbench-rail" aria-label="Sluvo navigation">
-        <button class="rail-logo" type="button" aria-label="Sluvo 首页" @click="scrollToTop">S</button>
+        <button class="rail-logo" type="button" aria-label="Sluvo 首页" @click="scrollToTop">
+          <img :src="logoUrl" alt="" />
+        </button>
         <button class="rail-tool is-active" type="button" aria-label="首页">
           <Compass :size="20" />
         </button>
@@ -78,14 +83,16 @@
         <div class="campaign-bar">
           <span>
             <Sparkles :size="16" />
-            Seedance 2.0、角色一致性、分镜短片工作流已接入神鹿能力池
+            Happyhorse、Seedance 2.0、GPT image-2 已接入 Sluvo 创作能力
           </span>
           <button type="button" @click="openCanvas()">去创作</button>
         </div>
 
         <header class="workbench-topbar">
           <button class="home-brand home-brand--compact" type="button" @click="scrollToTop">
-            <span class="home-brand__mark">S</span>
+            <span class="home-brand__mark">
+              <img :src="logoUrl" alt="" />
+            </span>
             <strong>Sluvo</strong>
           </button>
 
@@ -109,6 +116,10 @@
               116
             </button>
             <button class="avatar-pill" type="button" :title="userName">{{ userInitial }}</button>
+            <button class="top-chip top-chip--logout" type="button" @click="logout">
+              <LogOut :size="16" />
+              退出登录
+            </button>
           </div>
         </header>
 
@@ -153,62 +164,57 @@
               <Sparkles :size="22" />
               最近项目
             </h2>
-            <div class="section-heading__actions">
-              <button type="button" @click="openCanvas()">
-                <Plus :size="16" />
-                新建项目
-              </button>
-              <button type="button" @click="focusProjects">
-                查看全部
-                <ChevronRight :size="15" />
-              </button>
-            </div>
           </div>
 
-          <div class="project-grid">
+          <div class="project-grid project-grid--empty">
             <button
-              v-for="(project, index) in recentProjects"
-              :key="project.id"
-              class="project-card"
+              class="project-card project-card--empty"
               type="button"
-              @click="openCanvas(project.id)"
+              @click="openCanvas()"
             >
-              <span class="project-card__preview" :class="`project-card__preview--${index + 1}`">
-                <span v-for="dot in 3" :key="dot" />
+              <span class="project-card__preview project-card__preview--empty">
+                <span class="project-card__create-icon">
+                  <Plus :size="24" />
+                </span>
               </span>
-              <strong>{{ projectTitle(project, index) }}</strong>
-              <small>{{ project.updatedAt }}</small>
+              <strong>新建项目</strong>
+              <small>创建第一个 Sluvo 画布</small>
             </button>
           </div>
         </section>
 
-        <section class="home-section showcase-section" aria-labelledby="showcase-title">
+        <section class="home-section agent-section" aria-labelledby="agent-title">
           <div class="section-heading">
-            <h2 id="showcase-title">
+            <h2 id="agent-title">
               <Sparkles :size="22" />
-              亮点
+              Agent 能力栈
             </h2>
-            <button type="button">
-              发现更多
-              <ArrowUpRight :size="16" />
-            </button>
           </div>
 
-          <div class="showcase-grid">
-            <article v-for="item in showcaseCards" :key="item.title" class="showcase-card" :class="item.className">
-              <div class="showcase-card__media">
-                <component :is="item.icon" :size="40" />
-              </div>
-              <div class="showcase-card__copy">
-                <span>{{ item.kicker }}</span>
-                <strong>{{ item.title }}</strong>
-                <p>{{ item.description }}</p>
-                <button type="button" @click="openCanvas()">
-                  查看创作过程
-                  <Play :size="15" />
-                </button>
+          <div class="agent-panel">
+            <article class="agent-primary">
+              <span class="agent-primary__eyebrow">Sluvo Orchestrator</span>
+              <h3>让每个节点都能被 Agent 调度</h3>
+              <p>把剧本、分镜、角色资产和模型生成编排成可追踪的生产链路，适合短剧、漫画和视频团队反复迭代。</p>
+              <div class="agent-flow" aria-label="Agent workflow steps">
+                <span>输入</span>
+                <span>规划</span>
+                <span>生成</span>
+                <span>复盘</span>
               </div>
             </article>
+
+            <div class="agent-capability-list">
+              <article v-for="item in agentCapabilities" :key="item.title" class="agent-capability">
+                <span class="agent-capability__icon">
+                  <component :is="item.icon" :size="20" />
+                </span>
+                <div>
+                  <strong>{{ item.title }}</strong>
+                  <p>{{ item.description }}</p>
+                </div>
+              </article>
+            </div>
           </div>
         </section>
       </div>
@@ -223,7 +229,6 @@ import {
   ArrowUpRight,
   Bell,
   BookOpen,
-  ChevronRight,
   Clapperboard,
   Coins,
   Compass,
@@ -236,7 +241,7 @@ import {
   Image,
   Layers,
   LogIn,
-  Palette,
+  LogOut,
   Play,
   Plus,
   Send,
@@ -246,24 +251,46 @@ import {
   UserRound,
   Video
 } from 'lucide-vue-next'
-import { createProjectSummaryList } from '../mock/projects'
+import logoUrl from '../../LOGO.png'
 
 const router = useRouter()
 const projectsSection = ref(null)
 const promptText = ref('')
 const token = ref('')
 const userName = ref('')
-const projects = ref(createProjectSummaryList())
 
 const isAuthenticated = computed(() => Boolean(token.value))
-const recentProjects = computed(() => projects.value.slice(0, 3))
 const userInitial = computed(() => (userName.value || 'S').trim().slice(0, 1).toUpperCase())
 
 const previewNodes = [
-  { kind: 'Script', title: '故事脚本', caption: '节拍与角色动机', className: 'preview-node--script' },
-  { kind: 'Assets', title: '角色资产', caption: '一致性参考', className: 'preview-node--asset' },
-  { kind: 'Shot', title: '分镜生成', caption: '镜头与首帧', className: 'preview-node--shot' },
-  { kind: 'Video', title: '短片输出', caption: '版本审阅', className: 'preview-node--video' }
+  {
+    kind: 'Origin Agent',
+    title: '灵感解码',
+    caption: '从微弱念头中提取叙事原点',
+    signal: 'Signal / Origin',
+    className: 'preview-node--script'
+  },
+  {
+    kind: 'Context Agent',
+    title: '语境织网',
+    caption: '让角色、场景与素材在画布中互相感知',
+    signal: 'Memory / Link',
+    className: 'preview-node--asset'
+  },
+  {
+    kind: 'Flow Agent',
+    title: '路径占星',
+    caption: '预判节点之间的顺序、依赖与下一步',
+    signal: 'Route / Sequence',
+    className: 'preview-node--shot'
+  },
+  {
+    kind: 'Manifest Agent',
+    title: '显影生成',
+    caption: '召集模型能力，将画布意图转化为作品',
+    signal: 'Model / Manifest',
+    className: 'preview-node--video'
+  }
 ]
 
 const capabilityCards = [
@@ -275,7 +302,7 @@ const capabilityCards = [
   {
     icon: UserRound,
     title: '角色一致性',
-    description: '让角色、场景、道具在多个生成节点中复用。'
+    description: '让角色、场景、道具在多个生成节点中保持统一。'
   },
   {
     icon: Video,
@@ -298,27 +325,21 @@ const skillChips = [
   { label: '角色设计', icon: UserRound }
 ]
 
-const showcaseCards = [
+const agentCapabilities = [
   {
-    kicker: 'Workflow',
-    title: '剧情故事短片',
-    description: '从故事梗概到角色资产、分镜表、首帧和视频镜头，串成一张创作画布。',
-    icon: Film,
-    className: 'showcase-card--story'
+    title: '多模型路由',
+    description: '按节点类型选择 Happyhorse、Seedance 2.0、GPT image-2 等能力。',
+    icon: Layers
   },
   {
-    kicker: 'Canvas',
-    title: '自由画布',
-    description: '像搭积木一样连接脚本、图片、音频和视频生成节点，沉淀团队工作流。',
-    icon: Layers,
-    className: 'showcase-card--canvas'
+    title: '上下文记忆',
+    description: '保留角色、场景、分镜和参考素材之间的关系，减少重复整理。',
+    icon: Compass
   },
   {
-    kicker: 'Design',
-    title: '角色设计',
-    description: '把角色设定、三视图、表情参考和镜头引用收拢到同一个资产链路。',
-    icon: Palette,
-    className: 'showcase-card--character'
+    title: '任务追踪',
+    description: '每次生成都能回看输入、输出、状态和下一步动作。',
+    icon: Play
   }
 ]
 
@@ -337,12 +358,16 @@ function openLogin() {
   router.push('/login')
 }
 
-function openCanvas(projectId = 'proj-aurora') {
-  router.push(`/projects/${projectId}/canvas`)
+function logout() {
+  localStorage.removeItem('shenlu_token')
+  localStorage.removeItem('shenlu_nickname')
+  readAuthState()
+  router.push('/')
+  scrollToTop()
 }
 
-function projectTitle(project, index) {
-  return ['自由画布', '剧情故事短片', '未命名项目'][index] || project.name
+function openCanvas(projectId = 'proj-aurora') {
+  router.push(`/projects/${projectId}/canvas`)
 }
 
 function scrollToTop() {
@@ -429,6 +454,21 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
+.home-brand__mark,
+.rail-logo {
+  overflow: hidden;
+  padding: 2px;
+}
+
+.home-brand__mark img,
+.rail-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
 .home-brand strong {
   display: block;
   font-size: 20px;
@@ -461,8 +501,7 @@ onBeforeUnmount(() => {
 .top-icon,
 .section-heading button,
 .composer-tools button,
-.skill-strip button,
-.showcase-card button {
+.skill-strip button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -504,7 +543,7 @@ onBeforeUnmount(() => {
 }
 
 .guest-hero__copy {
-  max-width: 680px;
+  max-width: 720px;
   animation: home-rise 0.58s ease both;
 }
 
@@ -523,28 +562,28 @@ onBeforeUnmount(() => {
 }
 
 .guest-hero h1 {
-  margin: 22px 0 12px;
+  margin: 24px 0 0;
   color: #fff8e6;
-  font-size: clamp(76px, 13vw, 178px);
+  font-size: clamp(86px, 12vw, 168px);
   font-weight: 950;
-  line-height: 0.82;
+  line-height: 0.86;
   letter-spacing: 0;
 }
 
 .guest-hero__lead {
-  max-width: 560px;
-  margin: 0;
+  max-width: 640px;
+  margin: 26px 0 0;
   color: rgba(255, 248, 230, 0.78);
-  font-size: clamp(19px, 2vw, 30px);
+  font-size: clamp(18px, 1.45vw, 24px);
   font-weight: 800;
-  line-height: 1.38;
+  line-height: 1.62;
 }
 
 .guest-hero__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 34px;
+  margin-top: 42px;
 }
 
 .guest-stage {
@@ -563,6 +602,30 @@ onBeforeUnmount(() => {
   animation: home-rise 0.68s 0.08s ease both;
 }
 
+.guest-stage::before,
+.guest-stage::after {
+  position: absolute;
+  inset: 50%;
+  width: 280px;
+  height: 280px;
+  border: 1px solid rgba(255, 241, 199, 0.1);
+  border-radius: 50%;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.guest-stage::before {
+  box-shadow: 0 0 80px rgba(214, 181, 109, 0.16);
+  animation: orbitPulse 4s ease-in-out infinite;
+}
+
+.guest-stage::after {
+  width: 420px;
+  height: 420px;
+  border-color: rgba(214, 181, 109, 0.08);
+  animation: orbitPulse 5.6s ease-in-out infinite reverse;
+}
+
 .guest-stage__beam {
   position: absolute;
   top: 50%;
@@ -571,18 +634,44 @@ onBeforeUnmount(() => {
   height: 2px;
   background: linear-gradient(90deg, transparent, #d6b56d, transparent);
   box-shadow: 0 0 22px rgba(214, 181, 109, 0.7);
+  animation: beamScan 2.8s ease-in-out infinite;
+}
+
+.guest-stage__beam--vertical {
+  top: 14%;
+  right: auto;
+  bottom: 14%;
+  left: 50%;
+  width: 2px;
+  height: auto;
+  background: linear-gradient(180deg, transparent, rgba(255, 241, 199, 0.86), transparent);
+  animation-delay: 0.6s;
 }
 
 .preview-node {
   position: absolute;
+  z-index: 3;
   display: grid;
   gap: 7px;
-  width: 190px;
-  padding: 16px;
+  width: 218px;
+  min-height: 132px;
+  padding: 18px;
   border: 1px solid rgba(214, 181, 109, 0.28);
   border-radius: 8px;
-  background: rgba(19, 16, 11, 0.92);
+  background:
+    linear-gradient(135deg, rgba(255, 241, 199, 0.055), transparent),
+    rgba(19, 16, 11, 0.92);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+  animation: nodeFloat 4.8s ease-in-out infinite;
+}
+
+.preview-node::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #d6b56d;
+  box-shadow: 0 0 16px rgba(214, 181, 109, 0.8);
+  content: "";
 }
 
 .preview-node span {
@@ -601,26 +690,43 @@ onBeforeUnmount(() => {
   color: rgba(249, 241, 220, 0.58);
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.45;
+}
+
+.preview-node em {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 2px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(214, 181, 109, 0.12);
+  color: rgba(255, 241, 199, 0.72);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .preview-node--script {
-  top: 16%;
-  left: 8%;
+  top: 10%;
+  left: calc(50% - 109px);
 }
 
 .preview-node--asset {
-  top: 20%;
-  right: 10%;
+  top: calc(50% - 66px);
+  right: 5%;
+  animation-delay: 0.4s;
 }
 
 .preview-node--shot {
-  bottom: 18%;
-  left: 18%;
+  bottom: 10%;
+  left: calc(50% - 109px);
+  animation-delay: 0.8s;
 }
 
 .preview-node--video {
-  right: 16%;
-  bottom: 16%;
+  top: calc(50% - 66px);
+  left: 5%;
+  animation-delay: 1.2s;
 }
 
 .capability-band {
@@ -764,6 +870,17 @@ onBeforeUnmount(() => {
   border-color: rgba(255, 221, 151, 0.42);
   background: rgba(214, 181, 109, 0.16);
   color: #fff1c7;
+}
+
+.top-chip--logout {
+  border-color: rgba(255, 241, 199, 0.16);
+  color: rgba(249, 241, 220, 0.66);
+}
+
+.top-chip--logout:hover {
+  border-color: rgba(255, 241, 199, 0.28);
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff8e6;
 }
 
 .creator-console,
@@ -936,6 +1053,10 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 
+.project-grid--empty {
+  grid-template-columns: minmax(260px, 360px);
+}
+
 .project-card {
   display: grid;
   gap: 8px;
@@ -952,8 +1073,15 @@ onBeforeUnmount(() => {
     background 0.18s ease;
 }
 
+.project-card--empty {
+  border-style: dashed;
+  background:
+    linear-gradient(180deg, rgba(214, 181, 109, 0.08), rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.035);
+}
+
 .project-card:hover,
-.showcase-card:hover {
+.agent-capability:hover {
   border-color: rgba(214, 181, 109, 0.34);
   background: rgba(214, 181, 109, 0.075);
   transform: translateY(-3px);
@@ -988,6 +1116,28 @@ onBeforeUnmount(() => {
   --preview-fill: linear-gradient(145deg, #4f4636, #1b1a18);
 }
 
+.project-card__preview--empty {
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 241, 199, 0.18), transparent 34%),
+    linear-gradient(145deg, rgba(214, 181, 109, 0.14), rgba(19, 16, 10, 0.9));
+}
+
+.project-card__preview--empty span {
+  background: none;
+}
+
+.project-card__create-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(255, 241, 199, 0.3);
+  border-radius: 8px;
+  background: rgba(5, 5, 5, 0.42) !important;
+  color: #fff1c7;
+}
+
 .project-card strong {
   padding: 0 4px;
   overflow: hidden;
@@ -1002,87 +1152,60 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.showcase-grid {
+.agent-panel {
   display: grid;
-  grid-template-columns: 1.2fr 0.95fr;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.8fr);
   gap: 16px;
 }
 
-.showcase-card {
+.agent-primary {
   position: relative;
-  display: grid;
-  min-height: 250px;
-  overflow: hidden;
-  border: 1px solid rgba(214, 181, 109, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.055);
-  transition:
-    transform 0.18s ease,
-    border-color 0.18s ease,
-    background 0.18s ease;
-}
-
-.showcase-card:first-child {
-  grid-row: span 2;
-  min-height: 516px;
-}
-
-.showcase-card__media {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background:
-    radial-gradient(circle at 50% 34%, rgba(255, 241, 199, 0.22), transparent 28%),
-    linear-gradient(135deg, rgba(214, 181, 109, 0.12), rgba(30, 24, 14, 0.92));
-  color: rgba(255, 241, 199, 0.42);
-  transition: transform 0.2s ease;
-}
-
-.showcase-card:hover .showcase-card__media {
-  transform: scale(1.03);
-}
-
-.showcase-card--canvas .showcase-card__media {
-  background:
-    linear-gradient(rgba(214, 181, 109, 0.1) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(214, 181, 109, 0.1) 1px, transparent 1px),
-    radial-gradient(circle at 50% 40%, rgba(214, 181, 109, 0.2), transparent 34%),
-    #16130c;
-  background-size: 34px 34px, 34px 34px, auto, auto;
-}
-
-.showcase-card--character .showcase-card__media {
-  background:
-    radial-gradient(circle at 72% 24%, rgba(255, 241, 199, 0.18), transparent 24%),
-    linear-gradient(145deg, #2a2114, #080806);
-}
-
-.showcase-card__copy {
-  position: relative;
-  z-index: 1;
   display: grid;
   align-content: end;
-  gap: 9px;
-  min-height: 100%;
-  padding: 24px;
-  background: linear-gradient(180deg, transparent 24%, rgba(0, 0, 0, 0.78) 100%);
+  gap: 16px;
+  min-height: 340px;
+  overflow: hidden;
+  padding: 28px;
+  border: 1px solid rgba(214, 181, 109, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(rgba(214, 181, 109, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 181, 109, 0.08) 1px, transparent 1px),
+    radial-gradient(circle at 76% 16%, rgba(255, 241, 199, 0.18), transparent 22%),
+    linear-gradient(145deg, rgba(214, 181, 109, 0.12), rgba(8, 7, 5, 0.96));
+  background-size: 40px 40px, 40px 40px, auto, auto;
 }
 
-.showcase-card__copy span {
+.agent-primary::before {
+  position: absolute;
+  top: 28px;
+  right: 28px;
+  width: 96px;
+  height: 96px;
+  border: 1px solid rgba(255, 241, 199, 0.18);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255, 241, 199, 0.2), transparent 56%),
+    rgba(255, 255, 255, 0.035);
+  content: "";
+}
+
+.agent-primary__eyebrow {
   color: #d6b56d;
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.showcase-card__copy strong {
+.agent-primary h3 {
+  max-width: 520px;
+  margin: 0;
   color: #fff8e6;
   font-size: clamp(24px, 3vw, 42px);
   line-height: 1.1;
 }
 
-.showcase-card__copy p {
+.agent-primary p {
   max-width: 540px;
   margin: 0;
   color: rgba(249, 241, 220, 0.66);
@@ -1090,11 +1213,67 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 
-.showcase-card button {
-  justify-self: start;
-  min-height: 34px;
-  padding: 0 12px;
-  background: rgba(255, 255, 255, 0.08);
+.agent-flow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 520px;
+}
+
+.agent-flow span {
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  border: 1px solid rgba(214, 181, 109, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 248, 230, 0.78);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.agent-capability-list {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-capability {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  min-height: 104px;
+  padding: 16px;
+  border: 1px solid rgba(214, 181, 109, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.agent-capability__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 241, 199, 0.18);
+  border-radius: 8px;
+  background: rgba(214, 181, 109, 0.1);
+  color: #fff1c7;
+}
+
+.agent-capability strong {
+  display: block;
+  color: #fff8e6;
+  font-size: 16px;
+}
+
+.agent-capability p {
+  margin: 6px 0 0;
+  color: rgba(249, 241, 220, 0.58);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 @keyframes home-rise {
@@ -1117,6 +1296,43 @@ onBeforeUnmount(() => {
 
   100% {
     transform: translateX(100%);
+  }
+}
+
+@keyframes orbitPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+}
+
+@keyframes beamScan {
+  0%,
+  100% {
+    opacity: 0.36;
+    filter: blur(0);
+  }
+
+  50% {
+    opacity: 1;
+    filter: blur(0.6px);
+  }
+}
+
+@keyframes nodeFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-8px);
   }
 }
 
@@ -1158,7 +1374,7 @@ onBeforeUnmount(() => {
 
   .capability-band,
   .project-grid,
-  .showcase-grid {
+  .agent-panel {
     grid-template-columns: 1fr;
   }
 
@@ -1192,7 +1408,7 @@ onBeforeUnmount(() => {
     width: calc(100vw - 32px);
   }
 
-  .showcase-card:first-child {
+  .agent-primary {
     min-height: 330px;
   }
 }
@@ -1211,16 +1427,17 @@ onBeforeUnmount(() => {
     padding: 12px;
   }
 
+  .preview-node--script,
+  .preview-node--shot {
+    left: calc(50% - 75px);
+  }
+
   .preview-node--asset {
     right: 4%;
   }
 
-  .preview-node--shot {
-    left: 6%;
-  }
-
   .preview-node--video {
-    right: 5%;
+    left: 4%;
   }
 
   .prompt-composer__footer {
