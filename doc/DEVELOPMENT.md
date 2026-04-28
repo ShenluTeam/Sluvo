@@ -42,6 +42,16 @@ npm run dev
 
 The dev server should use port `5174` unless there is a conflict.
 
+Current frontend location:
+
+```text
+E:\ljtpc\work\Sluvo\apps\sluvo-web
+```
+
+The root `package.json` uses npm workspaces, so `npm install` and `npm run dev` can be run from the repository root.
+
+The Vite app reads env files from the repository root, so root-level `.env.local` and `.env.production` apply to `apps/sluvo-web`.
+
 ## 4. Backend Startup
 
 Run the existing backend separately:
@@ -51,7 +61,15 @@ cd E:\ljtpc\work\AIdrama\backend
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Sluvo should call `/api/...`; Vite proxy forwards those requests to `http://127.0.0.1:8000`.
+Sluvo should call API paths through `apiFetch('/api/...')`.
+
+For production, set:
+
+```env
+VITE_API_BASE=https://api.shenlu.top
+```
+
+For local proxy development, set `VITE_API_BASE=` and Vite forwards `/api` requests to `http://127.0.0.1:8000`.
 
 ## 5. API Rule
 
@@ -61,7 +79,7 @@ Use relative API paths in frontend code:
 apiFetch('/api/projects/{projectId}/workspace')
 ```
 
-Do not hard-code backend hosts in components, stores, or composables.
+Do not hard-code backend hosts in components, stores, or composables. Use `VITE_API_BASE` for environment-specific API hosts.
 
 ## 6. Auth Rule
 
@@ -93,7 +111,7 @@ After scaffolding or changing API code, verify:
 
 - Sluvo dev server starts.
 - Existing Shenlu backend starts.
-- `/api/projects/{id}/workspace` reaches the backend through the proxy.
+- `/api/projects/{id}/workspace` reaches the backend through the local proxy, or `https://api.shenlu.top/api/projects/{id}/workspace` in production.
 - Authenticated requests include `Authorization`.
 - Clearing `shenlu_token` makes protected requests fail.
 - No browser code calls provider APIs directly.

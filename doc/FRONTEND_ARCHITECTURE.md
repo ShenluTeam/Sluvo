@@ -21,40 +21,41 @@ Do not add a backend service inside this repository for MVP.
 After scaffolding, use this shape:
 
 ```text
-src/
-  api/
-    client.js
-    authApi.js
-    projectWorkspaceApi.js
-    generationApi.js
-  assets/
-  canvas/
+apps/sluvo-web/
+  src/
+    api/
+      client.js
+      authApi.js
+      projectWorkspaceApi.js
+      generationApi.js
+    assets/
+    canvas/
+      components/
+      composables/
+      edges/
+      nodes/
+      ports/
+      utils/
     components/
-    composables/
-    edges/
-    nodes/
-    ports/
-    utils/
-  components/
-    common/
-    layout/
-    task/
-  router/
-    index.js
-  stores/
-    authStore.js
-    projectStore.js
-    canvasStore.js
-    taskStore.js
-  styles/
-    base.css
-    theme.css
-  views/
-    LoginView.vue
-    ProjectListView.vue
-    CanvasWorkspaceView.vue
-  App.vue
-  main.js
+      common/
+      layout/
+      task/
+    router/
+      index.js
+    stores/
+      authStore.js
+      projectStore.js
+      canvasStore.js
+      taskStore.js
+    styles/
+      base.css
+      theme.css
+    views/
+      LoginView.vue
+      ProjectListView.vue
+      CanvasWorkspaceView.vue
+    App.vue
+    main.js
 ```
 
 Keep feature-specific canvas code under `src/canvas/`.
