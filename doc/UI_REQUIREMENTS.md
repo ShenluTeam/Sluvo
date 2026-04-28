@@ -9,6 +9,12 @@ Sluvo should feel like a focused AI production workspace, not a marketing page.
 
 The first screen after login should be a useful project or canvas experience, not a landing hero.
 
+The root homepage has two states:
+- Logged out: a black/gold brand entry for Sluvo as the infinite-canvas creation workspace under Shenlu Video AI.
+- Logged in: an OiiOii-style creation workbench with a central command input, quick skill actions, recent projects, and showcase templates.
+
+The logged-in homepage should still behave like a tool surface, not a traditional marketing landing page.
+
 Design tone:
 - Clear
 - Fast
@@ -128,6 +134,8 @@ Avoid exposing backend terms in the UI unless needed for debugging:
 
 ## 8. Visual Rules
 
+- The homepage uses the Sluvo black/gold palette: `#050505`, `#0d0b07`, `#d6b56d`, and `#fff1c7`.
+- Homepage creation controls should feel actionable: prompt input, upload/script/character/storyboard actions, recent projects, and canvas entry points must look like real workspace affordances.
 - Keep cards at `8px` border radius or less unless a future design system changes this.
 - Use icons for common commands where appropriate.
 - Avoid oversized hero typography inside tool surfaces.

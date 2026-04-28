@@ -14,6 +14,11 @@
   --text-dim: #66768e;
   --accent-main: #f2b544;
   --accent-alt: #4ecdc4;
+  --home-black: #050505;
+  --home-ink: #0d0b07;
+  --home-gold: #d6b56d;
+  --home-gold-soft: rgba(214, 181, 109, 0.18);
+  --home-cream: #fff1c7;
   --danger: #ff7272;
   --success: #5ed3a6;
   --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.35);

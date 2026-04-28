@@ -51,6 +51,7 @@ apps/sluvo-web/
       base.css
       theme.css
     views/
+      HomeView.vue
       LoginView.vue
       ProjectListView.vue
       CanvasWorkspaceView.vue
@@ -87,14 +88,20 @@ Project truth should come from backend workspace responses, not only local canva
 
 ## 5. Routes
 
-Suggested MVP routes:
+Current MVP routes:
 
 | Route | View |
 | --- | --- |
 | `/login` | `LoginView.vue` |
-| `/projects` | `ProjectListView.vue` |
+| `/` | `HomeView.vue` |
+| `/projects` | `HomeView.vue` |
 | `/projects/:projectId/canvas` | `CanvasWorkspaceView.vue` |
-| `/` | redirect to `/projects` or latest project |
+
+`HomeView.vue` is a dual-state entry:
+- Without `localStorage.shenlu_token`, it shows the public black/gold Sluvo brand entry and sends login to `/login`.
+- With `localStorage.shenlu_token`, it shows the OiiOii-style creation workbench using mock recent projects from `src/mock/projects.js`.
+
+Home project cards and "start canvas" actions should route to `/projects/{projectId}/canvas`.
 
 ## 6. Canvas State Rule
 

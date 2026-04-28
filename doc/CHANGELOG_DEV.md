@@ -1,5 +1,30 @@
 # Sluvo Development Changelog
 
+## 2026-04-28
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/LoginView.vue`
+- `apps/sluvo-web/src/router/index.js`
+- `apps/sluvo-web/src/styles/base.css`
+- `apps/sluvo-web/src/styles/theme.css`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added a dual-state Sluvo homepage at `/` and `/projects`.
+- Added a black/gold logged-out brand entry and a logged-in creation workbench using existing mock project summaries.
+- Restored direct canvas routing at `/projects/:projectId/canvas`.
+- Added a temporary Shenlu login placeholder route at `/login`.
+- Allowed homepage document scrolling while keeping the canvas view as a full-screen workspace.
+
+Verification suggestions:
+- Run `npm run build`.
+- Open `/` without `localStorage.shenlu_token` and verify the public homepage.
+- Set `localStorage.shenlu_token`, refresh `/`, and verify the creation workbench and project-card canvas navigation.
+- Open `/projects/proj-aurora/canvas` and confirm the existing canvas still renders.
+
 ## 2026-04-27
 
 Changed files:
