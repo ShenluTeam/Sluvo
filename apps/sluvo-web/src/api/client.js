@@ -1,4 +1,9 @@
-const API_BASE = import.meta.env.VITE_API_BASE || ''
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
+
+function buildApiUrl(path) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${API_BASE}${normalizedPath}`
+}
 
 export async function apiFetch(path, options = {}) {
   const token = window.localStorage.getItem('shenlu_token') || ''
@@ -14,7 +19,7 @@ export async function apiFetch(path, options = {}) {
     headers['Content-Type'] = headers['Content-Type'] || 'application/json'
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     ...options,
     headers
   })

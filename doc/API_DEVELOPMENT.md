@@ -5,22 +5,21 @@ Date: 2026-04-24
 
 ## 1. Core Rule
 
-Sluvo frontend code should always call backend APIs with relative paths:
+Sluvo frontend code should call backend APIs through the shared API client with backend paths:
 
 ```js
-fetch('/api/projects/{projectId}/workspace')
+apiFetch('/api/projects/{projectId}/workspace')
 ```
 
-Do not write backend hosts directly in UI code:
+Do not write backend hosts directly in components, stores, or composables:
 
 ```js
-// Avoid this in app code.
 fetch('http://127.0.0.1:8000/api/projects/{projectId}/workspace')
 ```
 
-The environment decides where `/api` goes:
-- Local development: Vite proxy forwards `/api` to `http://127.0.0.1:8000`.
-- Production: Nginx or the platform gateway forwards `/api` to the existing Shenlu backend.
+The environment decides the API host:
+- Local development may use Vite proxy by setting `VITE_API_BASE=` and calling `/api/...`.
+- Production uses `VITE_API_BASE=https://api.shenlu.top`, so `apiFetch('/api/projects/...')` reaches `https://api.shenlu.top/api/projects/...`.
 
 This keeps local, staging, and production builds consistent.
 
@@ -57,7 +56,7 @@ npm run dev
 
 ## 3. Vite Proxy
 
-When the frontend app is scaffolded, configure `vite.config.js` or `vite.config.ts` like this:
+The app loads Vite env files from the repository root and supports a Vite proxy for local development. Use the proxy when `VITE_API_BASE` is empty:
 
 ```js
 import { defineConfig } from 'vite'
@@ -77,7 +76,7 @@ export default defineConfig({
 })
 ```
 
-With this proxy, browser requests to:
+With this proxy and `VITE_API_BASE=`, browser requests to:
 
 ```text
 http://127.0.0.1:5174/api/projects/{projectId}/workspace
@@ -96,7 +95,12 @@ Use one shared API client wrapper instead of scattered raw `fetch` calls.
 Recommended shape:
 
 ```js
-const API_BASE = ''
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
+
+function buildApiUrl(path) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${API_BASE}${normalizedPath}`
+}
 
 export async function apiFetch(path, options = {}) {
   const token = localStorage.getItem('shenlu_token') || ''
@@ -110,7 +114,7 @@ export async function apiFetch(path, options = {}) {
     headers['Content-Type'] = headers['Content-Type'] || 'application/json'
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     ...options,
     headers
   })
@@ -204,6 +208,24 @@ sluvo.shenlu.top
 
 Production should serve the Sluvo static frontend and proxy `/api` to the existing Shenlu backend.
 
+Production API traffic should go to:
+
+```text
+https://api.shenlu.top
+```
+
+Build Sluvo with:
+
+```env
+VITE_API_BASE=https://api.shenlu.top
+```
+
+Because the API is cross-origin from `sluvo.shenlu.top`, the existing Shenlu backend must allow this origin in CORS:
+
+```python
+"https://sluvo.shenlu.top",
+```
+
 Example Nginx shape:
 
 ```nginx
@@ -214,37 +236,21 @@ server {
     root /var/www/sluvo/dist;
     try_files $uri $uri/ /index.html;
   }
-
-  location /api/ {
-    proxy_pass http://127.0.0.1:8000/api/;
-    proxy_set_header Host $host;
-    proxy_set_header Authorization $http_authorization;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-  }
 }
 ```
 
-If the backend is deployed behind another internal domain or service name, only the proxy target should change. Sluvo frontend code should still call `/api/...`.
+The `api.shenlu.top` Nginx site should continue proxying backend traffic to the existing FastAPI service.
 
 ## 8. CORS Guidance
 
-Prefer same-origin proxying over browser-side cross-origin requests.
-
-Recommended:
+Sluvo production intentionally uses cross-origin API requests:
 
 ```text
-Browser -> sluvo.shenlu.top/api -> backend
+Browser -> sluvo.shenlu.top static frontend
+Browser -> api.shenlu.top/api -> backend
 ```
 
-Avoid:
-
-```text
-Browser -> api.shenlu.top/api
-```
-
-Same-origin proxying avoids most CORS, cookie, preflight, and token forwarding surprises.
+This requires `https://sluvo.shenlu.top` in backend CORS. Bearer-token auth still uses `Authorization: Bearer <shenlu_token>`.
 
 ## 9. Common Mistakes
 
@@ -265,4 +271,4 @@ After the frontend app is scaffolded, verify:
 - A browser request to `/api/projects/{id}/workspace` reaches the backend through the Vite proxy.
 - Authenticated requests include `Authorization: Bearer <shenlu_token>`.
 - Logging out or clearing `shenlu_token` causes protected requests to fail as expected.
-- Production config keeps frontend calls as `/api/...` and moves host routing to Nginx or gateway config.
+- Production build sets `VITE_API_BASE=https://api.shenlu.top`.

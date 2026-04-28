@@ -1,5 +1,27 @@
 # Sluvo Development Changelog
 
+## 2026-04-27
+
+Changed files:
+- `.env.example`
+- `.env.production`
+- `apps/sluvo-web/vite.config.js`
+- `apps/sluvo-web/src/api/client.js`
+- `doc/API_DEVELOPMENT.md`
+- `doc/DEVELOPMENT.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Documented production API routing through `https://api.shenlu.top`.
+- Added a production env file for building Sluvo against `api.shenlu.top`.
+- Configured the Vite app to read environment files from the repository root.
+- Updated the API client URL builder so environment API hosts and `/api/...` paths compose cleanly.
+- Clarified that Sluvo production needs `https://sluvo.shenlu.top` allowed by backend CORS.
+
+Verification suggestions:
+- Build with `VITE_API_BASE=https://api.shenlu.top`.
+- Confirm authenticated browser requests from `sluvo.shenlu.top` include `Authorization` and pass backend CORS.
+
 ## 2026-04-24
 
 Changed files:
