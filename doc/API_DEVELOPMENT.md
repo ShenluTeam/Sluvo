@@ -3,6 +3,9 @@
 Version: 0.1
 Date: 2026-04-24
 
+Related detailed inventory:
+- `doc/API_SHENLU_TOP.md` lists the audited `api.shenlu.top` route surface, Sluvo direct-call recommendations, OpenClaw API-key boundaries, and endpoints to avoid for the MVP.
+
 ## 1. Core Rule
 
 Sluvo frontend code should call backend APIs through the shared API client with backend paths:
@@ -174,6 +177,8 @@ It calls `POST /api/auth/login` and stores the returned `token` as `localStorage
 ## 6. Backend APIs To Reuse First
 
 The existing backend should be the first source of truth.
+
+For the complete `api.shenlu.top` inventory and Sluvo suitability notes, read `doc/API_SHENLU_TOP.md`.
 
 Project workspace:
 

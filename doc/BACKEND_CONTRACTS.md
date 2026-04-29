@@ -3,6 +3,9 @@
 Version: 0.1
 Date: 2026-04-24
 
+Related detailed inventory:
+- `doc/API_SHENLU_TOP.md` is the audited `api.shenlu.top` API map for Sluvo. It separates P0 direct-call contracts from OpenClaw API-key endpoints, legacy compatibility routes, admin routes, and callback-only routes.
+
 ## 1. Backend Source
 
 Sluvo reuses the existing Shenlu FastAPI backend.
@@ -49,6 +52,8 @@ Login uses the existing auth endpoint:
 | Email/password login | POST | `/api/auth/login` |
 
 ## 4. Project Workspace APIs
+
+These are the recommended P0 Sluvo browser contracts. See `doc/API_SHENLU_TOP.md` for all production API paths and routing caveats.
 
 | Capability | Method | Path |
 | --- | --- | --- |

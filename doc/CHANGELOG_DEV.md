@@ -1,5 +1,22 @@
 # Sluvo Development Changelog
 
+## 2026-04-30
+
+Changed files:
+- `doc/API_SHENLU_TOP.md`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added an audited `api.shenlu.top` API inventory for Sluvo.
+- Separated Sluvo P0 direct-call APIs from OpenClaw API-key APIs, legacy compatibility routes, admin routes, provider callbacks, and stream-host caveats.
+- Linked the new inventory from the existing API development and backend contract docs.
+
+Verification suggestions:
+- Re-check `https://api.shenlu.top/openapi.json` when backend routes change.
+- Confirm Sluvo browser requests keep using `Authorization: Bearer <shenlu_token>` and do not use OpenClaw API-key endpoints as the main app API.
+
 ## 2026-04-29
 
 Changed files:
