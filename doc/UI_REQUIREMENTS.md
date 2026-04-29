@@ -134,6 +134,124 @@ Avoid exposing backend terms in the UI unless needed for debugging:
 - `CanvasEdge`
 - raw provider names unless the user is choosing a model
 
+
+Design tone:
+- Clear
+- Fast
+- Creator-oriented
+- Dense enough for repeated production work
+- Visually polished without decorative clutter
+
+## 2. Core Layout
+
+The main canvas workspace should contain:
+
+- Top command bar for project switch, run actions, save status, and account controls.
+- Left rail or drawer for project files, templates, and asset library.
+- Full-bleed canvas area for nodes and edges.
+- Right inspector for selected node details.
+- Bottom or side task drawer for generation queue and history.
+
+Avoid putting the whole canvas inside a decorative card.
+
+## 3. Canvas Interaction
+
+MVP canvas interactions:
+
+- Pan
+- Zoom
+- Fit view
+- Select node
+- Multi-select when practical
+- Drag node
+- Resize node when practical
+- Connect compatible ports
+- Hide / restore node projection
+- Open inspector from node click
+- Run node action from node or inspector
+
+Canvas layout must be stable: hover states, badges, task indicators, and loading states should not cause node size jumps.
+
+## 4. Node Types
+
+Initial node types:
+
+- Project root
+- Script / episode
+- Asset table
+- Storyboard table
+- Image generation unit
+- Video generation unit
+- Prompt note
+- Media board
+
+Each node should show:
+
+- Clear title
+- Type indicator
+- Primary status
+- Most important content preview
+- Available primary action
+- Output or task state when relevant
+
+## 5. Inspector Rules
+
+The right inspector owns detailed editing.
+
+Do not overload nodes with every field. Nodes should stay scannable; inspector panels can be denser.
+
+Inspector should expose:
+
+- Source fields
+- Prompt fields
+- Model settings
+- References
+- Versions / history
+- Task status
+- Error details
+
+## 6. Task And Error States
+
+Every async action should show a visible state:
+
+- Idle
+- Queued
+- Running
+- Waiting upstream
+- Succeeded
+- Failed
+- Cancelled, if backend supports it
+
+Failed tasks should show:
+
+- Human-readable reason
+- Retry action when safe
+- Link or action to inspect inputs
+
+## 7. Copywriting
+
+Use creator-facing language.
+
+Prefer:
+- Project
+- Script
+- Character
+- Scene
+- Prop
+- Shot
+- Reference
+- Generate
+- Render
+- Version
+
+Avoid exposing backend terms in the UI unless needed for debugging:
+- `Panel`
+- `TaskJob`
+- `GenerationRecord`
+- `CanvasNode`
+- `CanvasEdge`
+- raw provider names unless the user is choosing a model
+
 ## 8. Visual Rules
 
 - The homepage uses the Sluvo black/gold palette: `#050505`, `#0d0b07`, `#d6b56d`, and `#fff1c7`.
