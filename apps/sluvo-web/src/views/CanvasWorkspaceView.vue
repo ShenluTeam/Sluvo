@@ -583,11 +583,11 @@ const historyTabs = [
   { id: 'video', label: '视频历史(0)' },
   { id: 'audio', label: '音频历史(0)' }
 ]
-const librarySourceTabs = ['LibTV', 'Lib生成器', 'WebUI', 'ComfyUI', 'AI应用']
+const librarySourceTabs = ['Sluvo', 'Sluvo生成器', 'WebUI', 'ComfyUI', 'AI应用']
 const libraryTypeTabs = ['图片', '视频', '音频']
 const libraryPicker = reactive({
   visible: false,
-  source: 'LibTV',
+  source: 'Sluvo',
   type: '图片',
   selected: 0
 })
@@ -1761,7 +1761,7 @@ function getUploadedAssetDimensions(node) {
 
 function openLibraryPicker() {
   libraryPicker.visible = true
-  libraryPicker.source = 'LibTV'
+  libraryPicker.source = 'Sluvo'
   libraryPicker.type = '图片'
   libraryPicker.selected = 0
 }
