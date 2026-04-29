@@ -117,7 +117,7 @@ const configs = {
     icon: Image,
     hero: 'image',
     prompt: '描述你想要生成的画面内容，按 / 呼出指令，@ 引用素材',
-    model: 'Lib Nano Pro · 16:9 · 2K',
+    model: 'Sluvo Nano Pro · 16:9 · 2K',
     chips: ['风格', '标记', '聚焦'],
     suggestions: [
       { label: '图生图', icon: ImageUp },
@@ -128,7 +128,7 @@ const configs = {
     icon: Video,
     hero: 'video',
     prompt: '描述镜头运动、角色动作和画面节奏，也可以引用图片或文本节点。',
-    model: 'Lib Video · 5s',
+    model: 'Sluvo Video · 5s',
     chips: ['镜头', '节奏', '首帧'],
     suggestions: [
       { label: '文生视频', icon: FileText },
@@ -140,7 +140,7 @@ const configs = {
     icon: AudioLines,
     hero: 'audio',
     prompt: '描述音效、配音语气或音乐氛围，生成可给视频复用的声音素材。',
-    model: 'Lib Audio · 44.1k',
+    model: 'Sluvo Audio · 44.1k',
     chips: ['音色', '时长', '氛围'],
     suggestions: [
       { label: '音效', icon: AudioLines },
@@ -152,7 +152,7 @@ const configs = {
     icon: Clapperboard,
     hero: 'script',
     prompt: '输入创意方向，生成故事脚本、分镜节拍和可继续连线的创作链路。',
-    model: 'Story Pilot',
+    model: 'Sluvo Story Pilot',
     chips: ['结构', '角色', '分镜'],
     suggestions: [
       { label: '创意脚本', icon: FileText },
@@ -164,7 +164,7 @@ const configs = {
     icon: Upload,
     hero: 'asset',
     prompt: '上传图片、视频、音频文件，或整理角色、场景、道具等参考素材。',
-    model: 'Asset Library',
+    model: 'Sluvo Asset Library',
     chips: ['图片', '视频', '音频'],
     suggestions: [
       { label: '上传图片', icon: Upload },
