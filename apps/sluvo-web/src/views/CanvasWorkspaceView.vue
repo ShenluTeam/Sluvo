@@ -102,15 +102,23 @@
           </div>
 
           <div class="direct-workflow-node__frame" :class="{ 'direct-workflow-node__frame--uploaded': node.type === 'uploaded_asset' }">
-            <button class="direct-workflow-node__port direct-workflow-node__port--left magnetic-target" type="button">+</button>
+            <button
+              class="direct-workflow-node__port direct-workflow-node__port--left magnetic-target"
+              type="button"
+              draggable="false"
+              @pointerdown.stop.prevent="startDirectConnection($event, node.id, 'left')"
+              @mousedown.stop.prevent="startDirectConnection($event, node.id, 'left')"
+            >
+              <Plus class="direct-workflow-node__port-icon" :size="18" :stroke-width="2.4" />
+            </button>
             <button
               class="direct-workflow-node__port direct-workflow-node__port--right magnetic-target"
               type="button"
               draggable="false"
-              @pointerdown.stop.prevent="startDirectConnection($event, node.id)"
-              @mousedown.stop.prevent="startDirectConnection($event, node.id)"
+              @pointerdown.stop.prevent="startDirectConnection($event, node.id, 'right')"
+              @mousedown.stop.prevent="startDirectConnection($event, node.id, 'right')"
             >
-              +
+              <Plus class="direct-workflow-node__port-icon" :size="18" :stroke-width="2.4" />
             </button>
 
             <button
@@ -145,6 +153,22 @@
               <div v-else class="uploaded-asset__state">上传成功</div>
             </div>
 
+            <div
+              v-else-if="node.type === 'image_unit' && node.generationStatus === 'running'"
+              class="generated-image__state"
+            >
+              <span class="generated-image__spinner" />
+              <strong>{{ node.generationMessage || '图片生成中' }}</strong>
+              <small>{{ getImageModelLabel(node.imageModelId) }} · {{ node.aspectRatio || '16:9' }}</small>
+            </div>
+
+            <div
+              v-else-if="node.type === 'image_unit' && node.generatedImage?.url"
+              class="generated-image__preview"
+            >
+              <img :src="node.generatedImage.url" :alt="node.generatedImage.prompt || node.title" draggable="false" />
+            </div>
+
             <template v-else>
             <div class="direct-workflow-node__hero">
               <span v-if="node.type === 'prompt_note'" class="direct-workflow-node__lines" />
@@ -156,7 +180,55 @@
             </template>
           </div>
 
-          <div v-if="node.type !== 'uploaded_asset'" class="direct-workflow-node__prompt">{{ node.prompt }}</div>
+          <textarea
+            v-if="node.type !== 'uploaded_asset'"
+            v-model="node.prompt"
+            class="direct-workflow-node__prompt"
+            :placeholder="node.promptPlaceholder"
+            aria-label="节点提示词"
+            @click.stop
+            @dblclick.stop
+            @keydown.stop
+            @keyup.stop
+            @pointerdown.stop
+            @mousedown.stop
+          />
+          <div
+            v-if="node.type === 'image_unit'"
+            class="direct-workflow-node__generation-controls"
+            @click.stop
+            @dblclick.stop
+            @keydown.stop
+            @keyup.stop
+            @pointerdown.stop
+            @mousedown.stop
+          >
+            <label class="direct-workflow-node__select">
+              <span>大模型</span>
+              <select v-model="node.imageModelId" :disabled="node.generationStatus === 'running'">
+                <option v-for="model in imageModelOptions" :key="model.id" :value="model.id">
+                  {{ model.label }}
+                </option>
+              </select>
+            </label>
+            <label class="direct-workflow-node__select direct-workflow-node__select--ratio">
+              <span>画面比例</span>
+              <select v-model="node.aspectRatio" :disabled="node.generationStatus === 'running'">
+                <option v-for="ratio in imageAspectRatioOptions" :key="ratio" :value="ratio">{{ ratio }}</option>
+              </select>
+            </label>
+            <button
+              class="direct-workflow-node__generate"
+              type="button"
+              :disabled="node.generationStatus === 'running' || !node.prompt.trim()"
+              @click.stop="runDirectImageNode(node)"
+            >
+              {{ node.generationStatus === 'running' ? '生成中' : '生成图片' }}
+            </button>
+            <p v-if="node.generationStatus === 'error'" class="direct-workflow-node__generation-error">
+              {{ node.generationMessage || '生成失败，请稍后重试' }}
+            </p>
+          </div>
         </article>
       </div>
 
@@ -181,7 +253,7 @@
         @change="handleUploadInputChange"
       />
 
-      <CommandBar :title="copy.untitled" />
+      <CommandBar v-model:title="projectTitle" @go-home="goHome" @logout="logoutCanvas" />
 
       <CanvasToolRail
         :can-undo="canUndo"
@@ -389,6 +461,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { ArrowUpDown, ListChecks, Minus, Music2, Plus, Upload, X } from 'lucide-vue-next'
@@ -399,6 +472,13 @@ import CanvasToolRail from '../components/canvas/CanvasToolRail.vue'
 import StarterSkillStrip from '../components/canvas/StarterSkillStrip.vue'
 import WorkflowEdge from '../canvas/edges/WorkflowEdge.vue'
 import WorkflowNode from '../canvas/nodes/WorkflowNode.vue'
+import {
+  fetchCreativeImageCatalog,
+  fetchCreativeRecord,
+  fetchCreativeRecords,
+  fetchTask,
+  submitCreativeImage
+} from '../api/creativeApi'
 import { useCanvasStore } from '../stores/canvasStore'
 
 
@@ -489,7 +569,9 @@ const nodeMeta = {
   }
 }
 
+const router = useRouter()
 const canvasStore = useCanvasStore()
+const projectTitle = ref(copy.untitled)
 const canvasFrame = ref(null)
 const deleteKeySink = ref(null)
 const uploadInput = ref(null)
@@ -498,6 +580,7 @@ let previousDocumentKeydown = null
 let previousWindowKeydown = null
 let frameResizeObserver = null
 let uploadTimer = null
+const imageGenerationTimers = new Map()
 let undoShortcutLocked = false
 let lastUndoShortcutAt = 0
 const nodes = ref([])
@@ -528,6 +611,7 @@ const suppressHistory = ref(false)
 const spacePanning = ref(false)
 const selectedEdgeIds = ref([])
 const canvasActivated = ref(false)
+const suppressNextPaneClick = ref(false)
 const addMenu = reactive({
   visible: false,
   screen: { x: 404, y: 76 },
@@ -565,11 +649,13 @@ const directDrag = reactive({
 const directConnection = reactive({
   active: false,
   sourceId: '',
+  sourceSide: 'right',
   start: { x: 0, y: 0 },
   current: { x: 0, y: 0 }
 })
 const pendingDirectConnection = reactive({
   sourceId: '',
+  sourceSide: 'right',
   point: { x: 0, y: 0 }
 })
 const frameSize = reactive({
@@ -583,6 +669,17 @@ const historyTabs = [
   { id: 'video', label: '视频历史(0)' },
   { id: 'audio', label: '音频历史(0)' }
 ]
+const fallbackImageModelOptions = [
+  { id: 'nano-banana-pro', label: 'nano-banana-pro' },
+  { id: 'nano-banana-2', label: 'nano-banana-2' },
+  { id: 'nano-banana-2-low', label: 'nano-banana-2-低价版' },
+  { id: 'nano-banana-pro-low', label: 'nano-banana-pro-低价版' },
+  { id: 'gpt-image-2-fast', label: 'gpt-image-2-fast' },
+  { id: 'gpt-image-2', label: 'gpt-image-2' }
+]
+const fallbackImageAspectRatioOptions = ['16:9', '9:16', '1:1', '4:3']
+const imageModelOptions = ref([...fallbackImageModelOptions])
+const imageAspectRatioOptions = ref([...fallbackImageAspectRatioOptions])
 const librarySourceTabs = ['Sluvo', 'Sluvo生成器', 'WebUI', 'ComfyUI', 'AI应用']
 const libraryTypeTabs = ['图片', '视频', '音频']
 const libraryPicker = reactive({
@@ -625,6 +722,7 @@ const {
 
 const canUndo = computed(() => historyStack.value.length > 0)
 const zoomLabel = computed(() => `${Math.round((viewport.value?.zoom || 1) * 100)}%`)
+const isCompactCanvas = computed(() => frameSize.width <= 720)
 const showStarterStrip = computed(
   () =>
     !canvasActivated.value &&
@@ -760,6 +858,7 @@ onMounted(() => {
   window.addEventListener('mouseup', handleWindowPointerUp)
   window.addEventListener('mouseleave', resetHoverEffects)
   updateFrameSize()
+  loadImageGenerationCatalog()
   if (typeof ResizeObserver !== 'undefined' && canvasFrame.value) {
     frameResizeObserver = new ResizeObserver(updateFrameSize)
     frameResizeObserver.observe(canvasFrame.value)
@@ -784,6 +883,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('mouseleave', resetHoverEffects)
   frameResizeObserver?.disconnect()
   window.clearInterval(uploadTimer)
+  clearImageGenerationTimers()
   resetHoverEffects()
 })
 
@@ -801,13 +901,13 @@ function handleDocumentKeyup(event) {
 
 function handleWindowKeyEvent(event) {
   if (!isDeleteKey(event) || shouldIgnoreDeleteEventTarget(event.target)) return
-  deleteLastTouchedDirectNode(event)
+  deleteActiveDirectNodes(event)
 }
 
 function handleCanvasKeyEvent(event) {
   if (handleGlobalUndoShortcut(event)) return
   if (!isDeleteKey(event) || shouldIgnoreDeleteEventTarget(event.target)) return
-  deleteLastTouchedDirectNode(event)
+  deleteActiveDirectNodes(event)
 }
 
 function handleGlobalDeleteShortcut(event) {
@@ -815,7 +915,7 @@ function handleGlobalDeleteShortcut(event) {
     return false
   }
 
-  if (isDeleteKey(event) && !shouldIgnoreDeleteEventTarget(event.target) && deleteLastTouchedDirectNode(event)) {
+  if (isDeleteKey(event) && !shouldIgnoreDeleteEventTarget(event.target) && deleteActiveDirectNodes(event)) {
     return false
   }
 
@@ -994,7 +1094,8 @@ function shouldIgnoreDeleteEventTarget(target) {
 
 function deleteActiveDirectNodes(event) {
   const targetNodeId = getDirectNodeIdFromEvent(event)
-  const ids = new Set(targetNodeId ? [targetNodeId] : selectedDirectNodeIds.value)
+  const ids = new Set(selectedDirectNodeIds.value)
+  if (targetNodeId && !ids.has(targetNodeId)) ids.add(targetNodeId)
   if (ids.size === 0 && activeDirectNodeId.value) ids.add(activeDirectNodeId.value)
   const existingIds = [...ids].filter((id) => directNodes.value.some((node) => node.id === id))
   if (existingIds.length === 0) return false
@@ -1027,7 +1128,7 @@ function deleteLastTouchedDirectNode(event) {
 
 function handleDeleteSinkKey(event) {
   if (!isDeleteKey(event)) return
-  if (!deleteLastTouchedDirectNode(event) && directNodes.value.length > 0) {
+  if (!deleteActiveDirectNodes(event) && directNodes.value.length > 0) {
     event.preventDefault()
     event.stopPropagation()
     event.stopImmediatePropagation?.()
@@ -1038,7 +1139,7 @@ function handleDeleteSinkKey(event) {
 
 function handleDeleteSinkNative(event) {
   if (!isDeleteKey(event)) return
-  if (!deleteLastTouchedDirectNode(event) && directNodes.value.length > 0) {
+  if (!deleteActiveDirectNodes(event) && directNodes.value.length > 0) {
     event.preventDefault()
     event.stopPropagation()
     event.stopImmediatePropagation?.()
@@ -1152,6 +1253,7 @@ function handleFramePointerDown(event) {
   focusedDirectNodeId.value = ''
   activeDirectNodeId.value = ''
   lastTouchedDirectNodeId.value = ''
+  suppressNextPaneClick.value = false
   selectionBox.active = true
   selectionBox.start = { x: event.clientX, y: event.clientY }
   selectionBox.current = { x: event.clientX, y: event.clientY }
@@ -1173,6 +1275,15 @@ function handleWindowPointerMove(event) {
 
   if (!selectionBox.active) return
   selectionBox.current = { x: event.clientX, y: event.clientY }
+  const rect = getSelectionRect()
+  if (rect.width > 4 || rect.height > 4) {
+    suppressNextPaneClick.value = true
+    selectedDirectNodeIds.value = directNodes.value
+      .filter((node) => intersectsRect(rect, getDirectNodeScreenRect(node)))
+      .map((node) => node.id)
+    activeDirectNodeId.value = selectedDirectNodeIds.value.at(-1) || ''
+    focusedDirectNodeId.value = activeDirectNodeId.value
+  }
 }
 
 function handleWindowPointerUp(event) {
@@ -1192,6 +1303,7 @@ function handleWindowPointerUp(event) {
   if (!selectionBox.active) return
 
   const rect = getSelectionRect()
+  const wasDraggingSelection = rect.width > 4 || rect.height > 4
   selectedDirectNodeIds.value = directNodes.value
     .filter((node) => intersectsRect(rect, getDirectNodeScreenRect(node)))
     .map((node) => node.id)
@@ -1199,22 +1311,26 @@ function handleWindowPointerUp(event) {
   focusedDirectNodeId.value = activeDirectNodeId.value
   lastTouchedDirectNodeId.value = activeDirectNodeId.value
   if (activeDirectNodeId.value) focusDeleteKeySink()
+  suppressNextPaneClick.value = wasDraggingSelection
   selectionBox.active = false
 }
 
-function startDirectConnection(event, nodeId) {
+function startDirectConnection(event, nodeId, side = 'right') {
   if (event.pointerId !== undefined) {
     event.target?.setPointerCapture?.(event.pointerId)
   }
   const sourceNode = directNodes.value.find((node) => node.id === nodeId)
   if (!sourceNode) return
 
-  const start = getDirectNodePortPosition(sourceNode, 'right')
+  const sourceSide = side === 'left' ? 'left' : 'right'
+  const start = getDirectNodePortPosition(sourceNode, sourceSide)
   directConnection.active = true
   directConnection.sourceId = nodeId
+  directConnection.sourceSide = sourceSide
   directConnection.start = start
   directConnection.current = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
   pendingDirectConnection.sourceId = nodeId
+  pendingDirectConnection.sourceSide = sourceSide
   pendingDirectConnection.point = directConnection.current
   selectedDirectNodeIds.value = [nodeId]
   activeDirectNodeId.value = nodeId
@@ -1224,15 +1340,20 @@ function startDirectConnection(event, nodeId) {
 function finishDirectConnection(event) {
   const point = { ...directConnection.current }
   const sourceId = directConnection.sourceId
+  const sourceSide = directConnection.sourceSide
   const targetId = findDirectConnectionTarget(event, sourceId, point)
   pendingDirectConnection.sourceId = directConnection.sourceId
+  pendingDirectConnection.sourceSide = sourceSide
   pendingDirectConnection.point = point
   directConnection.active = false
 
   if (targetId) {
     rememberHistory()
-    directEdges.value = upsertDirectEdge(sourceId, targetId)
+    const edgeSourceId = sourceSide === 'left' ? targetId : sourceId
+    const edgeTargetId = sourceSide === 'left' ? sourceId : targetId
+    directEdges.value = upsertDirectEdge(edgeSourceId, edgeTargetId)
     pendingDirectConnection.sourceId = ''
+    pendingDirectConnection.sourceSide = 'right'
     selectedDirectNodeIds.value = [targetId]
     activeDirectNodeId.value = targetId
     focusedDirectNodeId.value = targetId
@@ -1298,28 +1419,35 @@ function getDirectEdgePath(edge) {
 }
 
 function getDraftEdgePath() {
-  return buildDirectCurvePath(directConnection.start, directConnection.current)
+  const targetSide = directConnection.sourceSide === 'left' ? 'right' : 'left'
+  return buildDirectCurvePath(directConnection.start, directConnection.current, directConnection.sourceSide, targetSide)
 }
 
-function buildDirectCurvePath(source, target) {
+function buildDirectCurvePath(source, target, sourceSide = 'right', targetSide = 'left') {
   if (!source || !target) return ''
 
   const distance = Math.max(140, Math.abs(target.x - source.x) * 0.5)
-  const sourceControlX = source.x + distance
-  const targetControlX = target.x - distance
+  const sourceDirection = sourceSide === 'left' ? -1 : 1
+  const targetDirection = targetSide === 'right' ? 1 : -1
+  const sourceControlX = source.x + distance * sourceDirection
+  const targetControlX = target.x + distance * targetDirection
 
   return `M ${source.x} ${source.y} C ${sourceControlX} ${source.y}, ${targetControlX} ${target.y}, ${target.x} ${target.y}`
 }
 
 function getDirectNodePortPosition(node, side) {
-  const size = getDirectNodeSize(node.type)
-  const titleHeight = 26
-  const frameHeight = node.type === 'uploaded_asset' ? size.height - titleHeight - 8 : 438
-
   return {
-    x: side === 'right' ? node.x + size.width : node.x,
-    y: node.y + titleHeight + frameHeight / 2
+    x: side === 'right' ? node.x + getDirectNodeSize(node.type).width : node.x,
+    y: node.y + getDirectNodePortOffsetY(node.type)
   }
+}
+
+function getDirectNodePortOffsetY(type) {
+  const size = getDirectNodeSize(type)
+  const titleHeight = isCompactCanvas.value ? 24 : 30
+  const defaultFrameHeight = isCompactCanvas.value ? 346 : 470
+  const frameHeight = type === 'uploaded_asset' ? size.height - titleHeight - 8 : defaultFrameHeight
+  return titleHeight + frameHeight / 2
 }
 
 function flowToScreenCoordinate(point) {
@@ -1408,6 +1536,16 @@ function getSelectionRect() {
 }
 
 function getDirectNodeScreenRect(node) {
+  const elementRect = directNodeElements.get(node.id)?.getBoundingClientRect?.()
+  if (elementRect) {
+    return {
+      x: elementRect.left,
+      y: elementRect.top,
+      width: elementRect.width,
+      height: elementRect.height
+    }
+  }
+
   const zoom = viewport.value?.zoom || 1
   return {
     x: (viewport.value?.x || 0) + node.x * zoom,
@@ -1418,10 +1556,15 @@ function getDirectNodeScreenRect(node) {
 }
 
 function intersectsRect(a, b) {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
+  return a.x <= b.x + b.width && a.x + a.width >= b.x && a.y <= b.y + b.height && a.y + a.height >= b.y
 }
 
 function handlePaneClick() {
+  if (suppressNextPaneClick.value) {
+    suppressNextPaneClick.value = false
+    return
+  }
+
   closeFloatingPanels()
   canvasStore.clearSelection()
   selectedDirectNodeIds.value = []
@@ -1460,6 +1603,9 @@ function handleCanvasDoubleClick(event) {
     return
   }
 
+  const topbarRect = document.querySelector('.libtv-topbar')?.getBoundingClientRect?.()
+  if (topbarRect && event.clientY <= topbarRect.bottom + 12) return
+
   openAddMenuAtEvent(event)
 }
 
@@ -1467,8 +1613,8 @@ function openAddMenuFromButton(event) {
   event.stopPropagation()
   const buttonRect = event.currentTarget?.getBoundingClientRect?.()
   const screen = buttonRect
-    ? { x: buttonRect.right + 14, y: buttonRect.top - 2 }
-    : { x: 104, y: 76 }
+    ? { x: buttonRect.right + 28, y: Math.max(buttonRect.top - 2, 82) }
+    : { x: 120, y: 92 }
   openAddMenu(screen, getViewportCenter())
 }
 
@@ -1493,6 +1639,7 @@ function closeFloatingPanels(clearPendingConnection = true) {
   activeRailPanel.value = ''
   if (clearPendingConnection) {
     pendingDirectConnection.sourceId = ''
+    pendingDirectConnection.sourceSide = 'right'
   }
 }
 
@@ -1547,9 +1694,19 @@ function handleReferenceSelect(selection) {
     canvasActivated.value = true
     rememberHistory()
     closeFloatingPanels(false)
-    const createdNode = createDirectNodeAtFlow(item.type, pendingDirectConnection.point, item.patch)
-    directEdges.value = upsertDirectEdge(pendingDirectConnection.sourceId, createdNode.id)
+    const createdPosition = getDirectNodePositionFromPortAnchor(
+      item.type,
+      pendingDirectConnection.point,
+      pendingDirectConnection.sourceSide === 'left' ? 'right' : 'left'
+    )
+    const createdNode = createDirectNodeAtFlow(item.type, createdPosition, item.patch)
+    if (pendingDirectConnection.sourceSide === 'left') {
+      directEdges.value = upsertDirectEdge(createdNode.id, pendingDirectConnection.sourceId)
+    } else {
+      directEdges.value = upsertDirectEdge(pendingDirectConnection.sourceId, createdNode.id)
+    }
     pendingDirectConnection.sourceId = ''
+    pendingDirectConnection.sourceSide = 'right'
     showToast('\u5df2\u8fde\u63a5\u8282\u70b9')
     return
   }
@@ -1775,6 +1932,405 @@ function confirmLibraryPicker() {
   showToast('暂无可选择素材')
 }
 
+async function loadImageGenerationCatalog() {
+  try {
+    const catalog = await fetchCreativeImageCatalog()
+    if (catalog?.success === false) return
+
+    const models = normalizeImageCatalogModels(catalog)
+    const ratios = normalizeImageCatalogRatios(catalog)
+    if (models.length > 0) imageModelOptions.value = models
+    if (ratios.length > 0) imageAspectRatioOptions.value = ratios
+  } catch {
+    imageModelOptions.value = [...fallbackImageModelOptions]
+    imageAspectRatioOptions.value = [...fallbackImageAspectRatioOptions]
+  }
+}
+
+function normalizeImageCatalogModels(catalog) {
+  const modelItems = findArrayByKey(catalog, ['models', 'image_models', 'imageModels', 'model_options', 'modelOptions'])
+  if (!modelItems) return []
+
+  return modelItems
+    .map((item) => {
+      if (typeof item === 'string') return { id: item, label: item }
+      const id = item?.model_code || item?.code || item?.id || item?.value || item?.model || item?.name
+      if (!id) return null
+      return {
+        id,
+        label: item?.display_name || item?.label || item?.title || item?.name || id
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeImageCatalogRatios(catalog) {
+  const ratioItems =
+    findArrayByKey(catalog, ['aspect_ratios', 'aspectRatios', 'ratios', 'ratio_options', 'ratioOptions']) ||
+    findFirstStringArray(catalog, (item) => /^\d+:\d+$/.test(item))
+  if (!ratioItems) return []
+
+  return [...new Set(ratioItems.map((item) => (typeof item === 'string' ? item : item?.value || item?.id)).filter(Boolean))]
+}
+
+function findArrayByKey(value, keys, depth = 0) {
+  if (!value || depth > 5) return null
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findArrayByKey(item, keys, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+  if (typeof value !== 'object') return null
+
+  for (const key of keys) {
+    if (Array.isArray(value[key])) return value[key]
+  }
+  for (const item of Object.values(value)) {
+    const found = findArrayByKey(item, keys, depth + 1)
+    if (found) return found
+  }
+  return null
+}
+
+function findFirstStringArray(value, predicate, depth = 0) {
+  if (!value || depth > 5) return null
+  if (Array.isArray(value)) {
+    const stringItems = value.filter((item) => typeof item === 'string')
+    if (stringItems.length > 0 && stringItems.every(predicate)) return stringItems
+    for (const item of value) {
+      const found = findFirstStringArray(item, predicate, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+  if (typeof value !== 'object') return null
+
+  for (const item of Object.values(value)) {
+    const found = findFirstStringArray(item, predicate, depth + 1)
+    if (found) return found
+  }
+  return null
+}
+
+function getImageModelLabel(modelId) {
+  return imageModelOptions.value.find((model) => model.id === modelId)?.label || modelId || fallbackImageModelOptions[0].label
+}
+
+async function runDirectImageNode(node) {
+  const prompt = node.prompt.trim()
+  if (!prompt) {
+    showToast('请先输入图片提示词')
+    return
+  }
+
+  rememberHistory()
+  clearImageGenerationTimer(node.id)
+  const modelCode = node.imageModelId || fallbackImageModelOptions[0].id
+  const aspectRatio = node.aspectRatio || fallbackImageAspectRatioOptions[0]
+  updateDirectNode(node.id, {
+    imageModelId: modelCode,
+    aspectRatio,
+    generationStatus: 'running',
+    generationMessage: '正在提交图片生成任务',
+    generationTaskId: '',
+    generationRecordId: '',
+    generatedImage: null
+  })
+
+  try {
+    const response = await submitCreativeImage({
+      ownership_mode: 'standalone',
+      mode: 'text_to_image',
+      model_code: modelCode,
+      resolution: '2k',
+      aspect_ratio: aspectRatio,
+      reference_images: getDirectImageReferenceUrls(node.id),
+      prompt
+    })
+
+    if (response?.success === false) {
+      throw new Error(response.message || response.error || '图片生成提交失败')
+    }
+
+    const result = extractImageGenerationResult(response)
+    const recordImage = !result.url && result.recordId ? await fetchRecordImageResult(result.recordId) : null
+    const directUrl = result.url || recordImage?.url
+
+    if (directUrl) {
+      completeDirectImageGeneration(node.id, {
+        url: directUrl,
+        prompt,
+        modelCode,
+        aspectRatio,
+        taskId: result.taskId,
+        recordId: result.recordId || recordImage?.recordId
+      })
+      return
+    }
+
+    if (!result.taskId) {
+      throw new Error('接口未返回任务 ID')
+    }
+
+    updateDirectNode(node.id, {
+      generationTaskId: result.taskId,
+      generationRecordId: result.recordId || '',
+      generationMessage: '任务已提交，等待生成结果'
+    })
+    scheduleImageTaskPoll(node.id, result.taskId, result.recordId || '', 0)
+    showToast('图片生成任务已提交')
+  } catch (error) {
+    failDirectImageGeneration(node.id, error?.message || '图片生成提交失败')
+  }
+}
+
+function scheduleImageTaskPoll(nodeId, taskId, recordId = '', attempt = 0) {
+  clearImageGenerationTimer(nodeId)
+  const delay = attempt === 0 ? 1200 : 2600
+  const timer = window.setTimeout(() => pollImageTask(nodeId, taskId, recordId, attempt), delay)
+  imageGenerationTimers.set(nodeId, timer)
+}
+
+async function pollImageTask(nodeId, taskId, recordId = '', attempt = 0) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!node || node.generationStatus !== 'running') {
+    clearImageGenerationTimer(nodeId)
+    return
+  }
+
+  try {
+    const task = await fetchTask(taskId)
+    if (task?.success === false) throw new Error(task.message || task.error || '图片生成失败')
+
+    const result = extractImageGenerationResult(task)
+    const nextRecordId = result.recordId || recordId
+    const recordImage = !result.url && nextRecordId ? await fetchRecordImageResult(nextRecordId) : null
+    const historyImage =
+      !result.url && !recordImage?.url && (attempt + 1) % 4 === 0
+        ? await fetchLatestMatchingImageRecord(node.prompt, taskId, nextRecordId)
+        : null
+    const imageUrl = result.url || recordImage?.url || historyImage?.url
+
+    if (imageUrl) {
+      completeDirectImageGeneration(nodeId, {
+        url: imageUrl,
+        prompt: node.prompt,
+        modelCode: node.imageModelId,
+        aspectRatio: node.aspectRatio,
+        taskId,
+        recordId: nextRecordId || recordImage?.recordId || historyImage?.recordId
+      })
+      return
+    }
+
+    if (isFailedTaskStatus(result.status)) {
+      throw new Error(result.message || '图片生成失败')
+    }
+
+    if (attempt >= 90) {
+      updateDirectNode(nodeId, {
+        generationStatus: 'idle',
+        generationMessage: '生成时间较长，可稍后在历史记录中查看'
+      })
+      clearImageGenerationTimer(nodeId)
+      return
+    }
+
+    updateDirectNode(nodeId, {
+      generationRecordId: nextRecordId || '',
+      generationMessage: getPollingMessage(result.message, attempt + 1)
+    })
+    scheduleImageTaskPoll(nodeId, taskId, nextRecordId, attempt + 1)
+  } catch (error) {
+    failDirectImageGeneration(nodeId, error?.message || '图片生成失败')
+  }
+}
+
+async function fetchRecordImageResult(recordId) {
+  try {
+    const record = await fetchCreativeRecord(recordId)
+    const result = extractImageGenerationResult(record)
+    return result.url ? { ...result, recordId } : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchLatestMatchingImageRecord(prompt, taskId = '', recordId = '') {
+  try {
+    const records = await fetchCreativeRecords({
+      record_type: 'image',
+      ownership_mode: 'standalone',
+      sort_by: 'created_at',
+      sort_order: 'desc',
+      page: 1,
+      page_size: 8
+    })
+    const items = collectRecordItems(records)
+    const matched = items.find((item) => {
+      const itemResult = extractImageGenerationResult(item)
+      if (!itemResult.url) return false
+      if (recordId && itemResult.recordId === recordId) return true
+      if (taskId && itemResult.taskId === taskId) return true
+      const itemPrompt = String(findFirstValueByKeys(item, ['prompt', 'input_prompt', 'raw_prompt']) || '')
+      return prompt && itemPrompt && itemPrompt.trim() === prompt.trim()
+    })
+    if (!matched) return null
+
+    const result = extractImageGenerationResult(matched)
+    return result.url ? result : null
+  } catch {
+    return null
+  }
+}
+
+function collectRecordItems(payload) {
+  if (Array.isArray(payload)) return payload
+  const candidates = [
+    payload?.records,
+    payload?.items,
+    payload?.list,
+    payload?.data?.records,
+    payload?.data?.items,
+    payload?.data?.list,
+    payload?.result?.records,
+    payload?.result?.items
+  ]
+  return candidates.find(Array.isArray) || []
+}
+
+function getPollingMessage(message, attempts) {
+  if (attempts >= 24) return '上游仍在排队，已为你继续查询结果'
+  if (attempts >= 10) return '模型生成时间较长，正在同步任务记录'
+  return message || `生成中，已轮询 ${attempts} 次`
+}
+
+function completeDirectImageGeneration(nodeId, image) {
+  clearImageGenerationTimer(nodeId)
+  updateDirectNode(nodeId, {
+    generationStatus: 'success',
+    generationMessage: '图片生成完成',
+    generationTaskId: image.taskId || '',
+    generationRecordId: image.recordId || '',
+    generatedImage: image
+  })
+  showToast('图片生成完成')
+}
+
+function failDirectImageGeneration(nodeId, message) {
+  clearImageGenerationTimer(nodeId)
+  updateDirectNode(nodeId, {
+    generationStatus: 'error',
+    generationMessage: message
+  })
+  showToast(message)
+}
+
+function updateDirectNode(nodeId, patch) {
+  directNodes.value = directNodes.value.map((item) => (item.id === nodeId ? { ...item, ...patch } : item))
+}
+
+function clearImageGenerationTimer(nodeId) {
+  const timer = imageGenerationTimers.get(nodeId)
+  if (timer) window.clearTimeout(timer)
+  imageGenerationTimers.delete(nodeId)
+}
+
+function clearImageGenerationTimers() {
+  imageGenerationTimers.forEach((timer) => window.clearTimeout(timer))
+  imageGenerationTimers.clear()
+}
+
+function getDirectImageReferenceUrls(nodeId) {
+  return directEdges.value
+    .filter((edge) => edge.targetId === nodeId)
+    .map((edge) => directNodes.value.find((item) => item.id === edge.sourceId))
+    .map((source) => source?.generatedImage?.url || source?.media?.url || '')
+    .filter((url) => /^https?:\/\//.test(url))
+}
+
+function extractImageGenerationResult(payload) {
+  return {
+    taskId: findFirstValueByKeys(payload, ['taskId', 'task_id', 'id']),
+    recordId: findFirstValueByKeys(payload, ['recordId', 'record_id', 'generation_record_id']),
+    status: String(findFirstValueByKeys(payload, ['status', 'state', 'task_status']) || '').toLowerCase(),
+    message: findFirstValueByKeys(payload, ['message', 'error', 'detail']),
+    url: findFirstImageUrl(payload)
+  }
+}
+
+function findFirstValueByKeys(value, keys, depth = 0) {
+  if (!value || depth > 7) return ''
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstValueByKeys(item, keys, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  if (typeof value !== 'object') return ''
+
+  for (const key of keys) {
+    const candidate = value[key]
+    if (typeof candidate === 'string' || typeof candidate === 'number') return String(candidate)
+  }
+  for (const item of Object.values(value)) {
+    const found = findFirstValueByKeys(item, keys, depth + 1)
+    if (found) return found
+  }
+  return ''
+}
+
+function findFirstImageUrl(value, depth = 0) {
+  if (!value || depth > 7) return ''
+  if (typeof value === 'string') return isLikelyImageUrl(value) ? value : ''
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstImageUrl(item, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  if (typeof value !== 'object') return ''
+
+  const priorityKeys = [
+    'image_url',
+    'imageUrl',
+    'output_url',
+    'outputUrl',
+    'result_url',
+    'resultUrl',
+    'media_url',
+    'mediaUrl',
+    'file_url',
+    'fileUrl',
+    'url'
+  ]
+  for (const key of priorityKeys) {
+    const candidate = value[key]
+    if (typeof candidate === 'string' && /^https?:\/\//.test(candidate)) return candidate
+  }
+  for (const item of Object.values(value)) {
+    const found = findFirstImageUrl(item, depth + 1)
+    if (found) return found
+  }
+  return ''
+}
+
+function isLikelyImageUrl(value) {
+  return /^https?:\/\/.+(\.png|\.jpe?g|\.webp|\.gif|image|oss|cos|cdn)/i.test(value)
+}
+
+function isFinishedTaskStatus(status) {
+  return ['success', 'succeeded', 'completed', 'complete', 'done', 'finished'].includes(status)
+}
+
+function isFailedTaskStatus(status) {
+  return ['failed', 'failure', 'error', 'cancelled', 'canceled'].includes(status)
+}
+
 function createNode(type, position, patch = {}, options = {}) {
   canvasActivated.value = true
   rememberHistory()
@@ -1804,9 +2360,17 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     x: flowPosition.x,
     y: flowPosition.y,
     actions: getDirectNodeActions(type),
-    prompt: getDirectNodePrompt(type),
+    prompt: patch.prompt || '',
+    promptPlaceholder: patch.promptPlaceholder || getDirectNodePrompt(type),
     media: patch.media || null,
-    upload: patch.upload || null
+    upload: patch.upload || null,
+    imageModelId: patch.imageModelId || fallbackImageModelOptions[0].id,
+    aspectRatio: patch.aspectRatio || fallbackImageAspectRatioOptions[0],
+    generationStatus: patch.generationStatus || 'idle',
+    generationMessage: patch.generationMessage || '',
+    generationTaskId: patch.generationTaskId || '',
+    generationRecordId: patch.generationRecordId || '',
+    generatedImage: patch.generatedImage || null
   }
 
   directNodes.value = [...directNodes.value, node]
@@ -1825,6 +2389,15 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
   return node
 }
 
+function getDirectNodePositionFromPortAnchor(type, anchor, side) {
+  const size = getDirectNodeSize(type)
+  const portOffsetY = getDirectNodePortOffsetY(type)
+  return {
+    x: side === 'right' ? anchor.x - size.width : anchor.x,
+    y: anchor.y - portOffsetY
+  }
+}
+
 function getFlowNodePosition(screen, type) {
   const flow = screenToFlowCoordinate({ x: screen.x, y: screen.y })
   const zoom = viewport.value?.zoom || 1
@@ -1837,8 +2410,8 @@ function getFlowNodePosition(screen, type) {
 
 function getAvailableDirectNodePosition(position) {
   const base = { x: position.x, y: position.y }
-  const stepX = 620
-  const stepY = 120
+  const stepX = isCompactCanvas.value ? 420 : 700
+  const stepY = isCompactCanvas.value ? 100 : 140
   const candidates = [
     base,
     { x: base.x - stepX, y: base.y },
@@ -1861,10 +2434,11 @@ function isDirectNodePortBlocked(position) {
 }
 
 function getDirectNodeSize(type) {
-  if (type === 'uploaded_asset') return { width: 370, height: 560 }
-  if (type === 'image_unit') return { width: 780, height: 640 }
-  if (type === 'video_unit' || type === 'media_board') return { width: 560, height: 600 }
-  return { width: 440, height: 640 }
+  if (isCompactCanvas.value) return { width: 320, height: type === 'uploaded_asset' ? 470 : 520 }
+  if (type === 'uploaded_asset') return { width: 410, height: 594 }
+  if (type === 'image_unit') return { width: 860, height: 690 }
+  if (type === 'video_unit' || type === 'media_board') return { width: 620, height: 690 }
+  return { width: 500, height: 690 }
 }
 
 function getDirectNodeIcon(type) {
@@ -2128,7 +2702,10 @@ function deleteDirectNodesByIds(ids) {
   const nextDirectNodes = directNodes.value.filter((node) => !idSet.has(node.id))
   directNodes.value = nextDirectNodes
   directEdges.value = directEdges.value.filter((edge) => !idSet.has(edge.sourceId) && !idSet.has(edge.targetId))
-  idSet.forEach((id) => directNodeElements.delete(id))
+  idSet.forEach((id) => {
+    directNodeElements.delete(id)
+    clearImageGenerationTimer(id)
+  })
   selectedDirectNodeIds.value = selectedDirectNodeIds.value.filter((id) => !idSet.has(id))
   if (idSet.has(focusedDirectNodeId.value)) focusedDirectNodeId.value = ''
   if (idSet.has(activeDirectNodeId.value)) activeDirectNodeId.value = selectedDirectNodeIds.value.at(-1) || ''
@@ -2155,7 +2732,9 @@ function deleteDirectNodesByIds(ids) {
 }
 
 function deleteDirectNode(nodeId) {
-  selectedDirectNodeIds.value = [nodeId]
+  if (!selectedDirectNodeIds.value.includes(nodeId)) {
+    selectedDirectNodeIds.value = [nodeId]
+  }
   deleteDirectSelection()
 }
 
@@ -2287,6 +2866,16 @@ function toggleSnap() {
   showToast(snapEnabled.value ? '\u5df2\u5f00\u542f\u5438\u9644' : '\u5df2\u5173\u95ed\u5438\u9644')
 }
 
+function goHome() {
+  router.push({ name: 'home' })
+}
+
+function logoutCanvas() {
+  window.localStorage.removeItem('shenlu_token')
+  window.localStorage.removeItem('shenlu_nickname')
+  router.push({ name: 'home' })
+}
+
 function locateCanvas() {
   if (nodes.value.length > 0) {
     fitView({ duration: 280, padding: 0.2 })
@@ -2364,13 +2953,14 @@ function getViewportCenter() {
 
 function clampMenuPosition(screen, menuWidth, menuHeight) {
   const padding = 8
+  const topSafeArea = 78
   const rect = canvasFrame.value?.getBoundingClientRect?.()
   const bounds = rect || { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }
   const maxX = bounds.right - menuWidth - padding
   const maxY = bounds.bottom - menuHeight - padding
   return {
     x: Math.min(Math.max(screen.x, bounds.left + padding), Math.max(bounds.left + padding, maxX)),
-    y: Math.min(Math.max(screen.y, bounds.top + padding), Math.max(bounds.top + padding, maxY))
+    y: Math.min(Math.max(screen.y, bounds.top + topSafeArea), Math.max(bounds.top + topSafeArea, maxY))
   }
 }
 
