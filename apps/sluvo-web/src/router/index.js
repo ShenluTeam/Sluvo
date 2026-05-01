@@ -29,4 +29,17 @@ const router = createRouter({
   ]
 })
 
+router.beforeEach((to) => {
+  if (to.name !== 'canvas') return true
+  const token = window.localStorage.getItem('shenlu_token') || ''
+  if (token) return true
+
+  return {
+    name: 'login',
+    query: {
+      redirect: to.fullPath
+    }
+  }
+})
+
 export default router

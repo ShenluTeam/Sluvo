@@ -41,7 +41,13 @@
         <div class="guest-stage" aria-label="Sluvo workflow preview">
           <div class="guest-stage__beam" />
           <div class="guest-stage__beam guest-stage__beam--vertical" />
-          <article v-for="node in previewNodes" :key="node.title" class="preview-node" :class="node.className">
+          <article
+            v-for="node in previewNodes"
+            :key="node.title"
+            class="preview-node"
+            :class="node.className"
+            tabindex="0"
+          >
             <span>{{ node.kind }}</span>
             <strong>{{ node.title }}</strong>
             <small>{{ node.caption }}</small>
@@ -355,7 +361,7 @@ function handleStorage(event) {
 }
 
 function openLogin() {
-  router.push('/login')
+  router.push({ name: 'login' })
 }
 
 function logout() {
@@ -367,7 +373,16 @@ function logout() {
 }
 
 function openCanvas(projectId = 'proj-aurora') {
-  router.push(`/projects/${projectId}/canvas`)
+  const target = `/projects/${projectId}/canvas`
+  if (!token.value) {
+    router.push({
+      name: 'login',
+      query: { redirect: target }
+    })
+    return
+  }
+
+  router.push(target)
 }
 
 function scrollToTop() {
@@ -419,8 +434,8 @@ onBeforeUnmount(() => {
   position: sticky;
   top: 0;
   z-index: 20;
-  min-height: 78px;
-  padding: 16px clamp(18px, 4vw, 64px);
+  min-height: 96px;
+  padding: 20px clamp(22px, 4.8vw, 82px);
   border-bottom: 1px solid rgba(214, 181, 109, 0.12);
   background: rgba(5, 5, 5, 0.76);
   backdrop-filter: blur(18px);
@@ -429,7 +444,7 @@ onBeforeUnmount(() => {
 .home-brand {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
   padding: 0;
   background: transparent;
@@ -442,8 +457,8 @@ onBeforeUnmount(() => {
 .avatar-pill {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 46px;
+  height: 46px;
   border: 1px solid rgba(245, 213, 145, 0.42);
   border-radius: 8px;
   background:
@@ -471,7 +486,7 @@ onBeforeUnmount(() => {
 
 .home-brand strong {
   display: block;
-  font-size: 20px;
+  font-size: 24px;
   letter-spacing: 0;
 }
 
@@ -506,23 +521,23 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 38px;
+  min-height: 44px;
   border: 1px solid rgba(214, 181, 109, 0.18);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.045);
   color: #f8ecd1;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
 }
 
 .home-nav__link {
-  padding: 0 12px;
+  padding: 0 16px;
   color: rgba(248, 236, 209, 0.76);
 }
 
 .home-nav__primary,
 .gold-button {
-  padding: 0 16px;
+  padding: 0 20px;
   border-color: rgba(255, 221, 151, 0.5);
   background: linear-gradient(180deg, #f8d98e, #b88735);
   color: #1a1206;
@@ -530,16 +545,16 @@ onBeforeUnmount(() => {
 }
 
 .quiet-button {
-  padding: 0 16px;
+  padding: 0 20px;
 }
 
 .guest-hero {
   display: grid;
-  grid-template-columns: minmax(320px, 0.82fr) minmax(380px, 1fr);
+  grid-template-columns: minmax(340px, 0.72fr) minmax(620px, 1.28fr);
   align-items: center;
-  gap: clamp(34px, 6vw, 86px);
-  min-height: calc(100vh - 78px);
-  padding: clamp(42px, 8vw, 110px) clamp(18px, 6vw, 92px);
+  gap: clamp(42px, 6.5vw, 112px);
+  min-height: calc(100vh - 96px);
+  padding: clamp(48px, 7vw, 96px) clamp(24px, 6vw, 110px);
 }
 
 .guest-hero__copy {
@@ -588,7 +603,7 @@ onBeforeUnmount(() => {
 
 .guest-stage {
   position: relative;
-  min-height: 520px;
+  min-height: clamp(560px, 62vh, 720px);
   overflow: hidden;
   border: 1px solid rgba(214, 181, 109, 0.18);
   border-radius: 8px;
@@ -597,7 +612,7 @@ onBeforeUnmount(() => {
     linear-gradient(90deg, rgba(214, 181, 109, 0.08) 1px, transparent 1px),
     radial-gradient(circle at 52% 44%, rgba(214, 181, 109, 0.18), transparent 42%),
     #070706;
-  background-size: 44px 44px, 44px 44px, auto, auto;
+  background-size: 48px 48px, 48px 48px, auto, auto;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 34px 90px rgba(0, 0, 0, 0.42);
   animation: home-rise 0.68s 0.08s ease both;
 }
@@ -628,44 +643,64 @@ onBeforeUnmount(() => {
 
 .guest-stage__beam {
   position: absolute;
-  top: 50%;
-  right: 14%;
-  left: 18%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #d6b56d, transparent);
-  box-shadow: 0 0 22px rgba(214, 181, 109, 0.7);
+  top: 22%;
+  right: -14%;
+  left: -14%;
+  height: 120px;
+  background: linear-gradient(100deg, transparent 18%, rgba(214, 181, 109, 0.12), transparent 72%);
+  filter: blur(4px);
+  opacity: 0.7;
+  pointer-events: none;
+  transform: rotate(-14deg);
+  transform-origin: center;
   animation: beamScan 2.8s ease-in-out infinite;
 }
 
 .guest-stage__beam--vertical {
-  top: 14%;
-  right: auto;
-  bottom: 14%;
-  left: 50%;
-  width: 2px;
-  height: auto;
-  background: linear-gradient(180deg, transparent, rgba(255, 241, 199, 0.86), transparent);
+  top: auto;
+  right: -18%;
+  bottom: 6%;
+  left: -18%;
+  width: auto;
+  height: 140px;
+  background: linear-gradient(100deg, transparent 22%, rgba(255, 241, 199, 0.1), transparent 68%);
+  transform: rotate(13deg);
   animation-delay: 0.6s;
 }
 
 .preview-node {
   position: absolute;
-  z-index: 3;
+  z-index: var(--node-z);
   display: grid;
-  gap: 7px;
-  width: 218px;
-  min-height: 132px;
-  padding: 18px;
+  align-content: start;
+  gap: 11px;
+  width: clamp(320px, 43%, 430px);
+  min-height: 214px;
+  padding: 26px;
   border: 1px solid rgba(214, 181, 109, 0.28);
   border-radius: 8px;
   background:
-    linear-gradient(135deg, rgba(255, 241, 199, 0.055), transparent),
-    rgba(19, 16, 11, 0.92);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
-  animation: nodeFloat 4.8s ease-in-out infinite;
+    linear-gradient(145deg, rgba(255, 241, 199, 0.08), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 38%),
+    rgba(19, 16, 11, 0.94);
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  outline: none;
+  transform: translate3d(var(--node-x, 0), var(--node-y, 0), 0) rotate(var(--node-rotate, 0deg));
+  transform-origin: center;
+  transition:
+    transform 0.56s cubic-bezier(0.2, 0.8, 0.18, 1),
+    z-index 0s linear 0.02s,
+    border-color 0.28s ease,
+    background 0.28s ease,
+    box-shadow 0.28s ease,
+    opacity 0.28s ease;
 }
 
 .preview-node::before {
+  position: relative;
+  z-index: 1;
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -674,59 +709,115 @@ onBeforeUnmount(() => {
   content: "";
 }
 
+.preview-node::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(115deg, transparent 0 46%, rgba(255, 241, 199, 0.1) 49%, transparent 54%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.16));
+  content: "";
+  opacity: 0.62;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .preview-node span {
+  position: relative;
+  z-index: 1;
   color: #d6b56d;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
 .preview-node strong {
+  position: relative;
+  z-index: 1;
   color: #fff5d7;
-  font-size: 18px;
+  font-size: clamp(24px, 2.4vw, 34px);
+  line-height: 1.1;
 }
 
 .preview-node small {
+  position: relative;
+  z-index: 1;
   color: rgba(249, 241, 220, 0.58);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 700;
   line-height: 1.45;
 }
 
 .preview-node em {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   width: fit-content;
   margin-top: 2px;
-  padding: 4px 7px;
+  padding: 5px 9px;
   border-radius: 999px;
   background: rgba(214, 181, 109, 0.12);
   color: rgba(255, 241, 199, 0.72);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 900;
 }
 
+.preview-node:hover,
+.preview-node:focus-visible {
+  z-index: 20;
+  border-color: rgba(255, 221, 151, 0.58);
+  background:
+    linear-gradient(145deg, rgba(255, 241, 199, 0.12), transparent 48%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 38%),
+    rgba(24, 20, 13, 0.98);
+  box-shadow:
+    0 32px 76px rgba(0, 0, 0, 0.58),
+    0 0 42px rgba(214, 181, 109, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  opacity: 1;
+  transform: translate3d(var(--node-hover-x, 0), var(--node-hover-y, 0), 0) scale(1.08);
+}
+
+.preview-node:hover::after,
+.preview-node:focus-visible::after {
+  opacity: 0.18;
+}
+
 .preview-node--script {
-  top: 10%;
-  left: calc(50% - 109px);
+  top: 8%;
+  left: 7%;
+  --node-rotate: -2deg;
+  --node-z: 4;
+  --node-hover-x: 18px;
+  --node-hover-y: 18px;
 }
 
 .preview-node--asset {
-  top: calc(50% - 66px);
-  right: 5%;
-  animation-delay: 0.4s;
+  top: 13%;
+  right: 7%;
+  --node-rotate: 1.8deg;
+  --node-z: 3;
+  --node-hover-x: -18px;
+  --node-hover-y: 12px;
 }
 
 .preview-node--shot {
-  bottom: 10%;
-  left: calc(50% - 109px);
-  animation-delay: 0.8s;
+  right: 14%;
+  bottom: 8%;
+  --node-rotate: -1.4deg;
+  --node-z: 2;
+  --node-hover-x: -10px;
+  --node-hover-y: -18px;
 }
 
 .preview-node--video {
-  top: calc(50% - 66px);
-  left: 5%;
-  animation-delay: 1.2s;
+  bottom: 13%;
+  left: 10%;
+  --node-rotate: 2deg;
+  --node-z: 1;
+  --node-hover-x: 16px;
+  --node-hover-y: -12px;
 }
 
 .capability-band {
@@ -1342,7 +1433,13 @@ onBeforeUnmount(() => {
   }
 
   .guest-stage {
-    min-height: 440px;
+    min-height: 540px;
+  }
+
+  .preview-node {
+    width: clamp(270px, 42%, 380px);
+    min-height: 190px;
+    padding: 22px;
   }
 
   .creator-console,
@@ -1366,6 +1463,11 @@ onBeforeUnmount(() => {
   .campaign-bar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .home-nav {
+    min-height: 0;
+    padding: 16px 18px;
   }
 
   .home-nav__actions {
@@ -1423,21 +1525,37 @@ onBeforeUnmount(() => {
   }
 
   .preview-node {
-    width: 150px;
-    padding: 12px;
+    width: min(78%, 300px);
+    min-height: 150px;
+    padding: 16px;
   }
 
-  .preview-node--script,
-  .preview-node--shot {
-    left: calc(50% - 75px);
+  .preview-node strong {
+    font-size: 20px;
+  }
+
+  .preview-node small {
+    font-size: 12px;
+  }
+
+  .preview-node--script {
+    top: 7%;
+    left: 6%;
   }
 
   .preview-node--asset {
-    right: 4%;
+    top: 18%;
+    right: 5%;
+  }
+
+  .preview-node--shot {
+    right: 7%;
+    bottom: 7%;
   }
 
   .preview-node--video {
-    left: 4%;
+    bottom: 18%;
+    left: 5%;
   }
 
   .prompt-composer__footer {

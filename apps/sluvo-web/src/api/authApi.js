@@ -9,3 +9,11 @@ export function loginWithPassword({ email, password }) {
     })
   })
 }
+
+export function fetchCurrentUser() {
+  return apiFetch('/api/user/me')
+}
+
+export function fetchUserDashboard() {
+  return apiFetch('/api/user/dashboard')
+}
