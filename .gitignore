@@ -19,11 +19,29 @@ pnpm-debug.log*
 
 # Editor and OS files
 .DS_Store
+._*
 Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Environment and archive files
+.env
+.env.*
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Python local outputs
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+backend/venv/
+backend/=*
 
 # Test and cache outputs
 coverage/
