@@ -72,6 +72,12 @@
             :d="getDraftEdgePath()"
             pathLength="1"
           />
+          <path
+            v-if="referenceMenu.visible && pendingDirectConnection.sourceId"
+            class="direct-edge__draft"
+            :d="getPendingDirectEdgePath()"
+            pathLength="1"
+          />
         </svg>
 
         <article
@@ -678,6 +684,7 @@ const directConnection = reactive({
 const pendingDirectConnection = reactive({
   sourceId: '',
   sourceSide: 'right',
+  start: { x: 0, y: 0 },
   point: { x: 0, y: 0 }
 })
 const frameSize = reactive({
@@ -744,7 +751,7 @@ const {
 
 const canUndo = computed(() => historyStack.value.length > 0)
 const zoomLabel = computed(() => `${Math.round((viewport.value?.zoom || 1) * 100)}%`)
-const isCompactCanvas = computed(() => frameSize.width <= 720)
+const isCompactCanvas = computed(() => frameSize.width <= 900)
 const showStarterStrip = computed(
   () =>
     !canvasActivated.value &&
@@ -877,6 +884,13 @@ watch(
   () => route.params.projectId,
   () => {
     loadProjectCanvas()
+  }
+)
+
+watch(
+  () => [viewport.value?.x, viewport.value?.y, viewport.value?.zoom],
+  () => {
+    syncPendingReferenceMenuScreen()
   }
 )
 
@@ -1763,6 +1777,7 @@ function startDirectConnection(event, nodeId, side = 'right') {
   directConnection.current = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
   pendingDirectConnection.sourceId = nodeId
   pendingDirectConnection.sourceSide = sourceSide
+  pendingDirectConnection.start = start
   pendingDirectConnection.point = directConnection.current
   selectedDirectNodeIds.value = [nodeId]
   activeDirectNodeId.value = nodeId
@@ -1776,6 +1791,7 @@ function finishDirectConnection(event) {
   const targetId = findDirectConnectionTarget(event, sourceId, point)
   pendingDirectConnection.sourceId = directConnection.sourceId
   pendingDirectConnection.sourceSide = sourceSide
+  pendingDirectConnection.start = { ...directConnection.start }
   pendingDirectConnection.point = point
   directConnection.active = false
 
@@ -1794,12 +1810,11 @@ function finishDirectConnection(event) {
     return
   }
 
-  const screen = flowToScreenCoordinate(point)
   referenceMenu.visible = true
   referenceMenu.sourceId = ''
   referenceMenu.sourceHandle = 'direct'
-  referenceMenu.screen = clampMenuPosition({ x: screen.x + 20, y: screen.y - 150 }, 300, 460)
   referenceMenu.flow = point
+  syncPendingReferenceMenuScreen()
   addMenu.visible = false
   contextMenu.visible = false
 }
@@ -1856,6 +1871,23 @@ function getDraftEdgePath() {
   return buildDirectCurvePath(directConnection.start, directConnection.current, directConnection.sourceSide, targetSide)
 }
 
+function getPendingDirectEdgePath() {
+  const targetSide = pendingDirectConnection.sourceSide === 'left' ? 'right' : 'left'
+  return buildDirectCurvePath(
+    pendingDirectConnection.start,
+    pendingDirectConnection.point,
+    pendingDirectConnection.sourceSide,
+    targetSide
+  )
+}
+
+function syncPendingReferenceMenuScreen() {
+  if (!referenceMenu.visible || !pendingDirectConnection.sourceId) return
+
+  const screen = flowToScreenCoordinate(referenceMenu.flow)
+  referenceMenu.screen = clampMenuPosition({ x: screen.x + 20, y: screen.y - 150 }, 300, 460)
+}
+
 function buildDirectCurvePath(source, target, sourceSide = 'right', targetSide = 'left') {
   if (!source || !target) return ''
 
@@ -1869,10 +1901,25 @@ function buildDirectCurvePath(source, target, sourceSide = 'right', targetSide =
 }
 
 function getDirectNodePortPosition(node, side) {
+  const domPosition = getDirectNodePortDomPosition(node.id, side)
+  if (domPosition) return domPosition
+
   return {
     x: side === 'right' ? node.x + getDirectNodeSize(node.type).width : node.x,
     y: node.y + getDirectNodePortOffsetY(node.type)
   }
+}
+
+function getDirectNodePortDomPosition(nodeId, side) {
+  const nodeElement = directNodeElements.get(nodeId)
+  const portElement = nodeElement?.querySelector?.(`.direct-workflow-node__port--${side}`)
+  const rect = portElement?.getBoundingClientRect?.()
+  if (!rect) return null
+
+  return screenToFlowCoordinate({
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2
+  })
 }
 
 function getDirectNodePortOffsetY(type) {
@@ -2073,6 +2120,8 @@ function closeFloatingPanels(clearPendingConnection = true) {
   if (clearPendingConnection) {
     pendingDirectConnection.sourceId = ''
     pendingDirectConnection.sourceSide = 'right'
+    pendingDirectConnection.start = { x: 0, y: 0 }
+    pendingDirectConnection.point = { x: 0, y: 0 }
   }
 }
 
@@ -2140,6 +2189,8 @@ function handleReferenceSelect(selection) {
     }
     pendingDirectConnection.sourceId = ''
     pendingDirectConnection.sourceSide = 'right'
+    pendingDirectConnection.start = { x: 0, y: 0 }
+    pendingDirectConnection.point = { x: 0, y: 0 }
     showToast('\u5df2\u8fde\u63a5\u8282\u70b9')
     return
   }
@@ -3484,6 +3535,7 @@ function handleSupport() {
 function handleMoveEnd(event) {
   canvasStore.setViewport(event.flowTransform)
   scheduleCanvasSave()
+  syncPendingReferenceMenuScreen()
 }
 
 function rememberHistory() {

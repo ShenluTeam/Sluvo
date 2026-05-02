@@ -428,3 +428,94 @@ Verification suggestions:
 - Run `npm run build`.
 - In the browser, add two nodes from the left add menu, drag from the first node's right plus handle onto the second node, and confirm a glowing edge is created.
 
+Changed files:
+- `apps/sluvo-web/src/views/LoginView.vue`
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added responsive layout rules across login, logged-out home, logged-in workbench, and canvas workspace surfaces.
+- Replaced several fixed column and fixed-width assumptions with shrinking grid tracks, auto-fit cards, wrapped controls, and compact canvas node sizing.
+- Improved narrow-screen canvas behavior for the top bar, tool rail, starter strip, bottom controls, minimap, side panels, history panel, library picker, and direct workflow nodes.
+
+Verification suggestions:
+- Run `npm run build`.
+- Resize the browser across desktop, tablet, and phone widths and verify the login form, home/workbench grids, and canvas controls remain usable without horizontal overflow.
+
+Changed files:
+- `apps/sluvo-web/src/views/LoginView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added a development-only login bypass button on the Sluvo login page so local UI testing can reach the protected canvas route when the real backend login is unavailable.
+- The bypass writes the existing Shenlu auth storage keys locally and redirects to the requested route; it is gated by `import.meta.env.DEV`.
+
+Verification suggestions:
+- Run `npm run build`.
+- In Vite dev mode, open `/login` and use "本地开发模式进入画布" to reach `/projects/proj-aurora/canvas` or the redirect target.
+
+Changed files:
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Moved the canvas bottom control cluster from the lower-left corner to bottom center.
+- Kept the control cluster width constrained on narrow screens so it remains centered without overflowing.
+
+Verification suggestions:
+- Run `npm run build`.
+- Open the canvas and verify the zoom/grid/minimap controls sit centered along the bottom edge at desktop and narrow widths.
+
+Changed files:
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Moved the canvas minimap to align above the bottom-centered canvas control cluster.
+- Kept the minimap centered and width-constrained across tablet and phone breakpoints.
+
+Verification suggestions:
+- Run `npm run build`.
+- Toggle the minimap on the canvas and verify it appears centered above the bottom controls on desktop and narrow screens.
+
+Changed files:
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Made the canvas top-right command/account cluster responsive with smaller controls, horizontal overflow handling, and wrapping at constrained widths.
+- Compacted the account dropdown panel with responsive width, max-height scrolling, smaller cards, and mobile fixed positioning.
+- Preserved access to the account menu on narrow screens instead of hiding the entire right control cluster.
+
+Verification suggestions:
+- Run `npm run build`.
+- Open the canvas, resize the viewport from desktop to phone widths, and verify the top-right controls and account dropdown remain usable without covering the canvas excessively.
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Direct canvas edges now anchor to the actual visible plus-port centers by reading each port element's DOM rectangle and converting it into flow coordinates.
+- This keeps connections aligned for generated/uploaded images with unusual aspect ratios such as 9:16.
+- When a direct connection is released into empty space and opens the reference-node menu, the draft line remains visible from the source port to the release point until the menu is closed or a node is selected.
+
+Verification suggestions:
+- Run `npm run build`.
+- Connect from a tall uploaded/generated image node to another node and confirm the line starts at the plus center.
+- Drag a connection into empty space and confirm the draft line stays visible while the reference menu is open.
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Anchored the direct-reference creation menu to the canvas flow coordinate where the connection was released.
+- The menu now recalculates its screen position when the canvas viewport pans or zooms, keeping it aligned with the retained draft edge instead of drifting away.
+
+Verification suggestions:
+- Run `npm run build`.
+- Drag a direct connection into empty space, leave the reference menu open, then pan/zoom the canvas and confirm the menu stays attached to the same canvas release point.
+

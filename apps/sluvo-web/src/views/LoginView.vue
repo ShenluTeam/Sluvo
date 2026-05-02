@@ -119,6 +119,10 @@
             <LogIn v-else :size="19" />
             {{ isSubmitting ? '登录中' : '登录并进入 Sluvo' }}
           </button>
+          <button v-if="isDevMode" class="dev-login-button" type="button" @click="enterDevWorkspace">
+            <LogIn :size="18" />
+            本地开发模式进入画布
+          </button>
         </form>
 
         <div class="login-card__meta">
@@ -158,6 +162,7 @@ const form = reactive({
 const rememberAccount = ref(Boolean(form.email))
 const showPassword = ref(false)
 const isSubmitting = ref(false)
+const isDevMode = import.meta.env.DEV
 const feedback = reactive({
   type: 'idle',
   message: ''
@@ -205,6 +210,13 @@ function goHome() {
   router.push('/')
 }
 
+async function enterDevWorkspace() {
+  window.localStorage.setItem('shenlu_token', 'sluvo-local-dev-token')
+  window.localStorage.setItem('shenlu_nickname', 'Sluvo Local Dev')
+  window.localStorage.setItem('shenlu_email', form.email || 'local@sluvo.dev')
+  await router.replace(redirectPath.value)
+}
+
 function openReset() {
   window.open('https://ai.shenlu.top', '_blank', 'noopener,noreferrer')
 }
@@ -213,7 +225,7 @@ function openReset() {
 <style scoped>
 .login-shell {
   display: grid;
-  grid-template-columns: minmax(540px, 1fr) minmax(620px, 0.88fr);
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.88fr);
   min-height: 100vh;
   background:
     radial-gradient(circle at 24% 22%, rgba(214, 181, 109, 0.16), transparent 28%),
@@ -546,6 +558,7 @@ function openReset() {
   display: grid;
   align-content: center;
   justify-items: center;
+  min-width: 0;
   min-height: 100vh;
   padding: clamp(46px, 5.4vw, 92px);
   border-left: 1px solid rgba(255, 241, 199, 0.12);
@@ -556,7 +569,7 @@ function openReset() {
 }
 
 .login-card {
-  width: min(85%, 760px);
+  width: min(100%, 760px);
   min-height: 85vh;
   display: grid;
   align-content: center;
@@ -775,6 +788,28 @@ function openReset() {
   transition: transform 160ms ease, filter 160ms ease;
 }
 
+.dev-login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 54px;
+  border: 1px dashed rgba(255, 241, 199, 0.34);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 248, 230, 0.82);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.dev-login-button:hover {
+  border-color: rgba(214, 181, 109, 0.62);
+  background: rgba(214, 181, 109, 0.09);
+  color: #fff8e6;
+}
+
 .login-card__meta {
   display: flex;
   flex-wrap: wrap;
@@ -907,6 +942,7 @@ function openReset() {
 
   .login-panel {
     min-height: auto;
+    padding: clamp(22px, 6vw, 56px);
     border-left: 0;
     border-top: 1px solid rgba(255, 241, 199, 0.12);
     box-shadow: none;
@@ -914,13 +950,60 @@ function openReset() {
 
   .login-card {
     width: min(680px, 100%);
+    padding: clamp(28px, 7vw, 56px);
     min-height: auto;
+  }
+
+  .login-panel h2 {
+    font-size: clamp(28px, 7vw, 42px);
   }
 }
 
 @media (max-width: 520px) {
+  .login-shell {
+    min-height: 100dvh;
+  }
+
   .login-nav {
     align-items: flex-start;
+  }
+
+  .login-hero {
+    grid-template-rows: auto auto minmax(92px, 20vh);
+  }
+
+  .login-hero__content {
+    padding: 54px 0 28px;
+  }
+
+  .login-card {
+    padding: 22px;
+  }
+
+  .login-panel__heading {
+    align-items: flex-start;
+  }
+
+  .field-control {
+    min-height: 60px;
+    gap: 10px;
+    padding: 0 14px;
+  }
+
+  .field-control input,
+  .field-control input:focus,
+  .field-control input:-webkit-autofill,
+  .field-control input:-webkit-autofill:hover,
+  .field-control input:-webkit-autofill:focus {
+    font-size: 17px;
+  }
+
+  .field-control input::placeholder {
+    font-size: 16px;
+  }
+
+  .submit-button {
+    min-height: 58px;
   }
 
   .login-nav__ghost {

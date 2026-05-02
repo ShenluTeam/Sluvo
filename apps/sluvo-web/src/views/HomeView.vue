@@ -636,6 +636,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .home-nav__link,
@@ -680,7 +681,7 @@ onBeforeUnmount(() => {
 
 .guest-hero {
   display: grid;
-  grid-template-columns: minmax(340px, 0.72fr) minmax(620px, 1.28fr);
+  grid-template-columns: minmax(0, 0.72fr) minmax(460px, 1.28fr);
   align-items: center;
   gap: clamp(42px, 6.5vw, 112px);
   min-height: calc(100vh - 96px);
@@ -733,6 +734,7 @@ onBeforeUnmount(() => {
 
 .guest-stage {
   position: relative;
+  min-width: 0;
   min-height: clamp(560px, 62vh, 720px);
   overflow: hidden;
   border: 1px solid rgba(214, 181, 109, 0.18);
@@ -952,7 +954,7 @@ onBeforeUnmount(() => {
 
 .capability-band {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: 16px;
   padding: 0 clamp(18px, 6vw, 92px) 80px;
 }
@@ -1285,12 +1287,12 @@ onBeforeUnmount(() => {
 
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 16px;
 }
 
 .project-grid--empty {
-  grid-template-columns: minmax(260px, 360px);
+  grid-template-columns: minmax(0, 360px);
 }
 
 .project-card {
@@ -1395,7 +1397,7 @@ onBeforeUnmount(() => {
 
 .agent-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.8fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(min(100%, 300px), 0.8fr);
   gap: 16px;
 }
 
@@ -1586,6 +1588,11 @@ onBeforeUnmount(() => {
     min-height: 540px;
   }
 
+  .home-nav__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
   .preview-node {
     width: clamp(270px, 42%, 380px);
     min-height: 190px;
@@ -1621,7 +1628,16 @@ onBeforeUnmount(() => {
   }
 
   .home-nav__actions {
+    width: 100%;
     flex-wrap: wrap;
+  }
+
+  .home-nav__actions > button {
+    flex: 1 1 140px;
+  }
+
+  .home-brand--compact strong {
+    display: none;
   }
 
   .capability-band,
@@ -1655,6 +1671,10 @@ onBeforeUnmount(() => {
     margin-left: auto;
   }
 
+  .campaign-bar span {
+    align-items: flex-start;
+  }
+
   .creator-console,
   .home-section {
     width: calc(100vw - 32px);
@@ -1666,8 +1686,28 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 560px) {
+  .home-nav__link {
+    display: none;
+  }
+
+  .home-nav__actions > .home-nav__primary,
+  .guest-hero__actions > button {
+    flex: 1 1 100%;
+  }
+
   .guest-hero {
-    padding-top: 34px;
+    padding: 34px 16px 46px;
+  }
+
+  .guest-hero__eyebrow {
+    align-items: flex-start;
+    min-height: 0;
+    padding: 8px 10px;
+    line-height: 1.45;
+  }
+
+  .guest-hero h1 {
+    font-size: clamp(56px, 22vw, 86px);
   }
 
   .guest-stage {
@@ -1720,6 +1760,14 @@ onBeforeUnmount(() => {
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .agent-flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .agent-capability {
+    grid-template-columns: 1fr;
   }
 }
 </style>
