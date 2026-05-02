@@ -25,16 +25,16 @@
         <div class="guest-hero__copy">
           <span class="guest-hero__eyebrow">
             <Sparkles :size="16" />
-            AI Agent 驱动的无限画布创作系统
+            开放式AI Agent 无限画布创作平台
           </span>
           <h1>Sluvo</h1>
-          <p class="guest-hero__lead">让灵感在节点间显影，由 Agent 读取上下文、编排路径，并把未成形的想象推进为可执行的创作链路。</p>
+          <p class="guest-hero__lead">把灵感、角色、分镜、模型与 Agent 团队放进同一张无限画布。Sluvo 让创作过程可以被记录、复用、分享，并在社区中生长为新的画布、Agent 与 Skill。</p>
           <div class="guest-hero__actions">
             <button class="gold-button" type="button" @click="openLogin">
-              登录 Sluvo
+              进入 Sluvo
               <ArrowUpRight :size="18" />
             </button>
-            <button class="quiet-button" type="button" @click="scrollToCapabilities">查看能力</button>
+            <button class="quiet-button" type="button" @click="scrollToCapabilities">查看开放生态</button>
           </div>
         </div>
 
@@ -89,9 +89,9 @@
         <div class="campaign-bar">
           <span>
             <Sparkles :size="16" />
-            Happyhorse、Seedance 2.0、GPT image-2 已接入 Sluvo 创作能力
+            Sluvo 正在构建开放画布社区：创作过程、Agent 团队与画布 Skill 都将可以分享、fork 和复用。
           </span>
-          <button type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt()">去创作</button>
+          <button type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt()">开启我的画布</button>
         </div>
 
         <header class="workbench-topbar">
@@ -133,14 +133,14 @@
           <div class="creator-console__mascot">
             <Sparkles :size="20" />
           </div>
-          <h1 id="creator-title">今天想制作什么影视项目？</h1>
-          <p>输入创意、粘贴剧本，或把参考图拖进来，Sluvo 会把它整理成可执行画布。</p>
+          <h1 id="creator-title">导演～今天想创作什么影视项目？</h1>
+          <p>输入创意、粘贴剧本，或上传参考素材。Sluvo 会把它整理成可执行画布，并逐步沉淀为可复用、可分享的创作流程。</p>
 
           <form class="prompt-composer" @submit.prevent="startProjectFromPrompt()">
             <textarea
               v-model="promptText"
               aria-label="创作描述"
-              placeholder="拖拽/粘贴图片到这里，或描述：角色、剧情、分镜、风格参考"
+              placeholder="描述一个漫剧创意、角色设定、分镜目标，或你想构建的 Agent / Skill 工作流"
             />
             <div class="prompt-composer__footer">
               <div class="composer-tools">
@@ -216,6 +216,31 @@
           </div>
         </section>
 
+        <section class="home-section open-ecosystem" aria-labelledby="ecosystem-title">
+          <div class="section-heading section-heading--stacked">
+            <h2 id="ecosystem-title">
+              <Sparkles :size="22" />
+              开放生态目标
+            </h2>
+            <p>Sluvo 会把个人创作升级为可复用的社区资产。</p>
+          </div>
+
+          <div class="open-ecosystem-grid">
+            <article v-for="item in openEcosystemCards" :key="item.title" class="open-ecosystem-card">
+              <span class="open-ecosystem-card__icon">
+                <component :is="item.icon" :size="20" />
+              </span>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.description }}</p>
+            </article>
+          </div>
+
+          <div class="open-ecosystem-cta">
+            <span>从今天的每一次创作开始，积累未来可分享的创作资产。</span>
+            <button type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt()">创建开放画布</button>
+          </div>
+        </section>
+
         <section class="home-section agent-section" aria-labelledby="agent-title">
           <div class="section-heading">
             <h2 id="agent-title">
@@ -226,14 +251,14 @@
 
           <div class="agent-panel">
             <article class="agent-primary">
-              <span class="agent-primary__eyebrow">Sluvo Orchestrator</span>
-              <h3>让每个节点都能被 Agent 调度</h3>
-              <p>把剧本、分镜、角色资产和模型生成编排成可追踪的生产链路，适合短剧、漫画和视频团队反复迭代。</p>
+              <span class="agent-primary__eyebrow">Sluvo Agent Team</span>
+              <h3>让每个创作者都能组建自己的漫剧 Agent 团队</h3>
+              <p>Sluvo 会让 Agent 读取画布上下文、理解节点关系、提出下一步动作，并把一套有效的协作方式保存为可分享的团队模板。</p>
               <div class="agent-flow" aria-label="Agent workflow steps">
-                <span>输入</span>
-                <span>规划</span>
-                <span>生成</span>
-                <span>复盘</span>
+                <span>理解</span>
+                <span>分工</span>
+                <span>执行</span>
+                <span>沉淀</span>
               </div>
             </article>
 
@@ -262,6 +287,7 @@ import {
   ArrowUpRight,
   Bell,
   BookOpen,
+  Boxes,
   Clapperboard,
   Coins,
   Compass,
@@ -271,18 +297,21 @@ import {
   Film,
   FolderOpen,
   Globe2,
+  GitFork,
   Image,
   Layers,
   LogIn,
   LogOut,
-  Play,
+  Network,
+  PackageOpen,
   Plus,
+  Share2,
   Send,
   Sparkles,
   Trash2,
   Upload,
   UserRound,
-  Video
+  UsersRound
 } from 'lucide-vue-next'
 import logoUrl from '../../LOGO.png'
 import { useAuthStore } from '../stores/authStore'
@@ -303,50 +332,55 @@ const userInitial = computed(() => authStore.userInitial)
 
 const previewNodes = [
   {
-    kind: 'Origin Agent',
-    title: '灵感解码',
-    caption: '从微弱念头中提取叙事原点',
-    signal: 'Signal / Origin',
+    kind: 'Open Canvas',
+    title: '创作过程可分享',
+    caption: '把画布中的灵感、节点、依赖与生成路径发布到社区',
+    signal: 'Share / Fork',
     className: 'preview-node--script'
   },
   {
-    kind: 'Context Agent',
-    title: '语境织网',
-    caption: '让角色、场景与素材在画布中互相感知',
-    signal: 'Memory / Link',
+    kind: 'Agent Team',
+    title: '漫剧团队可编排',
+    caption: '自定义导演、编剧、分镜、角色、生成等 Agent 分工',
+    signal: 'Plan / Execute',
     className: 'preview-node--asset'
   },
   {
-    kind: 'Flow Agent',
-    title: '路径占星',
-    caption: '预判节点之间的顺序、依赖与下一步',
-    signal: 'Route / Sequence',
+    kind: 'Canvas Skill',
+    title: '画布技能可沉淀',
+    caption: '把一组节点和流程保存为可安装、可复用的 Skill',
+    signal: 'Build / Reuse',
     className: 'preview-node--shot'
   },
   {
-    kind: 'Manifest Agent',
-    title: '显影生成',
-    caption: '召集模型能力，将画布意图转化为作品',
-    signal: 'Model / Manifest',
+    kind: 'Community',
+    title: '创作者网络可共生',
+    caption: '从他人的作品、Agent 和 Skill 中 fork 出新的创作路径',
+    signal: 'Publish / Remix',
     className: 'preview-node--video'
   }
 ]
 
 const capabilityCards = [
   {
-    icon: FileText,
-    title: '剧本到分镜',
-    description: '把创意文本拆成可执行镜头和资产清单。'
+    icon: Share2,
+    title: '开放画布',
+    description: '记录从灵感到成片的完整创作过程。节点、素材、分镜、生成历史和依赖关系都可以成为可分享的作品资产。'
   },
   {
-    icon: UserRound,
-    title: '角色一致性',
-    description: '让角色、场景、道具在多个生成节点中保持统一。'
+    icon: UsersRound,
+    title: '开放 Agent',
+    description: '让用户组建自己的漫剧 Agent 团队：导演、编剧、角色设定、分镜、美术、视频生成，都可以被配置、协作和分享。'
   },
   {
-    icon: Video,
-    title: '图片到视频',
-    description: '用神鹿影视 AI 能力链生成短剧镜头和动态片段。'
+    icon: PackageOpen,
+    title: '开放 Skill',
+    description: '把高频创作方法沉淀成画布 Skill。一个 Skill 可以是一套节点模板、一段 Agent 流程，也可以是一条可复用的生产链。'
+  },
+  {
+    icon: GitFork,
+    title: '社区共创',
+    description: '用户可以发布、fork、收藏和安装他人的画布、Agent 团队与 Skill，让创作经验在社区里持续复用。'
   }
 ]
 
@@ -358,27 +392,46 @@ const composerTools = [
 ]
 
 const skillChips = [
-  { label: 'Seedance 2.0 故事动画', icon: Film },
-  { label: '自由画布', icon: Expand, badge: '多模型' },
-  { label: '剧情故事短片', icon: Clapperboard },
-  { label: '角色设计', icon: UserRound }
+  { label: '漫剧世界观生成', icon: Film },
+  { label: '角色 Agent 团队', icon: UsersRound },
+  { label: '分镜到视频链路', icon: Clapperboard },
+  { label: '保存为画布 Skill', icon: PackageOpen },
+  { label: '社区画布灵感', icon: Expand, badge: '多模型' }
+]
+
+const openEcosystemCards = [
+  {
+    title: '画布可以发布',
+    description: '把一次完整创作过程发布为社区画布。其他创作者可以浏览、学习、复制或 fork。',
+    icon: Share2
+  },
+  {
+    title: 'Agent 可以组队',
+    description: '把你的导演、编剧、分镜、美术和生成 Agent 保存为团队模板，在项目之间复用。',
+    icon: UsersRound
+  },
+  {
+    title: 'Skill 可以流通',
+    description: '把高频创作流程封装成 Skill，让别人一键安装到自己的无限画布中。',
+    icon: Boxes
+  }
 ]
 
 const agentCapabilities = [
   {
-    title: '多模型路由',
-    description: '按节点类型选择 Happyhorse、Seedance 2.0、GPT image-2 等能力。',
+    title: '上下文理解',
+    description: 'Agent 读取剧本、角色、分镜、素材和生成历史，而不是只处理孤立提示词。',
+    icon: Network
+  },
+  {
+    title: '团队编排',
+    description: '用户可以定义导演、编剧、角色、美术、分镜、视频等 Agent 的职责与协作顺序。',
     icon: Layers
   },
   {
-    title: '上下文记忆',
-    description: '保留角色、场景、分镜和参考素材之间的关系，减少重复整理。',
-    icon: Compass
-  },
-  {
-    title: '任务追踪',
-    description: '每次生成都能回看输入、输出、状态和下一步动作。',
-    icon: Play
+    title: '社区复用',
+    description: '成熟的 Agent 团队可以发布到社区，被安装、fork，并服务新的画布项目。',
+    icon: GitFork
   }
 ]
 
@@ -1277,6 +1330,21 @@ onBeforeUnmount(() => {
   color: #d6b56d;
 }
 
+.section-heading--stacked {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-heading--stacked p {
+  max-width: 620px;
+  margin: 0;
+  color: rgba(249, 241, 220, 0.58);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
 .section-heading button {
   min-height: 32px;
   padding: 0 10px;
@@ -1324,6 +1392,7 @@ onBeforeUnmount(() => {
 }
 
 .project-card:hover,
+.open-ecosystem-card:hover,
 .agent-capability:hover {
   border-color: rgba(214, 181, 109, 0.34);
   background: rgba(214, 181, 109, 0.075);
@@ -1393,6 +1462,85 @@ onBeforeUnmount(() => {
   padding: 0 4px;
   color: rgba(249, 241, 220, 0.5);
   font-size: 12px;
+}
+
+.open-ecosystem-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.open-ecosystem-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 218px;
+  padding: 20px;
+  border: 1px solid rgba(214, 181, 109, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(214, 181, 109, 0.09), transparent 58%),
+    rgba(255, 255, 255, 0.045);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.open-ecosystem-card__icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 241, 199, 0.18);
+  border-radius: 8px;
+  background: rgba(214, 181, 109, 0.1);
+  color: #fff1c7;
+}
+
+.open-ecosystem-card strong {
+  color: #fff8e6;
+  font-size: 18px;
+}
+
+.open-ecosystem-card p {
+  margin: 0;
+  color: rgba(249, 241, 220, 0.58);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.open-ecosystem-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 221, 151, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(214, 181, 109, 0.08), rgba(255, 255, 255, 0.035)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.open-ecosystem-cta span {
+  color: rgba(255, 248, 230, 0.76);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.open-ecosystem-cta button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 221, 151, 0.42);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #d6b56d, #9f722c);
+  color: #160f06;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .agent-panel {
@@ -1641,6 +1789,7 @@ onBeforeUnmount(() => {
   }
 
   .capability-band,
+  .open-ecosystem-grid,
   .project-grid,
   .agent-panel {
     grid-template-columns: 1fr;
@@ -1682,6 +1831,11 @@ onBeforeUnmount(() => {
 
   .agent-primary {
     min-height: 330px;
+  }
+
+  .open-ecosystem-cta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

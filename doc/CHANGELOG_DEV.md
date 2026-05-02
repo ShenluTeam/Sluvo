@@ -1,5 +1,19 @@
 # Sluvo Development Changelog
 
+## 2026-05-03
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Expanded the public and logged-in homepage copy around the future open canvas, Agent team, Skill, and community sharing vision.
+- Updated the logged-in workbench banner, prompt guidance, quick skill chips, Agent capability copy, and added an open ecosystem goal module.
+- Kept the approved hero eyebrow and logged-in creator title unchanged.
+
+Verification:
+- `npm run build`
+
 ## 2026-05-02
 
 Changed files:
