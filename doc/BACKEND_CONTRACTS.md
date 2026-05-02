@@ -71,6 +71,8 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | Create edge | POST | `/api/sluvo/canvases/{canvas_id}/edges` |
 | Patch edge | PATCH | `/api/sluvo/canvases/{canvas_id}/edges/{edge_id}` |
 | Batch save canvas | POST | `/api/sluvo/canvases/{canvas_id}/batch` |
+| Upload canvas asset | POST | `/api/sluvo/canvases/{canvas_id}/assets/upload` |
+| Upload canvas asset as base64 | POST | `/api/sluvo/canvases/{canvas_id}/assets/upload/base64` |
 | List/add project members | GET/POST | `/api/sluvo/projects/{project_id}/members` |
 | Patch/remove project member | PATCH/DELETE | `/api/sluvo/projects/{project_id}/members/{user_id}` |
 | Create canvas Agent session | POST | `/api/sluvo/projects/{project_id}/agent/sessions` |
@@ -85,6 +87,7 @@ Frontend write mapping:
 - Home prompt creation stores the prompt in a `note` canvas node with `data.prompt` and `data.body`.
 - Direct canvas cards map to supported backend node types: text/note, image, video, audio, upload, generation, and group.
 - The frontend writes a compatibility `snapshot` on every batch save, but structured node and edge rows remain the primary store.
+- Upload nodes persist media through `SluvoCanvasAsset` and existing `storage_object`; `blob:` preview URLs are never valid backend truth.
 - Agent endpoints exist in the contract but are not called by the current frontend milestone.
 
 ## 5. Legacy Project Workspace APIs

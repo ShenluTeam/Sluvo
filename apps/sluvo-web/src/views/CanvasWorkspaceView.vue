@@ -139,6 +139,10 @@
                   <span :style="{ width: `${node.upload.progress}%` }" />
                 </div>
               </div>
+              <div v-else-if="node.upload?.status === 'error'" class="uploaded-asset__state uploaded-asset__state--error">
+                <strong>{{ node.upload.message || '上传失败' }}</strong>
+                <button type="button" @click.stop="retryUploadedNode(node.id)">重试</button>
+              </div>
               <div v-else-if="node.upload?.status === 'success' && node.media?.kind === 'image'" class="uploaded-asset__preview">
                 <img :src="node.media.url" :alt="node.media.name" draggable="false" />
               </div>
@@ -485,7 +489,7 @@ import {
   fetchTask,
   submitCreativeImage
 } from '../api/creativeApi'
-import { fetchSluvoProjectCanvas, saveSluvoCanvasBatch, SluvoRevisionConflictError } from '../api/sluvoApi'
+import { fetchSluvoProjectCanvas, saveSluvoCanvasBatch, SluvoRevisionConflictError, uploadSluvoCanvasAsset } from '../api/sluvoApi'
 import { useCanvasStore } from '../stores/canvasStore'
 import { useProjectStore } from '../stores/projectStore'
 
@@ -593,6 +597,7 @@ let frameResizeObserver = null
 let uploadTimer = null
 let autoSaveTimer = null
 const imageGenerationTimers = new Map()
+const uploadFileMap = new Map()
 let undoShortcutLocked = false
 let lastUndoShortcutAt = 0
 const nodes = ref([])
@@ -923,6 +928,7 @@ onBeforeUnmount(() => {
   frameResizeObserver?.disconnect()
   window.clearTimeout(autoSaveTimer)
   window.clearInterval(uploadTimer)
+  clearLocalPreviewUrls()
   clearImageGenerationTimers()
   resetHoverEffects()
 })
@@ -1125,6 +1131,7 @@ function buildCanvasSavePlan() {
 function serializeDirectNodeForSave(node, index = 0) {
   const size = getDirectNodeSize(node.type)
   const clientId = node.clientId || node.id
+  const media = sanitizeMediaForPersistence(node.media)
   const payload = {
     nodeType: mapDirectTypeToBackendType(node.type),
     title: node.title || nodeMeta[node.type]?.title || '节点',
@@ -1141,7 +1148,7 @@ function serializeDirectNodeForSave(node, index = 0) {
       prompt: node.prompt || '',
       body: node.prompt || '',
       promptPlaceholder: node.promptPlaceholder || '',
-      media: node.media || null,
+      media,
       upload: node.upload || null,
       imageModelId: node.imageModelId || '',
       aspectRatio: node.aspectRatio || '',
@@ -1159,6 +1166,19 @@ function serializeDirectNodeForSave(node, index = 0) {
     payload.expectedRevision = nodeRevisionMap.value[node.id]
   }
   return payload
+}
+
+function sanitizeMediaForPersistence(media) {
+  if (!media) return null
+  if (media.isLocalPreview || String(media.url || '').startsWith('blob:')) {
+    return {
+      ...media,
+      url: media.assetId ? media.url : '',
+      isLocalPreview: false,
+      localPreviewDropped: true
+    }
+  }
+  return media
 }
 
 function serializeVueNodeForSave(node, index = 0) {
@@ -1289,7 +1309,10 @@ function buildCanvasSnapshot() {
     version: 1,
     savedAt: new Date().toISOString(),
     viewport: getViewport(),
-    directNodes: cloneCanvasValue(directNodes.value),
+    directNodes: cloneCanvasValue(directNodes.value).map((node) => ({
+      ...node,
+      media: sanitizeMediaForPersistence(node.media)
+    })),
     directEdges: cloneCanvasValue(directEdges.value),
     nodes: cloneCanvasValue(nodes.value),
     edges: cloneCanvasValue(edges.value)
@@ -2173,6 +2196,14 @@ function handleUploadInputChange(event) {
     showToast('请选择图片、视频或音频文件')
     return
   }
+  if (file.size > 20 * 1024 * 1024) {
+    showToast('上传文件不能超过 20MB')
+    return
+  }
+  if (!activeCanvas.value?.id) {
+    showToast('画布尚未加载完成，请稍后重试')
+    return
+  }
 
   const url = URL.createObjectURL(file)
   const media = {
@@ -2180,18 +2211,10 @@ function handleUploadInputChange(event) {
     url,
     name: file.name,
     mime: file.type,
-    width: 1459,
-    height: 2117
-  }
-
-  if (kind === 'image') {
-    readImageDimensions(url).then((dimensions) => {
-      if (dimensions) updateUploadedNodeMedia(url, dimensions)
-    })
-  } else if (kind === 'video') {
-    readVideoDimensions(url).then((dimensions) => {
-      if (dimensions) updateUploadedNodeMedia(url, dimensions)
-    })
+    fileSize: file.size,
+    width: kind === 'audio' ? null : 1459,
+    height: kind === 'audio' ? null : 2117,
+    isLocalPreview: true
   }
 
   rememberHistory()
@@ -2201,6 +2224,7 @@ function handleUploadInputChange(event) {
   let nodeId = existingId
 
   if (existingId) {
+    revokeLocalPreviewForNode(existingId)
     directNodes.value = directNodes.value.map((node) =>
       node.id === existingId
         ? {
@@ -2208,7 +2232,7 @@ function handleUploadInputChange(event) {
             title: getUploadedAssetTitle(kind),
             icon: getUploadedAssetIcon(kind),
             media,
-            upload: { status: 'uploading', progress: 8 }
+            upload: { status: 'uploading', progress: 8, message: '正在准备上传' }
           }
         : node
     )
@@ -2218,18 +2242,19 @@ function handleUploadInputChange(event) {
       title: getUploadedAssetTitle(kind),
       icon: getUploadedAssetIcon(kind),
       media,
-      upload: { status: 'uploading', progress: 8 }
+      upload: { status: 'uploading', progress: 8, message: '正在准备上传' }
     })
     nodeId = node.id
   }
 
+  uploadFileMap.set(nodeId, file)
   selectedDirectNodeIds.value = [nodeId]
   activeDirectNodeId.value = nodeId
   focusedDirectNodeId.value = nodeId
   lastTouchedDirectNodeId.value = nodeId
   pendingUploadFlowPosition.value = null
   replacingUploadNodeId.value = ''
-  simulateUploadProgress(nodeId)
+  uploadFileForNode(nodeId, file, kind, url)
 }
 
 function getUploadKind(file) {
@@ -2257,34 +2282,108 @@ function getUploadedAssetIcon(kind) {
   return icons[kind] || '▧'
 }
 
-function simulateUploadProgress(nodeId) {
-  window.clearInterval(uploadTimer)
-  uploadTimer = window.setInterval(() => {
-    const node = directNodes.value.find((item) => item.id === nodeId)
-    if (!node) {
-      window.clearInterval(uploadTimer)
-      return
-    }
+async function uploadFileForNode(nodeId, file, kind, localUrl) {
+  try {
+    const metadata = await readUploadMetadata(kind, localUrl)
+    if (metadata) updateUploadedNodeMedia(localUrl, metadata)
+    updateDirectNodeUpload(nodeId, {
+      status: 'uploading',
+      progress: 18,
+      message: file.size <= 5 * 1024 * 1024 ? '正在读取文件' : '正在上传到 OSS'
+    })
+    const response = await uploadSluvoCanvasAsset(activeCanvas.value.id, file, {
+      mediaType: kind,
+      nodeId: nodeRevisionMap.value[nodeId] ? nodeId : '',
+      width: metadata?.width,
+      height: metadata?.height,
+      durationSeconds: metadata?.durationSeconds,
+      metadata: {
+        localNodeId: nodeId
+      },
+      onProgress: (progress) => {
+        updateDirectNodeUpload(nodeId, {
+          status: 'uploading',
+          progress,
+          message: '正在上传到 OSS'
+        })
+      }
+    })
+    completeUploadedNode(nodeId, response, file, kind, localUrl, metadata)
+  } catch (error) {
+    updateDirectNodeUpload(nodeId, {
+      status: 'error',
+      progress: 0,
+      message: error instanceof Error ? error.message : '上传失败，请重试'
+    })
+    showToast(error instanceof Error ? error.message : '上传失败，请重试')
+  }
+}
 
-    const progress = Math.min((node.upload?.progress || 0) + 14, 100)
-    directNodes.value = directNodes.value.map((item) =>
-      item.id === nodeId
-        ? {
-            ...item,
-            upload: {
-              ...item.upload,
-              status: progress >= 100 ? 'success' : 'uploading',
-              progress
-            }
+function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata = {}) {
+  const asset = response?.asset || {}
+  const nextUrl = response?.fileUrl || asset.url
+  if (!nextUrl) {
+    throw new Error('上传接口未返回文件地址')
+  }
+  directNodes.value = directNodes.value.map((node) =>
+    node.id === nodeId
+      ? {
+          ...node,
+          media: {
+            kind,
+            url: nextUrl,
+            thumbnailUrl: response?.thumbnailUrl || asset.thumbnailUrl || '',
+            name: file.name,
+            mime: file.type,
+            fileSize: file.size,
+            width: asset.width || metadata?.width || node.media?.width || null,
+            height: asset.height || metadata?.height || node.media?.height || null,
+            durationSeconds: asset.durationSeconds || metadata?.durationSeconds || null,
+            assetId: asset.id || '',
+            storageObjectId: response?.storageObjectId || asset.storageObjectId || '',
+            storageObjectKey: response?.storageObjectKey || asset.metadata?.storageObjectKey || '',
+            isLocalPreview: false
+          },
+          upload: {
+            status: 'success',
+            progress: 100,
+            message: '上传成功'
           }
-        : item
-    )
+        }
+      : node
+  )
+  if (localUrl?.startsWith('blob:')) URL.revokeObjectURL(localUrl)
+  showToast('上传成功')
+  scheduleCanvasSave(120)
+}
 
-    if (progress >= 100) {
-      window.clearInterval(uploadTimer)
-      showToast('上传成功')
-    }
-  }, 160)
+function retryUploadedNode(nodeId) {
+  const file = uploadFileMap.get(nodeId)
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!file || !node?.media?.url) {
+    showToast('当前会话无法重试，请重新选择文件')
+    return
+  }
+  updateDirectNodeUpload(nodeId, {
+    status: 'uploading',
+    progress: 8,
+    message: '正在重新上传'
+  })
+  uploadFileForNode(nodeId, file, node.media.kind || getUploadKind(file), node.media.url)
+}
+
+function updateDirectNodeUpload(nodeId, upload) {
+  directNodes.value = directNodes.value.map((node) =>
+    node.id === nodeId
+      ? {
+          ...node,
+          upload: {
+            ...(node.upload || {}),
+            ...upload
+          }
+        }
+      : node
+  )
 }
 
 function readImageDimensions(url) {
@@ -2299,10 +2398,34 @@ function readImageDimensions(url) {
 function readVideoDimensions(url) {
   return new Promise((resolve) => {
     const video = document.createElement('video')
-    video.onloadedmetadata = () => resolve({ width: video.videoWidth, height: video.videoHeight })
+    video.onloadedmetadata = () =>
+      resolve({
+        width: video.videoWidth,
+        height: video.videoHeight,
+        durationSeconds: Number.isFinite(video.duration) ? video.duration : null
+      })
     video.onerror = () => resolve(null)
     video.src = url
   })
+}
+
+function readAudioMetadata(url) {
+  return new Promise((resolve) => {
+    const audio = document.createElement('audio')
+    audio.onloadedmetadata = () =>
+      resolve({
+        durationSeconds: Number.isFinite(audio.duration) ? audio.duration : null
+      })
+    audio.onerror = () => resolve(null)
+    audio.src = url
+  })
+}
+
+function readUploadMetadata(kind, url) {
+  if (kind === 'image') return readImageDimensions(url)
+  if (kind === 'video') return readVideoDimensions(url)
+  if (kind === 'audio') return readAudioMetadata(url)
+  return Promise.resolve(null)
 }
 
 function updateUploadedNodeMedia(url, dimensions) {
@@ -2324,6 +2447,20 @@ function getUploadedAssetDimensions(node) {
   const width = node.media?.width || 1459
   const height = node.media?.height || 2117
   return `${width} × ${height}`
+}
+
+function revokeLocalPreviewForNode(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const url = node?.media?.isLocalPreview ? node.media.url : ''
+  if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
+function clearLocalPreviewUrls() {
+  directNodes.value.forEach((node) => {
+    if (node.media?.isLocalPreview && node.media.url?.startsWith('blob:')) {
+      URL.revokeObjectURL(node.media.url)
+    }
+  })
 }
 
 function openLibraryPicker() {
@@ -3144,6 +3281,8 @@ function deleteDirectNodesByIds(ids) {
   directNodes.value = nextDirectNodes
   directEdges.value = directEdges.value.filter((edge) => !idSet.has(edge.sourceId) && !idSet.has(edge.targetId))
   idSet.forEach((id) => {
+    revokeLocalPreviewForNode(id)
+    uploadFileMap.delete(id)
     directNodeElements.delete(id)
     clearImageGenerationTimer(id)
   })

@@ -1,4 +1,4 @@
-import { apiFetch, ApiError } from './client'
+import { apiFetch, ApiError, buildApiUrl } from './client'
 
 export class SluvoRevisionConflictError extends ApiError {
   constructor(message, payload = null) {
@@ -61,4 +61,93 @@ export async function saveSluvoCanvasBatch(canvasId, payload) {
   } catch (error) {
     wrapSluvoError(error)
   }
+}
+
+export function uploadSluvoCanvasAsset(canvasId, file, options = {}) {
+  const threshold = options.base64Threshold || 5 * 1024 * 1024
+  if (file.size <= threshold) {
+    return uploadSluvoCanvasAssetBase64(canvasId, file, options)
+  }
+  return uploadSluvoCanvasAssetMultipart(canvasId, file, options)
+}
+
+async function uploadSluvoCanvasAssetBase64(canvasId, file, options = {}) {
+  options.onProgress?.(18)
+  const dataBase64 = await readFileAsDataUrl(file)
+  options.onProgress?.(42)
+  const payload = await apiFetch(`/api/sluvo/canvases/${canvasId}/assets/upload/base64`, {
+    method: 'POST',
+    body: JSON.stringify({
+      filename: file.name || 'upload.bin',
+      contentType: file.type || 'application/octet-stream',
+      dataBase64,
+      mediaType: options.mediaType,
+      nodeId: options.nodeId || null,
+      width: options.width || null,
+      height: options.height || null,
+      durationSeconds: options.durationSeconds || null,
+      metadata: options.metadata || {}
+    }),
+    timeout: 60000
+  })
+  options.onProgress?.(100)
+  return payload
+}
+
+function uploadSluvoCanvasAssetMultipart(canvasId, file, options = {}) {
+  return new Promise((resolve, reject) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (options.mediaType) form.append('mediaType', options.mediaType)
+    if (options.nodeId) form.append('nodeId', options.nodeId)
+    if (options.width) form.append('width', String(options.width))
+    if (options.height) form.append('height', String(options.height))
+    if (options.durationSeconds) form.append('durationSeconds', String(options.durationSeconds))
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', buildApiUrl(`/api/sluvo/canvases/${canvasId}/assets/upload`))
+    const token = window.localStorage.getItem('shenlu_token') || ''
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return
+      const progress = Math.max(8, Math.min(96, Math.round((event.loaded / event.total) * 96)))
+      options.onProgress?.(progress)
+    }
+    xhr.onload = () => {
+      const payload = parseUploadResponse(xhr.responseText)
+      if (xhr.status >= 200 && xhr.status < 300) {
+        options.onProgress?.(100)
+        resolve(payload)
+        return
+      }
+      reject(new ApiError(extractUploadError(payload, xhr.status), { status: xhr.status, payload }))
+    }
+    xhr.onerror = () => reject(new ApiError('上传失败，请检查网络后重试', { status: 0 }))
+    xhr.onabort = () => reject(new ApiError('上传已取消', { status: 0 }))
+    xhr.send(form)
+  })
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new ApiError('文件读取失败，请重试', { status: 0 }))
+    reader.readAsDataURL(file)
+  })
+}
+
+function parseUploadResponse(text) {
+  if (!text) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    return { message: text }
+  }
+}
+
+function extractUploadError(payload, status) {
+  const detail = payload?.detail || payload?.message || payload?.error
+  if (Array.isArray(detail)) return detail.map((item) => item?.msg || item?.message || String(item)).join('; ')
+  return detail || `上传失败：${status}`
 }
