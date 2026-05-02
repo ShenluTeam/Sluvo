@@ -1,149 +1,137 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { fetchProjects, fetchProjectWorkspace } from '../api/projectWorkspaceApi'
-import { availableNodeTemplates, getNodeTemplate } from '../mock/projects'
-
-const defaultInspectorDetails = {
-  source: '画布内草稿',
-  references: '尚未绑定引用',
-  models: '尚未配置',
-  history: '本地创建'
-}
-
-function createNodeData(type, index) {
-  const template = getNodeTemplate(type)
-
-  return {
-    nodeType: type,
-    title: `${template.label} ${index}`,
-    body: '新建画布节点。可以在右侧检查器中编辑提示词、来源和引用。',
-    status: 'draft',
-    icon: template.icon,
-    kindLabel: template.label,
-    accent: template.accent,
-    tags: ['新建'],
-    metrics: [],
-    portLabels: {
-      in: '输入',
-      out: '输出'
-    },
-    details: {
-      ...defaultInspectorDetails
-    }
-  }
-}
+import {
+  createSluvoProject,
+  fetchSluvoProjectCanvas,
+  fetchSluvoProjects,
+  updateSluvoProject
+} from '../api/sluvoApi'
 
 export const useProjectStore = defineStore('project', () => {
   const projects = ref([])
   const activeProject = ref(null)
-  const workspace = ref(null)
+  const activeCanvas = ref(null)
+  const activeNodes = ref([])
+  const activeEdges = ref([])
   const loadingProjects = ref(false)
   const loadingWorkspace = ref(false)
+  const creatingProject = ref(false)
   const error = ref('')
 
-  const hasSelection = computed(() => workspace.value?.canvas?.nodes?.length > 0)
+  const hasProjects = computed(() => projects.value.length > 0)
 
   async function loadProjects() {
     loadingProjects.value = true
     error.value = ''
-
     try {
-      projects.value = await fetchProjects()
+      projects.value = await fetchSluvoProjects()
+      return projects.value
     } catch (err) {
       error.value = err instanceof Error ? err.message : '项目加载失败'
+      throw err
     } finally {
       loadingProjects.value = false
+    }
+  }
+
+  async function createProjectFromPrompt(promptText = '') {
+    creatingProject.value = true
+    error.value = ''
+    const prompt = promptText.trim()
+    const title = buildPromptProjectTitle(prompt)
+
+    try {
+      const payload = await createSluvoProject({
+        title,
+        description: prompt || null,
+        visibility: 'project_members',
+        settings: {
+          source: 'sluvo_home_prompt',
+          initialPrompt: prompt
+        }
+      })
+      if (payload?.project) {
+        activeProject.value = payload.project
+        projects.value = upsertProject(projects.value, payload.project)
+      }
+      if (payload?.canvas) activeCanvas.value = payload.canvas
+      return payload
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '项目创建失败'
+      throw err
+    } finally {
+      creatingProject.value = false
     }
   }
 
   async function openProject(projectId) {
     loadingWorkspace.value = true
     error.value = ''
-
     try {
-      const nextWorkspace = await fetchProjectWorkspace(projectId)
-      activeProject.value = nextWorkspace.project
-      workspace.value = nextWorkspace
+      const workspace = await fetchSluvoProjectCanvas(projectId)
+      setWorkspace(workspace)
+      return workspace
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '工作区加载失败'
+      error.value = err instanceof Error ? err.message : '画布加载失败'
+      throw err
     } finally {
       loadingWorkspace.value = false
     }
   }
 
-  function setNodes(nodes) {
-    if (!workspace.value) return
-    workspace.value.canvas.nodes = nodes
-  }
-
-  function setEdges(edges) {
-    if (!workspace.value) return
-    workspace.value.canvas.edges = edges
-  }
-
-  function addNode(type, position) {
-    if (!workspace.value) return null
-
-    const index = workspace.value.canvas.nodes.filter((node) => node.data.nodeType === type).length + 1
-    const id = `${type}-${Date.now()}`
-    const node = {
-      id,
-      type: 'workflowNode',
-      position,
-      data: createNodeData(type, index)
+  async function renameActiveProject(title) {
+    if (!activeProject.value?.id) return null
+    const payload = await updateSluvoProject(activeProject.value.id, { title })
+    if (payload?.project) {
+      activeProject.value = payload.project
+      projects.value = upsertProject(projects.value, payload.project)
     }
-
-    workspace.value.canvas.nodes = [...workspace.value.canvas.nodes, node]
-    return node
+    return payload?.project || null
   }
 
-  function deleteNodes(nodeIds) {
-    if (!workspace.value || nodeIds.length === 0) return
-
-    const nodeIdSet = new Set(nodeIds)
-    workspace.value.canvas.nodes = workspace.value.canvas.nodes.filter((node) => !nodeIdSet.has(node.id))
-    workspace.value.canvas.edges = workspace.value.canvas.edges.filter(
-      (edge) => !nodeIdSet.has(edge.source) && !nodeIdSet.has(edge.target)
-    )
+  function setWorkspace(workspace) {
+    activeProject.value = workspace?.project || null
+    activeCanvas.value = workspace?.canvas || null
+    activeNodes.value = Array.isArray(workspace?.nodes) ? workspace.nodes : []
+    activeEdges.value = Array.isArray(workspace?.edges) ? workspace.edges : []
+    if (workspace?.project) {
+      projects.value = upsertProject(projects.value, workspace.project)
+    }
   }
 
-  function updateNodeContent(nodeId, patch) {
-    if (!workspace.value) return
-
-    workspace.value.canvas.nodes = workspace.value.canvas.nodes.map((node) => {
-      if (node.id !== nodeId) {
-        return node
-      }
-
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          ...patch,
-          details: {
-            ...node.data.details,
-            ...(patch.details || {})
-          }
-        }
-      }
-    })
+  function clearWorkspace() {
+    activeProject.value = null
+    activeCanvas.value = null
+    activeNodes.value = []
+    activeEdges.value = []
   }
 
   return {
     projects,
     activeProject,
-    workspace,
+    activeCanvas,
+    activeNodes,
+    activeEdges,
     loadingProjects,
     loadingWorkspace,
+    creatingProject,
     error,
-    hasSelection,
-    availableNodeTemplates,
+    hasProjects,
     loadProjects,
+    createProjectFromPrompt,
     openProject,
-    setNodes,
-    setEdges,
-    addNode,
-    deleteNodes,
-    updateNodeContent
+    renameActiveProject,
+    setWorkspace,
+    clearWorkspace
   }
 })
+
+function buildPromptProjectTitle(prompt) {
+  if (!prompt) return '未命名画布'
+  return prompt.replace(/\s+/g, ' ').slice(0, 24)
+}
+
+function upsertProject(items, project) {
+  const rest = items.filter((item) => item.id !== project.id)
+  return [project, ...rest]
+}

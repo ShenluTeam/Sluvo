@@ -18,6 +18,8 @@ E:\ljtpc\work\AIdrama\backend
 
 Do not create a duplicate backend inside Sluvo for MVP.
 
+2026-05-02 update: Sluvo now has its own backend tables and `/api/sluvo/*` route surface inside the existing AIdrama backend. It still reuses Shenlu `User`, `Team`, `TeamMemberLink`, token auth, and infrastructure, but Sluvo project/canvas truth no longer uses `Script`, `CanvasWorkspace`, `CanvasNode`, or `CanvasEdge` as the primary data model.
+
 ## 2. Contract Rule
 
 Sluvo frontend should treat these APIs as backend contracts.
@@ -51,9 +53,43 @@ Login uses the existing auth endpoint:
 | --- | --- | --- |
 | Email/password login | POST | `/api/auth/login` |
 
-## 4. Project Workspace APIs
+## 4. Sluvo Standalone APIs
 
-These are the recommended P0 Sluvo browser contracts. See `doc/API_SHENLU_TOP.md` for all production API paths and routing caveats.
+These are the primary browser contracts for the standalone Sluvo product line.
+
+| Capability | Method | Path |
+| --- | --- | --- |
+| Create Sluvo project | POST | `/api/sluvo/projects` |
+| List Sluvo projects | GET | `/api/sluvo/projects` |
+| Read Sluvo project | GET | `/api/sluvo/projects/{project_id}` |
+| Patch Sluvo project | PATCH | `/api/sluvo/projects/{project_id}` |
+| Soft-delete Sluvo project | DELETE | `/api/sluvo/projects/{project_id}` |
+| Read main canvas | GET | `/api/sluvo/projects/{project_id}/canvas` |
+| Patch canvas snapshot/viewport | PATCH | `/api/sluvo/canvases/{canvas_id}` |
+| Create node | POST | `/api/sluvo/canvases/{canvas_id}/nodes` |
+| Patch node | PATCH | `/api/sluvo/canvases/{canvas_id}/nodes/{node_id}` |
+| Create edge | POST | `/api/sluvo/canvases/{canvas_id}/edges` |
+| Patch edge | PATCH | `/api/sluvo/canvases/{canvas_id}/edges/{edge_id}` |
+| Batch save canvas | POST | `/api/sluvo/canvases/{canvas_id}/batch` |
+| List/add project members | GET/POST | `/api/sluvo/projects/{project_id}/members` |
+| Patch/remove project member | PATCH/DELETE | `/api/sluvo/projects/{project_id}/members/{user_id}` |
+| Create canvas Agent session | POST | `/api/sluvo/projects/{project_id}/agent/sessions` |
+| Read canvas Agent session | GET | `/api/sluvo/agent/sessions/{session_id}` |
+| Send Agent message/proposed action | POST | `/api/sluvo/agent/sessions/{session_id}/messages` |
+| Approve Agent action | POST | `/api/sluvo/agent/actions/{action_id}/approve` |
+| Cancel Agent action | POST | `/api/sluvo/agent/actions/{action_id}/cancel` |
+
+All IDs are encoded with the existing Shenlu `encode_id` scheme. Canvas, node, and edge updates support `expectedRevision`; stale writes return `409`.
+
+Frontend write mapping:
+- Home prompt creation stores the prompt in a `note` canvas node with `data.prompt` and `data.body`.
+- Direct canvas cards map to supported backend node types: text/note, image, video, audio, upload, generation, and group.
+- The frontend writes a compatibility `snapshot` on every batch save, but structured node and edge rows remain the primary store.
+- Agent endpoints exist in the contract but are not called by the current frontend milestone.
+
+## 5. Legacy Project Workspace APIs
+
+These routes remain available for compatibility with earlier Sluvo planning and Shenlu project workspace experiments, but they are no longer the primary Sluvo standalone contract.
 
 | Capability | Method | Path |
 | --- | --- | --- |
@@ -71,28 +107,27 @@ These are the recommended P0 Sluvo browser contracts. See `doc/API_SHENLU_TOP.md
 | Hide canvas projection node | POST | `/api/canvas/nodes/{node_id}/hide` |
 | Restore canvas projection node | POST | `/api/canvas/nodes/{node_id}/restore` |
 
-## 5. Domain Mapping
+## 6. Domain Mapping
 
-Sluvo product terms map to existing backend models.
+Sluvo standalone product terms map to new `sluvo_*` backend models.
 
 | Sluvo Term | Backend Truth |
 | --- | --- |
-| Project | `Script` |
-| Episode / script section | `Episode` |
-| Asset | `SharedResource` |
-| Asset version | `SharedResourceVersion` |
-| Storyboard shot | `Panel` |
-| Generation unit | `GenerationUnit` |
-| Generation input | `GenerationUnitInput` |
-| Media output | `MediaAsset` / `GenerationRecord` |
-| Task state | `TaskJob` |
-| Canvas workspace | `CanvasWorkspace` |
-| Canvas node | `CanvasNode` |
-| Canvas edge | `CanvasEdge` |
+| Project | `SluvoProject` |
+| Project member | `SluvoProjectMember` |
+| Canvas | `SluvoCanvas` |
+| Canvas node | `SluvoCanvasNode` |
+| Canvas edge | `SluvoCanvasEdge` |
+| Canvas asset | `SluvoCanvasAsset` |
+| Agent session | `SluvoAgentSession` |
+| Agent event | `SluvoAgentEvent` |
+| Agent action | `SluvoAgentAction` |
+| Canvas mutation/audit log | `SluvoCanvasMutation` |
+| User/account/team | existing `User`, `Team`, `TeamMemberLink` |
 
-## 6. Data Ownership
+## 7. Data Ownership
 
-Canvas layout may store:
+Canvas layout stores:
 
 - position
 - size
@@ -100,17 +135,18 @@ Canvas layout may store:
 - collapsed state
 - selected view metadata
 - ports and display hints
+- node data/config/style
+- snapshot JSON for recovery and frontend compatibility
 
-Canvas layout must not become the only truth for:
+Canvas layout must not depend on old Shenlu project truth for:
 
-- script text
-- asset list
-- storyboard rows
-- generated media
-- task state
-- billing state
+- `Script`
+- `Episode`
+- `Panel`
+- `SharedResource`
+- legacy `CanvasWorkspace/CanvasNode/CanvasEdge`
 
-## 7. New API Requests
+## 8. New API Requests
 
 If Sluvo needs a backend capability that does not exist:
 

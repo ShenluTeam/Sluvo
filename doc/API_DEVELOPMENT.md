@@ -178,9 +178,31 @@ It calls `POST /api/auth/login` and stores the returned `token` as `localStorage
 
 The existing backend should be the first source of truth.
 
+2026-05-02 update: standalone Sluvo project/canvas work should use the dedicated `/api/sluvo/*` API surface. Older `/api/projects/*` workspace APIs are compatibility references for Shenlu project workspace experiments, not the primary standalone Sluvo contract.
+
+Standalone Sluvo:
+
+| Capability | API |
+| --- | --- |
+| List/create Sluvo projects | `GET/POST /api/sluvo/projects` |
+| Read/update/delete Sluvo project | `GET/PATCH/DELETE /api/sluvo/projects/{project_id}` |
+| Read main canvas | `GET /api/sluvo/projects/{project_id}/canvas` |
+| Patch canvas snapshot/viewport | `PATCH /api/sluvo/canvases/{canvas_id}` |
+| Create/update canvas nodes | `POST /api/sluvo/canvases/{canvas_id}/nodes`, `PATCH /api/sluvo/canvases/{canvas_id}/nodes/{node_id}` |
+| Create/update canvas edges | `POST /api/sluvo/canvases/{canvas_id}/edges`, `PATCH /api/sluvo/canvases/{canvas_id}/edges/{edge_id}` |
+| Batch save canvas | `POST /api/sluvo/canvases/{canvas_id}/batch` |
+| Manage project members | `/api/sluvo/projects/{project_id}/members` |
+| Canvas Agent persistence | `/api/sluvo/projects/{project_id}/agent/sessions`, `/api/sluvo/agent/*` |
+
+Frontend implementation note:
+- `src/api/sluvoApi.js` wraps the standalone project/canvas endpoints.
+- The logged-in home creates projects through `POST /api/sluvo/projects`; when the user enters a prompt, Sluvo writes it as an initial `note` node through `POST /api/sluvo/canvases/{canvas_id}/batch`.
+- Canvas pages hydrate from `GET /api/sluvo/projects/{project_id}/canvas` and autosave node, edge, viewport, and snapshot state through the batch endpoint.
+- `409` responses are treated as revision conflicts; the canvas refreshes instead of overwriting newer server state.
+
 For the complete `api.shenlu.top` inventory and Sluvo suitability notes, read `doc/API_SHENLU_TOP.md`.
 
-Project workspace:
+Legacy project workspace:
 
 | Capability | API |
 | --- | --- |

@@ -246,6 +246,30 @@ button {
   color: #e5e5e5;
 }
 
+.top-save-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(165, 134, 76, 0.18);
+  border-radius: 8px;
+  background: rgba(30, 29, 25, 0.72);
+  color: rgba(248, 248, 248, 0.68);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.top-save-status.is-dirty,
+.top-save-status.is-saving {
+  color: #f5d36d;
+}
+
+.top-save-status.is-conflict,
+.top-save-status.is-error {
+  color: #ff9f9a;
+}
+
 .top-icon-button--notice::after {
   position: absolute;
   top: 4px;
