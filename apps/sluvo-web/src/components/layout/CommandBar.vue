@@ -31,7 +31,8 @@
 
     <div class="libtv-topbar__right">
       <button class="top-pill top-pill--skills" type="button">Sluvo Skills</button>
-      <button class="top-icon-button" type="button" aria-label="保存">
+      <span class="top-save-status" :class="`is-${saveStatus}`">{{ saveStatusLabel }}</span>
+      <button class="top-icon-button" type="button" aria-label="保存" @click="$emit('save')">
         <Save :size="20" />
       </button>
       <button class="top-icon-button" type="button" aria-label="分享">
@@ -136,10 +137,14 @@ const props = defineProps({
   title: {
     type: String,
     default: '未命名'
+  },
+  saveStatus: {
+    type: String,
+    default: 'idle'
   }
 })
 
-const emit = defineEmits(['go-home', 'update:title', 'logout'])
+const emit = defineEmits(['go-home', 'update:title', 'logout', 'save'])
 const editingTitle = ref(false)
 const draftTitle = ref(props.title)
 const titleInput = ref(null)
@@ -165,6 +170,18 @@ const libtvPointsLabel = computed(() => String(account.libtvPoints ?? 0))
 const membershipLabel = computed(() => account.membership || '未开通会员')
 const benefitLabel = computed(() => account.benefitText || (account.membership ? '会员权益生效中' : '暂无会员权益'))
 const storageLabel = computed(() => `${account.storageUsedGb || 0}G /${account.storageTotalGb || 3}G`)
+const saveStatusLabel = computed(() => {
+  const labels = {
+    idle: '已同步',
+    dirty: '待保存',
+    saving: '保存中',
+    saved: '已保存',
+    conflict: '有冲突',
+    error: '保存失败',
+    loading: '加载中'
+  }
+  return labels[props.saveStatus] || labels.idle
+})
 
 watch(
   () => props.title,

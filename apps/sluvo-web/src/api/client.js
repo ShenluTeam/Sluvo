@@ -1,6 +1,15 @@
 const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
 const API_TIMEOUT_MS = 25000
 
+export class ApiError extends Error {
+  constructor(message, { status = 0, payload = null } = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.payload = payload
+  }
+}
+
 function buildApiUrl(path) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
   return `${API_BASE}${normalizedPath}`
@@ -56,7 +65,10 @@ export async function apiFetch(path, options = {}) {
     const message = Array.isArray(detail)
       ? detail.map((item) => item?.msg || item?.message || String(item)).join('; ')
       : detail || fallbackMessage
-    throw new Error(message)
+    throw new ApiError(message, {
+      status: response.status,
+      payload
+    })
   }
 
   return payload

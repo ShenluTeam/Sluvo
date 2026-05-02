@@ -253,7 +253,13 @@
         @change="handleUploadInputChange"
       />
 
-      <CommandBar v-model:title="projectTitle" @go-home="goHome" @logout="logoutCanvas" />
+      <CommandBar
+        v-model:title="projectTitle"
+        :save-status="saveStatus"
+        @go-home="goHome"
+        @logout="logoutCanvas"
+        @save="saveCanvasNow"
+      />
 
       <CanvasToolRail
         :can-undo="canUndo"
@@ -461,7 +467,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { ArrowUpDown, ListChecks, Minus, Music2, Plus, Upload, X } from 'lucide-vue-next'
@@ -479,7 +485,9 @@ import {
   fetchTask,
   submitCreativeImage
 } from '../api/creativeApi'
+import { fetchSluvoProjectCanvas, saveSluvoCanvasBatch, SluvoRevisionConflictError } from '../api/sluvoApi'
 import { useCanvasStore } from '../stores/canvasStore'
+import { useProjectStore } from '../stores/projectStore'
 
 
 const copy = {
@@ -569,9 +577,12 @@ const nodeMeta = {
   }
 }
 
+const route = useRoute()
 const router = useRouter()
 const canvasStore = useCanvasStore()
+const projectStore = useProjectStore()
 const projectTitle = ref(copy.untitled)
+const saveStatus = ref('idle')
 const canvasFrame = ref(null)
 const deleteKeySink = ref(null)
 const uploadInput = ref(null)
@@ -580,6 +591,7 @@ let previousDocumentKeydown = null
 let previousWindowKeydown = null
 let frameResizeObserver = null
 let uploadTimer = null
+let autoSaveTimer = null
 const imageGenerationTimers = new Map()
 let undoShortcutLocked = false
 let lastUndoShortcutAt = 0
@@ -587,6 +599,11 @@ const nodes = ref([])
 const edges = ref([])
 const directNodes = ref([])
 const directEdges = ref([])
+const activeCanvas = ref(null)
+const nodeRevisionMap = ref({})
+const edgeRevisionMap = ref({})
+const isHydratingCanvas = ref(false)
+const saveAfterHydration = ref(false)
 const selectedDirectNodeIds = ref([])
 const focusedDirectNodeId = ref('')
 const activeDirectNodeId = ref('')
@@ -815,6 +832,7 @@ watch(
       canvasActivated.value = false
     }
     syncSelectionFromNodes()
+    scheduleCanvasSave()
   },
   { deep: true }
 )
@@ -825,6 +843,7 @@ watch(
     if (nodes.value.length === 0 && directNodes.value.length === 0) {
       canvasActivated.value = false
     }
+    scheduleCanvasSave()
   },
   { deep: true }
 )
@@ -835,6 +854,25 @@ watch(
     selectedEdgeIds.value = edges.value.filter((edge) => edge.selected).map((edge) => edge.id)
   },
   { deep: true }
+)
+
+watch(
+  directEdges,
+  () => {
+    scheduleCanvasSave()
+  },
+  { deep: true }
+)
+
+watch(projectTitle, () => {
+  scheduleCanvasSave()
+})
+
+watch(
+  () => route.params.projectId,
+  () => {
+    loadProjectCanvas()
+  }
 )
 
 onMounted(() => {
@@ -859,6 +897,7 @@ onMounted(() => {
   window.addEventListener('mouseleave', resetHoverEffects)
   updateFrameSize()
   loadImageGenerationCatalog()
+  loadProjectCanvas()
   if (typeof ResizeObserver !== 'undefined' && canvasFrame.value) {
     frameResizeObserver = new ResizeObserver(updateFrameSize)
     frameResizeObserver.observe(canvasFrame.value)
@@ -882,10 +921,380 @@ onBeforeUnmount(() => {
   window.removeEventListener('mouseup', handleWindowPointerUp)
   window.removeEventListener('mouseleave', resetHoverEffects)
   frameResizeObserver?.disconnect()
+  window.clearTimeout(autoSaveTimer)
   window.clearInterval(uploadTimer)
   clearImageGenerationTimers()
   resetHoverEffects()
 })
+
+async function loadProjectCanvas() {
+  const projectId = String(route.params.projectId || '')
+  if (!projectId) return
+
+  saveStatus.value = 'loading'
+  isHydratingCanvas.value = true
+  try {
+    const workspace = await fetchSluvoProjectCanvas(projectId)
+    projectStore.setWorkspace(workspace)
+    hydrateCanvasWorkspace(workspace)
+    saveStatus.value = 'idle'
+  } catch (error) {
+    saveStatus.value = 'error'
+    showToast(error instanceof Error ? error.message : '画布加载失败')
+    if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
+  } finally {
+    nextTick(() => {
+      isHydratingCanvas.value = false
+    })
+  }
+}
+
+function hydrateCanvasWorkspace(workspace) {
+  activeCanvas.value = workspace?.canvas || null
+  projectTitle.value = getWorkspaceTitle(workspace)
+  nodeRevisionMap.value = Object.fromEntries((workspace?.nodes || []).map((node) => [node.id, node.revision || 1]))
+  edgeRevisionMap.value = Object.fromEntries((workspace?.edges || []).map((edge) => [edge.id, edge.revision || 1]))
+  nodes.value = []
+  edges.value = []
+  directNodes.value = (workspace?.nodes || []).map(mapBackendNodeToDirectNode)
+  directEdges.value = (workspace?.edges || [])
+    .map(mapBackendEdgeToDirectEdge)
+    .filter((edge) => directNodes.value.some((node) => node.id === edge.sourceId) && directNodes.value.some((node) => node.id === edge.targetId))
+  selectedDirectNodeIds.value = []
+  selectedEdgeIds.value = []
+  canvasStore.clearSelection()
+  canvasActivated.value = directNodes.value.length > 0 || directEdges.value.length > 0
+  historyStack.value = []
+  const nextViewport = workspace?.canvas?.viewport
+  if (nextViewport && Number.isFinite(Number(nextViewport.zoom))) {
+    setViewport(
+      {
+        x: Number(nextViewport.x || 0),
+        y: Number(nextViewport.y || 0),
+        zoom: Number(nextViewport.zoom || 1)
+      },
+      { duration: 0 }
+    )
+  }
+}
+
+function getWorkspaceTitle(workspace) {
+  const canvasTitle = String(workspace?.canvas?.title || '').trim()
+  if (canvasTitle && canvasTitle !== 'Main Canvas') return canvasTitle
+  return workspace?.project?.title || canvasTitle || copy.untitled
+}
+
+function mapBackendNodeToDirectNode(node) {
+  const data = node?.data || {}
+  const directType = normalizeBackendDirectType(node.nodeType, data.directType)
+  const size = getDirectNodeSize(directType)
+  return {
+    id: node.id,
+    type: directType,
+    title: node.title || data.title || (nodeMeta[directType]?.title ?? nodeMeta.prompt_note.title),
+    icon: data.icon || getDirectNodeIcon(directType),
+    x: Number(node.position?.x || 0),
+    y: Number(node.position?.y || 0),
+    width: Number(node.size?.width || size.width),
+    height: Number(node.size?.height || size.height),
+    actions: Array.isArray(data.actions) ? data.actions : getDirectNodeActions(directType),
+    prompt: data.prompt || data.body || '',
+    promptPlaceholder: data.promptPlaceholder || getDirectNodePrompt(directType),
+    media: data.media || null,
+    upload: data.upload || null,
+    imageModelId: data.imageModelId || fallbackImageModelOptions[0].id,
+    aspectRatio: data.aspectRatio || fallbackImageAspectRatioOptions[0],
+    generationStatus: data.generationStatus || node.status || 'idle',
+    generationMessage: data.generationMessage || '',
+    generationTaskId: data.generationTaskId || '',
+    generationRecordId: data.generationRecordId || '',
+    generatedImage: data.generatedImage || null,
+    clientId: data.clientId || node.id
+  }
+}
+
+function mapBackendEdgeToDirectEdge(edge) {
+  return {
+    id: edge.id,
+    sourceId: edge.sourceNodeId,
+    targetId: edge.targetNodeId,
+    sourcePortId: edge.sourcePortId || 'right',
+    targetPortId: edge.targetPortId || 'left'
+  }
+}
+
+function normalizeBackendDirectType(nodeType, directType = '') {
+  const directTypes = new Set(['prompt_note', 'image_unit', 'video_unit', 'audio_unit', 'uploaded_asset', 'script_episode', 'asset_table', 'storyboard_table', 'media_board'])
+  if (directTypes.has(directType)) return directType
+  const map = {
+    text: 'prompt_note',
+    note: 'prompt_note',
+    image: 'image_unit',
+    generation: 'image_unit',
+    video: 'video_unit',
+    audio: 'audio_unit',
+    upload: 'uploaded_asset',
+    group: 'media_board'
+  }
+  return map[nodeType] || 'prompt_note'
+}
+
+function scheduleCanvasSave(delay = 1200) {
+  if (isHydratingCanvas.value || !activeCanvas.value?.id) return
+  saveStatus.value = saveStatus.value === 'saving' ? 'saving' : 'dirty'
+  window.clearTimeout(autoSaveTimer)
+  autoSaveTimer = window.setTimeout(() => {
+    saveCanvasNow()
+  }, delay)
+}
+
+async function saveCanvasNow() {
+  if (isHydratingCanvas.value || !activeCanvas.value?.id) return
+  window.clearTimeout(autoSaveTimer)
+  const savePlan = buildCanvasSavePlan()
+  saveStatus.value = 'saving'
+  try {
+    const response = await saveSluvoCanvasBatch(activeCanvas.value.id, savePlan.payload)
+    const omittedEdges = savePlan.omittedEdges
+    isHydratingCanvas.value = true
+    hydrateCanvasWorkspace({
+      project: projectStore.activeProject,
+      ...response
+    })
+    if (omittedEdges.length > 0) {
+      directEdges.value = [...directEdges.value, ...mapOmittedEdgesAfterHydration(omittedEdges)]
+      saveAfterHydration.value = true
+    }
+    saveStatus.value = 'saved'
+    if (saveAfterHydration.value) {
+      saveAfterHydration.value = false
+      nextTick(() => {
+        isHydratingCanvas.value = false
+        scheduleCanvasSave(180)
+      })
+    } else {
+      nextTick(() => {
+        isHydratingCanvas.value = false
+      })
+    }
+  } catch (error) {
+    if (error instanceof SluvoRevisionConflictError) {
+      saveStatus.value = 'conflict'
+      showToast('画布已在其他地方更新，正在刷新')
+      await loadProjectCanvas()
+      return
+    }
+    saveStatus.value = 'error'
+    showToast(error instanceof Error ? error.message : '画布保存失败')
+  }
+}
+
+function buildCanvasSavePlan() {
+  const serializedNodes = [...directNodes.value.map(serializeDirectNodeForSave), ...nodes.value.map(serializeVueNodeForSave)]
+  const currentNodeIds = new Set(serializedNodes.map((node) => node.id).filter(Boolean))
+  const deletedNodeIds = Object.keys(nodeRevisionMap.value).filter((id) => !currentNodeIds.has(id))
+  const serializedEdges = []
+  const omittedEdges = []
+
+  for (const edge of [...directEdges.value.map(serializeDirectEdgeForSave), ...edges.value.map(serializeVueEdgeForSave)]) {
+    if (edge.sourceNodeId && edge.targetNodeId) {
+      serializedEdges.push(edge)
+    } else {
+      omittedEdges.push(edge)
+    }
+  }
+
+  const currentEdgeIds = new Set(serializedEdges.map((edge) => edge.id).filter(Boolean))
+  const deletedEdgeIds = Object.keys(edgeRevisionMap.value).filter((id) => !currentEdgeIds.has(id))
+
+  return {
+    omittedEdges,
+    payload: {
+      expectedRevision: activeCanvas.value.revision,
+      title: projectTitle.value,
+      viewport: getViewport(),
+      snapshot: buildCanvasSnapshot(),
+      nodes: serializedNodes,
+      edges: serializedEdges,
+      deletedNodeIds,
+      deletedEdgeIds
+    }
+  }
+}
+
+function serializeDirectNodeForSave(node, index = 0) {
+  const size = getDirectNodeSize(node.type)
+  const clientId = node.clientId || node.id
+  const payload = {
+    nodeType: mapDirectTypeToBackendType(node.type),
+    title: node.title || nodeMeta[node.type]?.title || '节点',
+    position: { x: Number(node.x || 0), y: Number(node.y || 0) },
+    size: { width: Number(node.width || size.width), height: Number(node.height || size.height) },
+    zIndex: index,
+    status: normalizeNodeStatus(node.generationStatus || 'draft'),
+    data: {
+      clientId,
+      directType: node.type,
+      title: node.title,
+      icon: node.icon,
+      actions: node.actions || [],
+      prompt: node.prompt || '',
+      body: node.prompt || '',
+      promptPlaceholder: node.promptPlaceholder || '',
+      media: node.media || null,
+      upload: node.upload || null,
+      imageModelId: node.imageModelId || '',
+      aspectRatio: node.aspectRatio || '',
+      generationStatus: node.generationStatus || 'idle',
+      generationMessage: node.generationMessage || '',
+      generationTaskId: node.generationTaskId || '',
+      generationRecordId: node.generationRecordId || '',
+      generatedImage: node.generatedImage || null
+    },
+    ports: { left: true, right: true },
+    style: {}
+  }
+  if (nodeRevisionMap.value[node.id]) {
+    payload.id = node.id
+    payload.expectedRevision = nodeRevisionMap.value[node.id]
+  }
+  return payload
+}
+
+function serializeVueNodeForSave(node, index = 0) {
+  const type = node.data?.nodeType || 'prompt_note'
+  const size = getWorkflowNodeSize(node)
+  const payload = {
+    nodeType: mapDirectTypeToBackendType(type),
+    title: node.data?.title || '节点',
+    position: { x: Number(node.position?.x || 0), y: Number(node.position?.y || 0) },
+    size: { width: Number(size.width), height: Number(size.height) },
+    zIndex: directNodes.value.length + index,
+    status: node.data?.status || 'draft',
+    data: {
+      ...(node.data || {}),
+      clientId: node.data?.clientId || node.id,
+      directType: type,
+      prompt: node.data?.prompt || node.data?.body || ''
+    },
+    ports: { in: true, out: true },
+    style: node.style || {}
+  }
+  if (nodeRevisionMap.value[node.id]) {
+    payload.id = node.id
+    payload.expectedRevision = nodeRevisionMap.value[node.id]
+  }
+  return payload
+}
+
+function serializeDirectEdgeForSave(edge) {
+  const sourceNodeId = getPersistedNodeId(edge.sourceId)
+  const targetNodeId = getPersistedNodeId(edge.targetId)
+  const payload = {
+    sourceNodeId,
+    targetNodeId,
+    sourcePortId: edge.sourcePortId || 'right',
+    targetPortId: edge.targetPortId || 'left',
+    edgeType: 'reference',
+    label: edge.label || '引用',
+    data: {
+      clientId: edge.clientId || edge.id,
+      sourceClientId: getNodeClientId(edge.sourceId),
+      targetClientId: getNodeClientId(edge.targetId)
+    },
+    style: {}
+  }
+  if (edgeRevisionMap.value[edge.id]) {
+    payload.id = edge.id
+    payload.expectedRevision = edgeRevisionMap.value[edge.id]
+  }
+  return payload
+}
+
+function serializeVueEdgeForSave(edge) {
+  const payload = {
+    sourceNodeId: getPersistedNodeId(edge.source),
+    targetNodeId: getPersistedNodeId(edge.target),
+    sourcePortId: edge.sourceHandle || 'out',
+    targetPortId: edge.targetHandle || 'in',
+    edgeType: edge.label === '生成' ? 'generation' : 'reference',
+    label: edge.label || '引用',
+    data: {
+      clientId: edge.data?.clientId || edge.id,
+      sourceClientId: getNodeClientId(edge.source),
+      targetClientId: getNodeClientId(edge.target)
+    },
+    style: edge.style || {}
+  }
+  if (edgeRevisionMap.value[edge.id]) {
+    payload.id = edge.id
+    payload.expectedRevision = edgeRevisionMap.value[edge.id]
+  }
+  return payload
+}
+
+function mapOmittedEdgesAfterHydration(omittedEdges) {
+  const clientToServerNodeId = new Map(directNodes.value.map((node) => [node.clientId || node.id, node.id]))
+  return omittedEdges
+    .map((edge) => {
+      const sourceId = edge.sourceNodeId || clientToServerNodeId.get(edge.data?.sourceClientId)
+      const targetId = edge.targetNodeId || clientToServerNodeId.get(edge.data?.targetClientId)
+      if (!sourceId || !targetId) return null
+      return {
+        id: `direct-edge-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+        sourceId,
+        targetId,
+        sourcePortId: edge.sourcePortId || 'right',
+        targetPortId: edge.targetPortId || 'left',
+        clientId: edge.data?.clientId || edge.id
+      }
+    })
+    .filter(Boolean)
+}
+
+function getPersistedNodeId(nodeId) {
+  return nodeRevisionMap.value[nodeId] ? nodeId : ''
+}
+
+function getNodeClientId(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId) || nodes.value.find((item) => item.id === nodeId)
+  return node?.clientId || node?.data?.clientId || nodeId
+}
+
+function mapDirectTypeToBackendType(type) {
+  const map = {
+    prompt_note: 'note',
+    image_unit: 'image',
+    video_unit: 'video',
+    audio_unit: 'audio',
+    uploaded_asset: 'upload',
+    media_board: 'group',
+    script_episode: 'text',
+    asset_table: 'note',
+    storyboard_table: 'note'
+  }
+  return map[type] || 'note'
+}
+
+function normalizeNodeStatus(status) {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized === 'running') return 'running'
+  if (normalized === 'success') return 'done'
+  if (normalized === 'error') return 'failed'
+  return normalized || 'draft'
+}
+
+function buildCanvasSnapshot() {
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    viewport: getViewport(),
+    directNodes: cloneCanvasValue(directNodes.value),
+    directEdges: cloneCanvasValue(directEdges.value),
+    nodes: cloneCanvasValue(nodes.value),
+    edges: cloneCanvasValue(edges.value)
+  }
+}
 
 function handleDocumentKeydown(event) {
   if (handleGlobalUndoShortcut(event)) return
@@ -1404,6 +1813,7 @@ function upsertDirectEdge(sourceId, targetId) {
     ...directEdges.value,
     {
       id: `direct-edge-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+      clientId: `direct-edge-client-${Date.now()}-${Math.round(Math.random() * 10000)}`,
       sourceId,
       targetId
     }
@@ -2254,11 +2664,37 @@ function getDirectImageReferenceUrls(nodeId) {
 function extractImageGenerationResult(payload) {
   return {
     taskId: findFirstValueByKeys(payload, ['taskId', 'task_id', 'id']),
-    recordId: findFirstValueByKeys(payload, ['recordId', 'record_id', 'generation_record_id']),
+    recordId: findFirstExternalRecordId(payload),
     status: String(findFirstValueByKeys(payload, ['status', 'state', 'task_status']) || '').toLowerCase(),
     message: findFirstValueByKeys(payload, ['message', 'error', 'detail']),
     url: findFirstImageUrl(payload)
   }
+}
+
+function findFirstExternalRecordId(value, depth = 0) {
+  if (!value || depth > 7) return ''
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstExternalRecordId(item, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  if (typeof value !== 'object') return ''
+
+  const keys = ['recordId', 'record_id', 'generation_record_id']
+  for (const key of keys) {
+    const candidate = value[key]
+    if (typeof candidate === 'string' || typeof candidate === 'number') {
+      const normalized = String(candidate).trim()
+      if (normalized && !/^\d+$/.test(normalized)) return normalized
+    }
+  }
+  for (const item of Object.values(value)) {
+    const found = findFirstExternalRecordId(item, depth + 1)
+    if (found) return found
+  }
+  return ''
 }
 
 function findFirstValueByKeys(value, keys, depth = 0) {
@@ -2304,8 +2740,12 @@ function findFirstImageUrl(value, depth = 0) {
     'resultUrl',
     'media_url',
     'mediaUrl',
+    'preview_url',
+    'previewUrl',
     'file_url',
     'fileUrl',
+    'thumbnail_url',
+    'thumbnailUrl',
     'url'
   ]
   for (const key of priorityKeys) {
@@ -2354,6 +2794,7 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
   const count = explicitCount || directNodes.value.filter((node) => node.type === type).length + 1
   const node = {
     id: `direct-${type}-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+    clientId: patch.clientId || `direct-client-${Date.now()}-${Math.round(Math.random() * 10000)}`,
     type,
     title: patch.numberedTitle ? `${patch.title || meta.title} ${count}` : patch.title || `${meta.title} ${count}`,
     icon: patch.icon || getDirectNodeIcon(type),
@@ -2903,6 +3344,7 @@ function handleSupport() {
 
 function handleMoveEnd(event) {
   canvasStore.setViewport(event.flowTransform)
+  scheduleCanvasSave()
 }
 
 function rememberHistory() {

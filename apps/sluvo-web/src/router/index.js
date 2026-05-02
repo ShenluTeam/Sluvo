@@ -19,18 +19,20 @@ const router = createRouter({
     {
       path: '/projects/:projectId/canvas',
       name: 'canvas',
-      component: CanvasWorkspaceView
+      component: CanvasWorkspaceView,
+      meta: { requiresAuth: true }
     },
     {
       path: '/projects',
       name: 'projects',
-      component: HomeView
+      component: HomeView,
+      meta: { requiresAuth: true }
     }
   ]
 })
 
 router.beforeEach((to) => {
-  if (to.name !== 'canvas') return true
+  if (!to.meta.requiresAuth) return true
   const token = window.localStorage.getItem('shenlu_token') || ''
   if (token) return true
 

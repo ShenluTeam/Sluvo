@@ -144,11 +144,12 @@ import {
   Mail,
   Sparkles
 } from 'lucide-vue-next'
-import { loginWithPassword } from '../api/authApi'
+import { useAuthStore } from '../stores/authStore'
 import logoUrl from '../../LOGO.png'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 
 const form = reactive({
   email: window.localStorage.getItem('shenlu_email') || '',
@@ -182,20 +183,13 @@ async function submitLogin() {
 
   isSubmitting.value = true
   try {
-    const payload = await loginWithPassword({
-      email: form.email,
-      password: form.password
-    })
-
-    window.localStorage.setItem('shenlu_token', payload.token)
-    window.localStorage.setItem('shenlu_nickname', payload.nickname || '神鹿创作者')
-
-    if (rememberAccount.value) {
-      window.localStorage.setItem('shenlu_email', payload.email || form.email)
-    } else {
-      window.localStorage.removeItem('shenlu_email')
-    }
-
+    await authStore.login(
+      {
+        email: form.email,
+        password: form.password
+      },
+      { rememberEmail: rememberAccount.value }
+    )
     feedback.type = 'success'
     feedback.message = '登录成功，正在进入工作台'
     await router.replace(redirectPath.value)

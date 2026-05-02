@@ -26,8 +26,8 @@ apps/sluvo-web/
     api/
       client.js
       authApi.js
-      projectWorkspaceApi.js
-      generationApi.js
+      sluvoApi.js
+      creativeApi.js
     assets/
     canvas/
       components/
@@ -73,6 +73,12 @@ Rules:
 - Components should not call `fetch` directly unless there is a clear reason.
 - Provider APIs should never be called directly from the browser.
 
+2026-05-02 backend contract update:
+- Standalone Sluvo project/canvas features should call `/api/sluvo/*`.
+- Do not use `/api/projects/*` as the Sluvo project root for new standalone canvas work.
+- Frontend project truth should hydrate from `GET /api/sluvo/projects/{projectId}/canvas`, then save canvas state with `POST /api/sluvo/canvases/{canvasId}/batch`.
+- Canvas, node, and edge writes should pass `expectedRevision` when available and handle `409` by refreshing the canvas.
+
 ## 4. Stores
 
 Suggested Pinia stores:
@@ -84,7 +90,7 @@ Suggested Pinia stores:
 | `canvasStore` | selected nodes, viewport, local canvas UI state |
 | `taskStore` | active tasks, polling or refresh hints |
 
-Project truth should come from backend workspace responses, not only local canvas state.
+Project truth should come from Sluvo backend responses, not only local canvas state.
 
 ## 5. Routes
 
@@ -99,19 +105,28 @@ Current MVP routes:
 
 `HomeView.vue` is a dual-state entry:
 - Without `localStorage.shenlu_token`, it shows the public black/gold Sluvo brand entry and sends login to `/login`.
-- With `localStorage.shenlu_token`, it shows the OiiOii-style creation workbench using mock recent projects from `src/mock/projects.js`.
+- With `localStorage.shenlu_token`, it shows the OiiOii-style creation workbench backed by real `/api/sluvo/projects` data.
 
-Home project cards and "start canvas" actions should route to `/projects/{projectId}/canvas`.
+Home project cards route to `/projects/{projectId}/canvas`. The central prompt composer creates a real Sluvo project, writes the prompt as the first `note` node on the main canvas, then routes to the canvas page.
 
 ## 6. Canvas State Rule
 
 Canvas state has two categories.
 
-Backend persisted:
+Backend persisted through `/api/sluvo/*`:
 - node position
 - node size
 - hidden / restored projection
-- domain-backed node and edge relationships
+- node/edge data, ports, style, and Agent config
+- canvas snapshot JSON
+- project members and Agent action audit records
+
+Current persistence behavior:
+- Canvas pages load from `GET /api/sluvo/projects/{projectId}/canvas`.
+- Local direct canvas nodes and edges autosave with a 1.2s debounce through `POST /api/sluvo/canvases/{canvasId}/batch`.
+- Unsaved nodes carry a local `clientId`; after save, the frontend refreshes to server encoded IDs.
+- New edges that reference just-created local nodes are saved after the node ID refresh.
+- Revision conflicts return `409`; the frontend shows a conflict state and reloads the canvas.
 
 Frontend local:
 - selected node ids

@@ -91,7 +91,7 @@
             <Sparkles :size="16" />
             Happyhorse、Seedance 2.0、GPT image-2 已接入 Sluvo 创作能力
           </span>
-          <button type="button" @click="openCanvas()">去创作</button>
+          <button type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt()">去创作</button>
         </div>
 
         <header class="workbench-topbar">
@@ -136,7 +136,7 @@
           <h1 id="creator-title">今天想制作什么影视项目？</h1>
           <p>输入创意、粘贴剧本，或把参考图拖进来，Sluvo 会把它整理成可执行画布。</p>
 
-          <form class="prompt-composer" @submit.prevent="openCanvas()">
+          <form class="prompt-composer" @submit.prevent="startProjectFromPrompt()">
             <textarea
               v-model="promptText"
               aria-label="创作描述"
@@ -149,14 +149,15 @@
                   {{ tool.label }}
                 </button>
               </div>
-              <button class="send-button" type="submit" aria-label="开始生成画布">
+              <button class="send-button" type="submit" :disabled="isCreatingProject" aria-label="开始生成画布">
                 <Send :size="18" />
               </button>
             </div>
           </form>
+          <p v-if="projectFeedback" class="creator-console__feedback">{{ projectFeedback }}</p>
 
           <div class="skill-strip" aria-label="快捷技能">
-            <button v-for="skill in skillChips" :key="skill.label" type="button" @click="openCanvas()">
+            <button v-for="skill in skillChips" :key="skill.label" type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt(skill.label)">
               <component :is="skill.icon" :size="16" />
               {{ skill.label }}
               <small v-if="skill.badge">{{ skill.badge }}</small>
@@ -172,11 +173,37 @@
             </h2>
           </div>
 
-          <div class="project-grid project-grid--empty">
+          <p v-if="projectStore.error" class="home-section__error">{{ projectStore.error }}</p>
+
+          <div v-if="projectStore.loadingProjects" class="project-grid">
+            <article v-for="item in 3" :key="item" class="project-card project-card--loading">
+              <span class="project-card__preview project-card__preview--empty" />
+              <strong>加载中</strong>
+              <small>正在同步 Sluvo 项目</small>
+            </article>
+          </div>
+
+          <div v-else class="project-grid" :class="{ 'project-grid--empty': !projectStore.hasProjects }">
+            <button
+              v-for="(project, index) in projectStore.projects"
+              :key="project.id"
+              class="project-card"
+              type="button"
+              @click="openProject(project.id)"
+            >
+              <span class="project-card__preview" :class="`project-card__preview--${(index % 3) + 1}`">
+                <span />
+                <span />
+                <span />
+              </span>
+              <strong>{{ project.title || '未命名画布' }}</strong>
+              <small>{{ formatProjectMeta(project) }}</small>
+            </button>
             <button
               class="project-card project-card--empty"
               type="button"
-              @click="openCanvas()"
+              :disabled="isCreatingProject"
+              @click="startProjectFromPrompt()"
             >
               <span class="project-card__preview project-card__preview--empty">
                 <span class="project-card__create-icon">
@@ -229,7 +256,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowUpRight,
@@ -258,15 +285,21 @@ import {
   Video
 } from 'lucide-vue-next'
 import logoUrl from '../../LOGO.png'
+import { useAuthStore } from '../stores/authStore'
+import { useProjectStore } from '../stores/projectStore'
+import { saveSluvoCanvasBatch } from '../api/sluvoApi'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const projectStore = useProjectStore()
 const projectsSection = ref(null)
 const promptText = ref('')
-const token = ref('')
-const userName = ref('')
+const projectFeedback = ref('')
 
-const isAuthenticated = computed(() => Boolean(token.value))
-const userInitial = computed(() => (userName.value || 'S').trim().slice(0, 1).toUpperCase())
+const isAuthenticated = computed(() => authStore.isAuthenticated)
+const isCreatingProject = computed(() => projectStore.creatingProject)
+const userName = computed(() => authStore.displayName)
+const userInitial = computed(() => authStore.userInitial)
 
 const previewNodes = [
   {
@@ -350,8 +383,15 @@ const agentCapabilities = [
 ]
 
 function readAuthState() {
-  token.value = localStorage.getItem('shenlu_token') || ''
-  userName.value = localStorage.getItem('shenlu_nickname') || localStorage.getItem('shenlu_email') || 'Sluvo Creator'
+  authStore.syncFromStorage()
+  if (authStore.isAuthenticated) {
+    projectStore.loadProjects().catch((error) => {
+      if (error?.status === 401) authStore.logout()
+    })
+    authStore.refreshUser()
+  } else {
+    projectStore.clearWorkspace()
+  }
 }
 
 function handleStorage(event) {
@@ -365,24 +405,105 @@ function openLogin() {
 }
 
 function logout() {
-  localStorage.removeItem('shenlu_token')
-  localStorage.removeItem('shenlu_nickname')
+  authStore.logout()
   readAuthState()
   router.push('/')
   scrollToTop()
 }
 
-function openCanvas(projectId = 'proj-aurora') {
-  const target = `/projects/${projectId}/canvas`
-  if (!token.value) {
+function openCanvas(projectId = '') {
+  if (!authStore.isAuthenticated) {
     router.push({
       name: 'login',
-      query: { redirect: target }
+      query: { redirect: '/projects' }
     })
     return
   }
 
-  router.push(target)
+  if (projectId) {
+    router.push(`/projects/${projectId}/canvas`)
+    return
+  }
+
+  startProjectFromPrompt()
+}
+
+async function startProjectFromPrompt(seedText = '') {
+  if (!authStore.isAuthenticated) {
+    openCanvas()
+    return
+  }
+
+  const prompt = (seedText || promptText.value).trim()
+  projectFeedback.value = '正在创建 Sluvo 画布'
+  try {
+    const payload = await projectStore.createProjectFromPrompt(prompt)
+    const projectId = payload?.project?.id
+    const canvas = payload?.canvas
+    if (prompt && canvas?.id) {
+      projectFeedback.value = '正在写入初始提示词节点'
+      await createInitialPromptNode(canvas, prompt, payload?.project?.title)
+    }
+    if (projectId) {
+      promptText.value = ''
+      await projectStore.loadProjects()
+      await router.push(`/projects/${projectId}/canvas`)
+    }
+  } catch (error) {
+    if (error?.status === 401) authStore.logout()
+    projectFeedback.value = error instanceof Error ? error.message : '项目创建失败'
+  }
+}
+
+async function createInitialPromptNode(canvas, prompt, title = '') {
+  await saveSluvoCanvasBatch(canvas.id, {
+    expectedRevision: canvas.revision,
+    title: title || canvas.title,
+    viewport: { x: 0, y: 0, zoom: 1 },
+    snapshot: {
+      version: 1,
+      source: 'sluvo_home_prompt',
+      nodes: [
+        {
+          type: 'prompt_note',
+          title: '创意提示词',
+          prompt
+        }
+      ],
+      edges: []
+    },
+    nodes: [
+      {
+        nodeType: 'note',
+        title: '创意提示词',
+        position: { x: 120, y: 120 },
+        size: { width: 500, height: 690 },
+        status: 'draft',
+        data: {
+          clientId: `initial-prompt-${Date.now()}`,
+          directType: 'prompt_note',
+          prompt,
+          body: prompt,
+          promptPlaceholder: '继续补充这个创意的角色、场景和分镜方向。'
+        },
+        style: {}
+      }
+    ],
+    edges: []
+  })
+}
+
+function openProject(projectId) {
+  if (!projectId) return
+  router.push(`/projects/${projectId}/canvas`)
+}
+
+function formatProjectMeta(project) {
+  const updated = project.updatedAt || project.createdAt
+  if (!updated) return project.description || 'Sluvo 画布项目'
+  const date = new Date(updated)
+  if (Number.isNaN(date.getTime())) return project.description || 'Sluvo 画布项目'
+  return `更新于 ${date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}`
 }
 
 function scrollToTop() {
@@ -401,6 +522,15 @@ onMounted(() => {
   readAuthState()
   window.addEventListener('storage', handleStorage)
 })
+
+watch(
+  () => authStore.isAuthenticated,
+  (authenticated) => {
+    if (authenticated) {
+      projectStore.loadProjects().catch(() => {})
+    }
+  }
+)
 
 onBeforeUnmount(() => {
   window.removeEventListener('storage', handleStorage)
@@ -1015,6 +1145,13 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
+.creator-console__feedback,
+.home-section__error {
+  color: #f3d894 !important;
+  font-size: 13px !important;
+  font-weight: 800;
+}
+
 .prompt-composer {
   position: relative;
   width: min(640px, 100%);
@@ -1088,6 +1225,14 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: linear-gradient(180deg, #d6b56d, #9f722c);
   color: #160f06;
+}
+
+.send-button:disabled,
+.skill-strip button:disabled,
+.campaign-bar button:disabled,
+.project-card:disabled {
+  cursor: wait;
+  opacity: 0.64;
 }
 
 .skill-strip {
@@ -1169,6 +1314,11 @@ onBeforeUnmount(() => {
   background:
     linear-gradient(180deg, rgba(214, 181, 109, 0.08), rgba(255, 255, 255, 0.04)),
     rgba(255, 255, 255, 0.035);
+}
+
+.project-card--loading {
+  pointer-events: none;
+  opacity: 0.72;
 }
 
 .project-card:hover,

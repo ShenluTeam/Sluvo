@@ -1,5 +1,73 @@
 # Sluvo Development Changelog
 
+## 2026-05-02
+
+Changed files:
+- `apps/sluvo-web/src/api/client.js`
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `apps/sluvo-web/src/stores/authStore.js`
+- `apps/sluvo-web/src/stores/projectStore.js`
+- `apps/sluvo-web/src/router/index.js`
+- `apps/sluvo-web/src/views/LoginView.vue`
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/components/layout/CommandBar.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/API_DEVELOPMENT.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added a Sluvo API wrapper for real `/api/sluvo/*` project and canvas endpoints.
+- Added centralized Shenlu token auth state with `authStore`.
+- Replaced the logged-in home mock project flow with real project listing and prompt-based project creation.
+- Canvas pages now hydrate from the Sluvo main canvas and autosave nodes, edges, viewport, and snapshot through the batch endpoint.
+- Added revision-conflict handling so stale saves refresh instead of overwriting newer server state.
+- Agent frontend is intentionally deferred for this milestone.
+
+Verification:
+- `npm run build`
+
+## 2026-05-02
+
+Changed files:
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/models.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/database.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/schemas.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/services/sluvo_service.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/routers/sluvo.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/main.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/tests/test_sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/PRD.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added standalone Sluvo backend persistence under `sluvo_*` tables in the reused AIdrama backend.
+- Added `/api/sluvo/*` project, canvas, member, and Agent persistence contracts.
+- Updated Sluvo docs so new standalone work no longer treats `Script` or legacy canvas projection tables as the primary Sluvo data model.
+
+Verification suggestions:
+- Run the AIdrama backend Sluvo service tests.
+- Hydrate a Sluvo project through `/api/sluvo/projects/{project_id}/canvas` and save through `/api/sluvo/canvases/{canvas_id}/batch`.
+
+## 2026-05-02
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Fixed direct image generation result parsing so completed Shenlu records using `preview_url` or `thumbnail_url` render in the image node preview.
+- Stopped task polling from replacing encoded generation record ids with backend internal numeric ids, preserving follow-up record lookups through `/api/creative/records/{record_id}`.
+
+Verification suggestions:
+- Run `npm run build`.
+- Submit a direct image node generation and confirm the completed image appears after the task finishes.
+
 ## 2026-04-30
 
 Changed files:
