@@ -88,6 +88,8 @@ Frontend write mapping:
 - Direct canvas cards map to supported backend node types: text/note, image, video, audio, upload, generation, and group.
 - The frontend writes a compatibility `snapshot` on every batch save, but structured node and edge rows remain the primary store.
 - Upload nodes persist media through `SluvoCanvasAsset` and existing `storage_object`; `blob:` preview URLs are never valid backend truth.
+- Uploaded Sluvo media is stored in OSS by user namespace and Sluvo project: `users/{namespace}/sluvo/projects/{project}/canvases/{canvas}/{images|videos|audio}/...`.
+- Sluvo uploads enforce the existing user storage quota path; the default free-user capacity is `5GB`. Duplicate uploads in the same user/project scope can reuse an existing OSS object by `sha256 + user_id + project_id`.
 - Agent endpoints exist in the contract but are not called by the current frontend milestone.
 
 ## 5. Legacy Project Workspace APIs

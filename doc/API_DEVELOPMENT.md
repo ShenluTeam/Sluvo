@@ -202,6 +202,7 @@ Frontend implementation note:
 - Canvas pages hydrate from `GET /api/sluvo/projects/{project_id}/canvas` and autosave node, edge, viewport, and snapshot state through the batch endpoint.
 - `409` responses are treated as revision conflicts; the canvas refreshes instead of overwriting newer server state.
 - Canvas uploads use instant local preview, then persist to OSS through Sluvo upload endpoints. Files up to `5MB` use base64 JSON; files over `5MB` and up to `20MB` use multipart upload with progress. Returned OSS URLs are written back to the upload node and `sluvo_canvas_asset`.
+- Sluvo upload objects are stored under the existing per-user OSS namespace, then grouped by Sluvo project and canvas: `users/{namespace}/sluvo/projects/{project}/canvases/{canvas}/{mediaType}/...`. Sluvo upload quota uses the existing storage accounting system and enforces the current `5GB` free-user quota for this upload path.
 
 For the complete `api.shenlu.top` inventory and Sluvo suitability notes, read `doc/API_SHENLU_TOP.md`.
 

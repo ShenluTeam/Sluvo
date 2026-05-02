@@ -113,6 +113,8 @@ Failed tasks should show:
 
 Upload failures should keep the upload node visible, avoid saving temporary `blob:` URLs as permanent media, and offer a retry action while the original file is still available in the browser session.
 
+Upload capacity errors should use user-facing copy that explains the storage limit. The initial Sluvo quota is `5GB` per user through the shared Shenlu storage accounting system.
+
 ## 7. Copywriting
 
 Use creator-facing language.

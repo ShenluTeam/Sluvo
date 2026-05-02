@@ -3,6 +3,32 @@
 ## 2026-05-02
 
 Changed files:
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/services/oss_service.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/services/storage_service.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/services/sluvo_service.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/tests/test_sluvo_service.py`
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/UI_REQUIREMENTS.md`
+
+Impact scope:
+- Restored the planned upload split: files up to `5MB` use base64 JSON, larger files up to `20MB` use multipart upload with XHR progress.
+- Sluvo OSS object keys now stay under the existing per-user namespace and add Sluvo project/canvas folders for asset management.
+- Sluvo upload persistence now enforces the shared user storage quota path; the default free-user capacity is `5GB`.
+- Fixed storage quota tier normalization so enum-backed free users resolve to the intended `5GB` default.
+- Duplicate uploads in the same user/project scope reuse existing OSS objects by file hash while still returning canvas asset metadata.
+
+Verification:
+- `python3 -m py_compile services/oss_service.py services/storage_service.py services/sluvo_service.py tests/test_sluvo_service.py`
+- `uv run --with pytest --with fastapi --with sqlmodel --with hashids --with passlib --with pydantic-settings --with email-validator pytest tests/test_sluvo_service.py -q`
+- `npm run build`
+
+## 2026-05-02
+
+Changed files:
 - `/Volumes/T9/ljtpc/work/AIdrama/backend/schemas.py`
 - `/Volumes/T9/ljtpc/work/AIdrama/backend/services/sluvo_service.py`
 - `/Volumes/T9/ljtpc/work/AIdrama/backend/routers/sluvo.py`

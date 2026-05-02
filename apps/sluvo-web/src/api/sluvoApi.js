@@ -65,7 +65,7 @@ export async function saveSluvoCanvasBatch(canvasId, payload) {
 
 export function uploadSluvoCanvasAsset(canvasId, file, options = {}) {
   const threshold = options.base64Threshold || 5 * 1024 * 1024
-  if (file.size <= threshold) {
+  if (options.useBase64Upload || file.size <= threshold) {
     return uploadSluvoCanvasAssetBase64(canvasId, file, options)
   }
   return uploadSluvoCanvasAssetMultipart(canvasId, file, options)
@@ -106,6 +106,7 @@ function uploadSluvoCanvasAssetMultipart(canvasId, file, options = {}) {
 
     const xhr = new XMLHttpRequest()
     xhr.open('POST', buildApiUrl(`/api/sluvo/canvases/${canvasId}/assets/upload`))
+    xhr.timeout = options.timeout || 120000
     const token = window.localStorage.getItem('shenlu_token') || ''
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.upload.onprogress = (event) => {
@@ -123,6 +124,7 @@ function uploadSluvoCanvasAssetMultipart(canvasId, file, options = {}) {
       reject(new ApiError(extractUploadError(payload, xhr.status), { status: xhr.status, payload }))
     }
     xhr.onerror = () => reject(new ApiError('上传失败，请检查网络后重试', { status: 0 }))
+    xhr.ontimeout = () => reject(new ApiError('上传处理超时，请稍后重试', { status: 0 }))
     xhr.onabort = () => reject(new ApiError('上传已取消', { status: 0 }))
     xhr.send(form)
   })
