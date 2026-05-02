@@ -51,6 +51,7 @@ MVP canvas interactions:
 - Hide / restore node projection
 - Open inspector from node click
 - Run node action from node or inspector
+- Upload image, video, and audio files into a canvas asset node with instant preview and visible upload state
 
 Canvas layout must be stable: hover states, badges, task indicators, and loading states should not cause node size jumps.
 
@@ -109,6 +110,8 @@ Failed tasks should show:
 - Human-readable reason
 - Retry action when safe
 - Link or action to inspect inputs
+
+Upload failures should keep the upload node visible, avoid saving temporary `blob:` URLs as permanent media, and offer a retry action while the original file is still available in the browser session.
 
 ## 7. Copywriting
 

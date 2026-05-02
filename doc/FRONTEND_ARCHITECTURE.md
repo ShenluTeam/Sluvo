@@ -127,6 +127,8 @@ Current persistence behavior:
 - Unsaved nodes carry a local `clientId`; after save, the frontend refreshes to server encoded IDs.
 - New edges that reference just-created local nodes are saved after the node ID refresh.
 - Revision conflicts return `409`; the frontend shows a conflict state and reloads the canvas.
+- Upload nodes create an immediate local `blob:` preview, upload in the background, then replace the preview with OSS-backed `fileUrl` and asset metadata. Local preview URLs must be stripped before batch persistence.
+- Upload size limits are enforced in the browser at `20MB`; files up to `5MB` use base64 JSON upload, larger files use multipart upload for progress.
 
 Frontend local:
 - selected node ids

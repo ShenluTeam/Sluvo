@@ -2607,6 +2607,21 @@ button {
   font-weight: 700;
 }
 
+.uploaded-asset__state--error {
+  color: #ffb1aa;
+  text-align: center;
+}
+
+.uploaded-asset__state--error button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 177, 170, 0.32);
+  border-radius: 8px;
+  background: rgba(255, 177, 170, 0.12);
+  color: #fff7f5;
+  font-weight: 800;
+}
+
 .direct-workflow-node__select select:focus {
   border-color: #e5c889;
   box-shadow: 0 0 0 3px rgba(188, 142, 59, 0.18);

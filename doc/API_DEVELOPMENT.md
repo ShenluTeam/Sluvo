@@ -191,6 +191,8 @@ Standalone Sluvo:
 | Create/update canvas nodes | `POST /api/sluvo/canvases/{canvas_id}/nodes`, `PATCH /api/sluvo/canvases/{canvas_id}/nodes/{node_id}` |
 | Create/update canvas edges | `POST /api/sluvo/canvases/{canvas_id}/edges`, `PATCH /api/sluvo/canvases/{canvas_id}/edges/{edge_id}` |
 | Batch save canvas | `POST /api/sluvo/canvases/{canvas_id}/batch` |
+| Upload persistent canvas asset | `POST /api/sluvo/canvases/{canvas_id}/assets/upload` |
+| Upload persistent canvas asset as base64 | `POST /api/sluvo/canvases/{canvas_id}/assets/upload/base64` |
 | Manage project members | `/api/sluvo/projects/{project_id}/members` |
 | Canvas Agent persistence | `/api/sluvo/projects/{project_id}/agent/sessions`, `/api/sluvo/agent/*` |
 
@@ -199,6 +201,7 @@ Frontend implementation note:
 - The logged-in home creates projects through `POST /api/sluvo/projects`; when the user enters a prompt, Sluvo writes it as an initial `note` node through `POST /api/sluvo/canvases/{canvas_id}/batch`.
 - Canvas pages hydrate from `GET /api/sluvo/projects/{project_id}/canvas` and autosave node, edge, viewport, and snapshot state through the batch endpoint.
 - `409` responses are treated as revision conflicts; the canvas refreshes instead of overwriting newer server state.
+- Canvas uploads use instant local preview, then persist to OSS through Sluvo upload endpoints. Files up to `5MB` use base64 JSON; files over `5MB` and up to `20MB` use multipart upload with progress. Returned OSS URLs are written back to the upload node and `sluvo_canvas_asset`.
 
 For the complete `api.shenlu.top` inventory and Sluvo suitability notes, read `doc/API_SHENLU_TOP.md`.
 

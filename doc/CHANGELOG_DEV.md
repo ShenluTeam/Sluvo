@@ -3,6 +3,34 @@
 ## 2026-05-02
 
 Changed files:
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/schemas.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/services/sluvo_service.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/routers/sluvo.py`
+- `/Volumes/T9/ljtpc/work/AIdrama/backend/tests/test_sluvo_service.py`
+- `apps/sluvo-web/src/api/client.js`
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added Sluvo-specific persistent canvas asset upload endpoints for multipart and base64 payloads.
+- Uploads now write OSS-backed media metadata into `sluvo_canvas_asset` and the existing `storage_object` system.
+- Canvas upload nodes now show immediate local previews, real upload progress, retryable failures, and replace `blob:` previews with permanent OSS URLs after upload.
+- Batch persistence strips local preview URLs so temporary browser-only media is not saved as project truth.
+
+Verification:
+- `python3 -m py_compile schemas.py services/sluvo_service.py routers/sluvo.py`
+- `uv run --with pytest --with fastapi --with sqlmodel --with hashids --with passlib --with pydantic-settings --with email-validator pytest tests/test_sluvo_service.py -q`
+- `npm run build`
+
+## 2026-05-02
+
+Changed files:
 - `apps/sluvo-web/src/api/client.js`
 - `apps/sluvo-web/src/api/sluvoApi.js`
 - `apps/sluvo-web/src/stores/authStore.js`
