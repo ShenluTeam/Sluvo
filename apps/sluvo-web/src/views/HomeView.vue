@@ -274,9 +274,23 @@
             </article>
           </div>
 
-          <div v-else class="project-grid" :class="{ 'project-grid--empty': !projectStore.hasProjects }">
+          <div v-else class="project-grid">
+            <button
+              class="project-card project-card--empty"
+              type="button"
+              :disabled="isCreatingProject"
+              @click="startProjectFromPrompt()"
+            >
+              <span class="project-card__preview project-card__preview--empty">
+                <span class="project-card__create-icon">
+                  <Plus :size="24" />
+                </span>
+              </span>
+              <strong>新建项目</strong>
+              <small>创建一个 Sluvo 画布</small>
+            </button>
             <article
-              v-for="(project, index) in projectStore.projects"
+              v-for="project in projectStore.projects"
               :key="project.id"
               class="project-card"
               tabindex="0"
@@ -284,9 +298,17 @@
               @keydown.enter.prevent="openProject(project.id)"
               @keydown.space.prevent="openProject(project.id)"
             >
-              <span class="project-card__preview project-card__preview--media">
-                <img :src="getProjectCover(project, index)" :alt="project.title || '未命名画布'" loading="lazy" />
-                <span class="project-card__nodes">画布 · {{ ((index + 2) * 4) + 1 }} 节点</span>
+              <span
+                class="project-card__preview"
+                :class="getProjectCover(project) ? 'project-card__preview--media' : 'project-card__preview--no-cover'"
+              >
+                <img
+                  v-if="getProjectCover(project)"
+                  :src="getProjectCover(project)"
+                  :alt="project.title || '未命名画布'"
+                  loading="lazy"
+                />
+                <span v-else class="project-card__no-cover">无封面</span>
               </span>
               <button
                 class="project-card__delete"
@@ -301,20 +323,6 @@
               <strong>{{ project.title || '未命名画布' }}</strong>
               <small>{{ formatProjectMeta(project) }}</small>
             </article>
-            <button
-              class="project-card project-card--empty"
-              type="button"
-              :disabled="isCreatingProject"
-              @click="startProjectFromPrompt()"
-            >
-              <span class="project-card__preview project-card__preview--empty">
-                <span class="project-card__create-icon">
-                  <Plus :size="24" />
-                </span>
-              </span>
-              <strong>新建项目</strong>
-              <small>创建第一个 Sluvo 画布</small>
-            </button>
           </div>
         </section>
 
@@ -854,18 +862,47 @@ function selectShowcase(index) {
   startShowcaseRotation()
 }
 
-function getProjectCover(project, index = 0) {
+function resolveProjectImageUrl(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.trim()
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const resolved = resolveProjectImageUrl(item)
+      if (resolved) return resolved
+    }
+    return ''
+  }
+  if (typeof value === 'object') {
+    return (
+      resolveProjectImageUrl(value.firstImageUrl) ||
+      resolveProjectImageUrl(value.first_image_url) ||
+      resolveProjectImageUrl(value.thumbnailUrl) ||
+      resolveProjectImageUrl(value.thumbnail_url) ||
+      resolveProjectImageUrl(value.previewUrl) ||
+      resolveProjectImageUrl(value.preview_url) ||
+      resolveProjectImageUrl(value.coverUrl) ||
+      resolveProjectImageUrl(value.cover_url) ||
+      resolveProjectImageUrl(value.imageUrl) ||
+      resolveProjectImageUrl(value.image_url) ||
+      resolveProjectImageUrl(value.url) ||
+      resolveProjectImageUrl(value.src)
+    )
+  }
+  return ''
+}
+
+function getProjectCover(project) {
   return (
-    project?.coverUrl ||
-    project?.cover_url ||
-    project?.thumbnailUrl ||
-    project?.thumbnail_url ||
-    project?.previewUrl ||
-    project?.preview_url ||
-    project?.settings?.coverUrl ||
-    project?.settings?.posterUrl ||
-    showcaseItems[index % showcaseItems.length]?.imageUrl ||
-    remoteMedia.canvasMap
+    resolveProjectImageUrl(project?.firstImageUrl) ||
+    resolveProjectImageUrl(project?.first_image_url) ||
+    resolveProjectImageUrl(project?.coverUrl) ||
+    resolveProjectImageUrl(project?.cover_url) ||
+    resolveProjectImageUrl(project?.assets) ||
+    resolveProjectImageUrl(project?.images) ||
+    resolveProjectImageUrl(project?.media) ||
+    resolveProjectImageUrl(project?.settings?.firstImageUrl) ||
+    resolveProjectImageUrl(project?.settings?.first_image_url) ||
+    resolveProjectImageUrl(project?.settings?.coverUrl)
   )
 }
 
@@ -1986,10 +2023,6 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 
-.project-grid--empty {
-  grid-template-columns: minmax(0, 360px);
-}
-
 .project-card {
   position: relative;
   display: grid;
@@ -2093,27 +2126,30 @@ onBeforeUnmount(() => {
   padding: 0;
 }
 
+.project-card__preview--no-cover,
+.project-card--empty .project-card__preview--empty {
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: 112px;
+  padding: 0;
+}
+
+.project-card__preview--no-cover {
+  border: 1px dashed rgba(255, 241, 199, 0.14);
+  background:
+    radial-gradient(circle at 50% 34%, rgba(214, 181, 109, 0.11), transparent 38%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.04), rgba(5, 5, 5, 0.72));
+}
+
 .project-card__preview span {
   border-radius: 5px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent),
     var(--preview-fill, #7f6740);
-}
-
-.project-card__preview--media .project-card__nodes {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  z-index: 2;
-  display: inline-flex;
-  width: fit-content;
-  padding: 4px 7px;
-  border: 1px solid rgba(255, 241, 199, 0.22);
-  border-radius: 999px;
-  background: rgba(5, 5, 5, 0.62);
-  color: rgba(255, 248, 230, 0.82);
-  font-size: 11px;
-  font-weight: 900;
 }
 
 .project-card__preview--1 {
@@ -2137,6 +2173,19 @@ onBeforeUnmount(() => {
 
 .project-card__preview--empty span {
   background: none;
+}
+
+.project-card__no-cover {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 241, 199, 0.16);
+  border-radius: 999px;
+  background: rgba(5, 5, 5, 0.28) !important;
+  color: rgba(255, 248, 230, 0.48);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .project-card__create-icon {

@@ -81,6 +81,8 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | Approve Agent action | POST | `/api/sluvo/agent/actions/{action_id}/approve` |
 | Cancel Agent action | POST | `/api/sluvo/agent/actions/{action_id}/cancel` |
 
+Project payloads include `firstImageUrl` when the project has at least one active image asset. The frontend may use this as the recent-project cover; if no first image exists, project cards should not invent a showcase cover.
+
 All IDs are encoded with the existing Shenlu `encode_id` scheme. Canvas, node, and edge updates support `expectedRevision`; stale writes return `409`.
 
 Frontend write mapping:

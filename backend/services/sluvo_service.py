@@ -154,7 +154,27 @@ def _assert_same_canvas(item_canvas_id: int, canvas_id: int, label: str) -> None
         raise HTTPException(status_code=400, detail=f"{label} 不属于当前画布")
 
 
-def serialize_sluvo_project(project: SluvoProject, member_role: Optional[str] = None) -> Dict[str, Any]:
+def get_sluvo_project_first_image_url(session: Session, project_id: int) -> Optional[str]:
+    asset = session.exec(
+        select(SluvoCanvasAsset)
+        .where(
+            SluvoCanvasAsset.project_id == project_id,
+            SluvoCanvasAsset.deleted_at == None,
+            SluvoCanvasAsset.media_type == "image",
+        )
+        .order_by(SluvoCanvasAsset.created_at.asc(), SluvoCanvasAsset.id.asc())
+    ).first()
+    if not asset:
+        return None
+    return asset.thumbnail_url or asset.url
+
+
+def serialize_sluvo_project(
+    project: SluvoProject,
+    member_role: Optional[str] = None,
+    first_image_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    cover_url = first_image_url or project.cover_url
     return {
         "id": encode_id(project.id),
         "ownerUserId": encode_id(project.owner_user_id),
@@ -164,7 +184,8 @@ def serialize_sluvo_project(project: SluvoProject, member_role: Optional[str] = 
         "status": project.status,
         "visibility": project.visibility,
         "settings": _json_load(project.settings_json, {}),
-        "coverUrl": project.cover_url,
+        "coverUrl": cover_url,
+        "firstImageUrl": first_image_url,
         "memberRole": member_role,
         "lastOpenedAt": project.last_opened_at.isoformat() if project.last_opened_at else None,
         "createdAt": project.created_at.isoformat() if project.created_at else None,
@@ -431,14 +452,16 @@ def list_sluvo_projects(
         member = get_project_member(session, project.id, user.id)
         if not member and project.visibility != "team" and not can_manage_team:
             continue
-        result.append(serialize_sluvo_project(project, member.role if member else None))
+        first_image_url = get_sluvo_project_first_image_url(session, project.id)
+        result.append(serialize_sluvo_project(project, member.role if member else None, first_image_url))
     return result
 
 
 def get_sluvo_project_bundle(session: Session, project: SluvoProject, member: Optional[SluvoProjectMember]) -> Dict[str, Any]:
     canvas = get_or_create_main_canvas(session, project)
+    first_image_url = get_sluvo_project_first_image_url(session, project.id)
     return {
-        "project": serialize_sluvo_project(project, member.role if member else None),
+        "project": serialize_sluvo_project(project, member.role if member else None, first_image_url),
         "canvas": serialize_sluvo_canvas(canvas),
     }
 

@@ -17,6 +17,8 @@ The logged-in homepage should still behave like a tool surface, not a traditiona
 
 The logged-in homepage must expose a clear logout action near the account controls.
 
+On the logged-in homepage, the recent creation grid must place the new-project card first. Existing project cards should use the project's own first uploaded image as the cover when available; projects without images should render as no-cover cards instead of falling back to sample or decorative media.
+
 Design tone:
 - Clear
 - Fast

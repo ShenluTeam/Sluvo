@@ -43,6 +43,7 @@ from services.sluvo_service import (
     create_sluvo_node,
     create_sluvo_project,
     get_or_create_main_canvas,
+    get_sluvo_project_first_image_url,
     get_sluvo_project_bundle,
     list_sluvo_project_members,
     list_sluvo_projects,
@@ -169,7 +170,8 @@ async def patch_sluvo_project(
         permission=SLUVO_PERMISSION_WRITE,
     )
     project = update_sluvo_project(session, project, payload)
-    return {"project": serialize_sluvo_project(project, member.role if member else None)}
+    first_image_url = get_sluvo_project_first_image_url(session, project.id)
+    return {"project": serialize_sluvo_project(project, member.role if member else None, first_image_url)}
 
 
 @router.delete("/api/sluvo/projects/{project_id}")

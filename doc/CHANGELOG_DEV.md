@@ -4,6 +4,25 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
+- `backend/services/sluvo_service.py`
+- `backend/routers/sluvo.py`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Moved the logged-in homepage new-project card to the first position in the recent creation grid.
+- Changed project cards to use only project-owned imagery for covers, with a no-cover state when no project image exists.
+- Added `firstImageUrl` to Sluvo project payloads from the first active image asset so the homepage can show real project covers.
+
+Verification:
+- `npm run build`
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py`
+
+## 2026-05-03
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
