@@ -19,6 +19,8 @@ The logged-in homepage must expose a clear logout action near the account contro
 
 On the logged-in homepage, the recent creation grid must place the new-project card first. Existing project cards should use the project's own first uploaded image as the cover when available; projects without images should render as no-cover cards instead of falling back to sample or decorative media.
 
+The open canvas community should feel like a creator gallery, not an admin table. Guests may browse community cards, but detail and fork actions must lead through login. Community detail is read-only; reuse happens by forking into a new editable project.
+
 Design tone:
 - Clear
 - Fast
@@ -116,6 +118,8 @@ Failed tasks should show:
 Upload failures should keep the upload node visible, avoid saving temporary `blob:` URLs as permanent media, and offer a retry action while the original file is still available in the browser session.
 
 Upload capacity errors should use user-facing copy that explains the storage limit. The initial Sluvo quota is `5GB` per user through the shared Shenlu storage accounting system.
+
+Publishing to community must make clear that it creates a shareable snapshot. Updating the original project after publishing should not visually imply the community version changes until the creator publishes again.
 
 ## 7. Copywriting
 

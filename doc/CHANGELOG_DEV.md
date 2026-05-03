@@ -3,6 +3,37 @@
 ## 2026-05-03
 
 Changed files:
+- `backend/models.py`
+- `backend/database.py`
+- `backend/schemas.py`
+- `backend/services/sluvo_service.py`
+- `backend/routers/sluvo.py`
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `apps/sluvo-web/src/router/index.js`
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/views/CommunityCanvasView.vue`
+- `apps/sluvo-web/src/components/layout/CommandBar.vue`
+- `doc/PRD.md`
+- `doc/API_DEVELOPMENT.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added open canvas community publication storage, public list, login-gated detail, publish, unpublish, and fork APIs.
+- Added homepage community cards, a read-only community detail page, and a canvas-workbench publish dialog.
+- Forked community canvases create independent Sluvo projects while referencing original OSS media URLs.
+
+Verification:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/models.py backend/schemas.py backend/database.py`
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-03
+
+Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
 - `doc/CHANGELOG_DEV.md`
 

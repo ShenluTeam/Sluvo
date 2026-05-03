@@ -1080,6 +1080,33 @@ class SluvoCanvasAsset(SQLModel, table=True):
     deleted_at: Optional[datetime] = Field(default=None, index=True)
 
 
+class SluvoCommunityCanvas(SQLModel, table=True):
+    __tablename__ = "sluvo_community_canvas"
+    __table_args__ = (UniqueConstraint("source_project_id", name="uq_sluvo_community_canvas_source_project"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_project_id: int = Field(foreign_key="sluvo_project.id", index=True)
+    source_canvas_id: int = Field(foreign_key="sluvo_canvas.id", index=True)
+    owner_user_id: int = Field(foreign_key="user.id", index=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    title: str = Field(sa_column=Column(String(255), nullable=False, index=True))
+    description: Optional[str] = Field(default=None, sa_column=Column(LONGTEXT))
+    cover_url: Optional[str] = Field(default=None, sa_column=Column(LONGTEXT))
+    tags_json: str = Field(default="[]", sa_column=Column(LONGTEXT))
+    status: str = Field(default="published", sa_column=Column(String(32), nullable=False, index=True))
+    snapshot_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    nodes_json: str = Field(default="[]", sa_column=Column(LONGTEXT))
+    edges_json: str = Field(default="[]", sa_column=Column(LONGTEXT))
+    viewport_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    schema_version: int = Field(default=1, sa_column=Column(Integer, nullable=False, default=1))
+    view_count: int = Field(default=0, sa_column=Column(Integer, nullable=False, default=0))
+    fork_count: int = Field(default=0, sa_column=Column(Integer, nullable=False, default=0))
+    published_at: Optional[datetime] = Field(default=None, index=True)
+    unpublished_at: Optional[datetime] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
 class SluvoAgentSession(SQLModel, table=True):
     __tablename__ = "sluvo_agent_session"
 

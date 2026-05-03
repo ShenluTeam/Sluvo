@@ -51,6 +51,37 @@ export function fetchSluvoProjectCanvas(projectId) {
   return apiFetch(`/api/sluvo/projects/${projectId}/canvas`)
 }
 
+export async function fetchSluvoCommunityCanvases({ limit = 12, sort = 'latest' } = {}) {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  if (sort) params.set('sort', sort)
+  const payload = await apiFetch(`/api/sluvo/community/canvases?${params.toString()}`)
+  return Array.isArray(payload?.items) ? payload.items : []
+}
+
+export function fetchSluvoCommunityCanvas(publicationId) {
+  return apiFetch(`/api/sluvo/community/canvases/${publicationId}`)
+}
+
+export function publishSluvoProjectToCommunity(projectId, payload) {
+  return apiFetch(`/api/sluvo/projects/${projectId}/community/publish`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function forkSluvoCommunityCanvas(publicationId) {
+  return apiFetch(`/api/sluvo/community/canvases/${publicationId}/fork`, {
+    method: 'POST'
+  })
+}
+
+export function unpublishSluvoCommunityCanvas(publicationId) {
+  return apiFetch(`/api/sluvo/community/canvases/${publicationId}/unpublish`, {
+    method: 'POST'
+  })
+}
+
 export async function saveSluvoCanvasBatch(canvasId, payload) {
   try {
     return await apiFetch(`/api/sluvo/canvases/${canvasId}/batch`, {

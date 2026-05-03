@@ -35,7 +35,7 @@
       <button class="top-icon-button" type="button" aria-label="保存" @click="$emit('save')">
         <Save :size="20" />
       </button>
-      <button class="top-icon-button" type="button" aria-label="分享">
+      <button class="top-icon-button" type="button" aria-label="发布到社区" title="发布到社区" @click="$emit('publish')">
         <Share2 :size="20" />
       </button>
       <button class="top-icon-button top-icon-button--notice" type="button" aria-label="通知">
@@ -142,7 +142,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['go-home', 'update:title', 'logout', 'save'])
+const emit = defineEmits(['go-home', 'update:title', 'logout', 'save', 'publish'])
 const editingTitle = ref(false)
 const draftTitle = ref(props.title)
 const titleInput = ref(null)

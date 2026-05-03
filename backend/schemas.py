@@ -1230,6 +1230,8 @@ VALID_SLUVO_MEMBER_ROLES = {
 VALID_SLUVO_NODE_TYPES = {"text", "image", "video", "audio", "upload", "generation", "agent", "group", "note"}
 VALID_SLUVO_EDGE_TYPES = {"reference", "dependency", "generation", "sequence", "group", "custom"}
 VALID_SLUVO_AGENT_ACTION_STATUSES = {"proposed", "approved", "running", "succeeded", "failed", "cancelled"}
+SLUVO_COMMUNITY_CANVAS_STATUS_PUBLISHED = "published"
+SLUVO_COMMUNITY_CANVAS_STATUS_UNPUBLISHED = "unpublished"
 
 
 def normalize_sluvo_project_status(value: Optional[str]) -> str:
@@ -1271,6 +1273,13 @@ class SluvoProjectUpdateRequest(BaseModel):
     status: Optional[str] = None
     visibility: Optional[str] = None
     settings: Optional[Dict[str, Any]] = None
+    coverUrl: Optional[str] = None
+
+
+class SluvoCommunityCanvasPublishRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    tags: List[str] = PydanticField(default_factory=list)
     coverUrl: Optional[str] = None
 
 

@@ -18,6 +18,7 @@ from models import (
     SluvoCanvasEdge,
     SluvoCanvasMutation,
     SluvoCanvasNode,
+    SluvoCommunityCanvas,
     SluvoProject,
     SluvoProjectMember,
     StorageObject,
@@ -29,8 +30,11 @@ from schemas import (
     SLUVO_MEMBER_ROLE_EDITOR,
     SLUVO_MEMBER_ROLE_OWNER,
     SLUVO_MEMBER_ROLE_VIEWER,
+    SLUVO_COMMUNITY_CANVAS_STATUS_PUBLISHED,
+    SLUVO_COMMUNITY_CANVAS_STATUS_UNPUBLISHED,
     SLUVO_PROJECT_STATUS_DELETED,
     SluvoCanvasBatchRequest,
+    SluvoCommunityCanvasPublishRequest,
     SluvoCanvasEdgeCreateRequest,
     SluvoCanvasEdgeUpdateRequest,
     SluvoCanvasNodeCreateRequest,
@@ -169,10 +173,20 @@ def get_sluvo_project_first_image_url(session: Session, project_id: int) -> Opti
     return asset.thumbnail_url or asset.url
 
 
+def get_sluvo_project_community_publication(session: Session, project_id: int) -> Optional[SluvoCommunityCanvas]:
+    return session.exec(
+        select(SluvoCommunityCanvas).where(
+            SluvoCommunityCanvas.source_project_id == project_id,
+            SluvoCommunityCanvas.status == SLUVO_COMMUNITY_CANVAS_STATUS_PUBLISHED,
+        )
+    ).first()
+
+
 def serialize_sluvo_project(
     project: SluvoProject,
     member_role: Optional[str] = None,
     first_image_url: Optional[str] = None,
+    community_publication: Optional[SluvoCommunityCanvas] = None,
 ) -> Dict[str, Any]:
     cover_url = first_image_url or project.cover_url
     return {
@@ -186,6 +200,11 @@ def serialize_sluvo_project(
         "settings": _json_load(project.settings_json, {}),
         "coverUrl": cover_url,
         "firstImageUrl": first_image_url,
+        "communityPublication": {
+            "id": encode_id(community_publication.id),
+            "status": community_publication.status,
+            "publishedAt": community_publication.published_at.isoformat() if community_publication.published_at else None,
+        } if community_publication else None,
         "memberRole": member_role,
         "lastOpenedAt": project.last_opened_at.isoformat() if project.last_opened_at else None,
         "createdAt": project.created_at.isoformat() if project.created_at else None,
@@ -290,6 +309,81 @@ def serialize_sluvo_asset(asset: SluvoCanvasAsset) -> Dict[str, Any]:
         "createdAt": asset.created_at.isoformat() if asset.created_at else None,
         "updatedAt": asset.updated_at.isoformat() if asset.updated_at else None,
     }
+
+
+def _serialize_community_author(user: Optional[User]) -> Dict[str, Any]:
+    return {
+        "nickname": (user.nickname if user else "") or "Sluvo 创作者",
+        "avatarUrl": user.avatar_url if user else None,
+    }
+
+
+def _normalize_community_tags(tags: List[Any]) -> List[str]:
+    result: List[str] = []
+    for item in tags or []:
+        text = str(item or "").strip()
+        if text and text not in result:
+            result.append(text[:24])
+        if len(result) >= 8:
+            break
+    return result
+
+
+def serialize_sluvo_community_canvas(item: SluvoCommunityCanvas, *, detail: bool = False) -> Dict[str, Any]:
+    owner = None
+    # The session-backed detail serializer below can fill this; keep this helper safe for tests.
+    return _serialize_sluvo_community_canvas_payload(item, owner=owner, detail=detail)
+
+
+def serialize_sluvo_community_canvas_with_session(
+    session: Session,
+    item: SluvoCommunityCanvas,
+    *,
+    detail: bool = False,
+) -> Dict[str, Any]:
+    owner = session.get(User, item.owner_user_id) if item.owner_user_id else None
+    return _serialize_sluvo_community_canvas_payload(item, owner=owner, detail=detail)
+
+
+def _serialize_sluvo_community_canvas_payload(
+    item: SluvoCommunityCanvas,
+    *,
+    owner: Optional[User],
+    detail: bool = False,
+) -> Dict[str, Any]:
+    payload = {
+        "id": encode_id(item.id),
+        "sourceProjectId": encode_id(item.source_project_id),
+        "sourceCanvasId": encode_id(item.source_canvas_id),
+        "title": item.title,
+        "description": item.description or "",
+        "coverUrl": item.cover_url,
+        "tags": _json_load(item.tags_json, []),
+        "status": item.status,
+        "author": _serialize_community_author(owner),
+        "viewCount": int(item.view_count or 0),
+        "forkCount": int(item.fork_count or 0),
+        "publishedAt": item.published_at.isoformat() if item.published_at else None,
+        "updatedAt": item.updated_at.isoformat() if item.updated_at else None,
+    }
+    if detail:
+        payload.update(
+            {
+                "canvas": {
+                    "id": encode_id(item.source_canvas_id),
+                    "projectId": encode_id(item.source_project_id),
+                    "canvasKey": "community",
+                    "title": item.title,
+                    "viewport": _json_load(item.viewport_json, {}),
+                    "snapshot": _json_load(item.snapshot_json, {}),
+                    "schemaVersion": item.schema_version,
+                    "revision": 1,
+                },
+                "nodes": _json_load(item.nodes_json, []),
+                "edges": _json_load(item.edges_json, []),
+            }
+        )
+    return payload
 
 
 def serialize_sluvo_agent_session(session_item: SluvoAgentSession) -> Dict[str, Any]:
@@ -453,15 +547,274 @@ def list_sluvo_projects(
         if not member and project.visibility != "team" and not can_manage_team:
             continue
         first_image_url = get_sluvo_project_first_image_url(session, project.id)
-        result.append(serialize_sluvo_project(project, member.role if member else None, first_image_url))
+        publication = get_sluvo_project_community_publication(session, project.id)
+        result.append(serialize_sluvo_project(project, member.role if member else None, first_image_url, publication))
     return result
 
 
 def get_sluvo_project_bundle(session: Session, project: SluvoProject, member: Optional[SluvoProjectMember]) -> Dict[str, Any]:
     canvas = get_or_create_main_canvas(session, project)
     first_image_url = get_sluvo_project_first_image_url(session, project.id)
+    publication = get_sluvo_project_community_publication(session, project.id)
     return {
-        "project": serialize_sluvo_project(project, member.role if member else None, first_image_url),
+        "project": serialize_sluvo_project(project, member.role if member else None, first_image_url, publication),
+        "canvas": serialize_sluvo_canvas(canvas),
+    }
+
+
+def list_sluvo_community_canvases(session: Session, *, limit: int = 24, sort: str = "latest") -> List[Dict[str, Any]]:
+    limit = max(1, min(int(limit or 24), 60))
+    order_by = SluvoCommunityCanvas.fork_count.desc() if str(sort or "").lower() == "popular" else SluvoCommunityCanvas.published_at.desc()
+    items = session.exec(
+        select(SluvoCommunityCanvas)
+        .where(SluvoCommunityCanvas.status == SLUVO_COMMUNITY_CANVAS_STATUS_PUBLISHED)
+        .order_by(order_by, SluvoCommunityCanvas.id.desc())
+        .limit(limit)
+    ).all()
+    return [serialize_sluvo_community_canvas_with_session(session, item) for item in items]
+
+
+def require_sluvo_community_canvas(
+    session: Session,
+    publication_id: str,
+    *,
+    include_unpublished: bool = False,
+) -> SluvoCommunityCanvas:
+    item = session.get(SluvoCommunityCanvas, decode_id(publication_id))
+    if not item or (not include_unpublished and item.status != SLUVO_COMMUNITY_CANVAS_STATUS_PUBLISHED):
+        raise HTTPException(status_code=404, detail="社区画布不存在")
+    return item
+
+
+def publish_sluvo_project_to_community(
+    session: Session,
+    *,
+    project: SluvoProject,
+    user: User,
+    team: Team,
+    payload: SluvoCommunityCanvasPublishRequest,
+) -> Dict[str, Any]:
+    canvas = get_or_create_main_canvas(session, project)
+    bundle = canvas_bundle(session, canvas)
+    now = _utc_now()
+    title = str(payload.title or project.title or "").strip()[:255] or project.title or "未命名画布"
+    description = str(payload.description if payload.description is not None else project.description or "").strip()
+    tags = _normalize_community_tags(payload.tags)
+    cover_url = str(payload.coverUrl or "").strip() or get_sluvo_project_first_image_url(session, project.id) or project.cover_url
+    snapshot = {
+        "project": serialize_sluvo_project(project),
+        "canvas": bundle["canvas"],
+        "nodes": bundle["nodes"],
+        "edges": bundle["edges"],
+        "publishedAt": now.isoformat(),
+    }
+    item = session.exec(
+        select(SluvoCommunityCanvas).where(SluvoCommunityCanvas.source_project_id == project.id)
+    ).first()
+    if not item:
+        item = SluvoCommunityCanvas(
+            source_project_id=project.id,
+            source_canvas_id=canvas.id,
+            owner_user_id=user.id,
+            team_id=team.id,
+            created_at=now,
+        )
+    item.source_canvas_id = canvas.id
+    item.owner_user_id = user.id
+    item.team_id = team.id
+    item.title = title
+    item.description = description
+    item.cover_url = cover_url
+    item.tags_json = _json_dump(tags, [])
+    item.status = SLUVO_COMMUNITY_CANVAS_STATUS_PUBLISHED
+    item.snapshot_json = _json_dump(snapshot, {})
+    item.nodes_json = _json_dump(bundle["nodes"], [])
+    item.edges_json = _json_dump(bundle["edges"], [])
+    item.viewport_json = _json_dump(bundle["canvas"].get("viewport") or {}, {})
+    item.schema_version = int(bundle["canvas"].get("schemaVersion") or 1)
+    item.unpublished_at = None
+    item.published_at = item.published_at or now
+    item.updated_at = now
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return {"publication": serialize_sluvo_community_canvas_with_session(session, item, detail=True)}
+
+
+def get_sluvo_community_canvas_detail(session: Session, item: SluvoCommunityCanvas) -> Dict[str, Any]:
+    item.view_count = int(item.view_count or 0) + 1
+    item.updated_at = _utc_now()
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return {"publication": serialize_sluvo_community_canvas_with_session(session, item, detail=True)}
+
+
+def unpublish_sluvo_community_canvas(
+    session: Session,
+    *,
+    item: SluvoCommunityCanvas,
+    user: User,
+    team_member: TeamMemberLink,
+) -> Dict[str, Any]:
+    is_team_admin = item.team_id == team_member.team_id and _has_team_manage_role(team_member.role)
+    if item.owner_user_id != user.id and not is_team_admin:
+        raise HTTPException(status_code=403, detail="只有发布者或团队管理员可以取消发布")
+    item.status = SLUVO_COMMUNITY_CANVAS_STATUS_UNPUBLISHED
+    item.unpublished_at = _utc_now()
+    item.updated_at = item.unpublished_at
+    session.add(item)
+    session.commit()
+    return {"status": "success", "publicationId": encode_id(item.id)}
+
+
+def fork_sluvo_community_canvas(
+    session: Session,
+    *,
+    item: SluvoCommunityCanvas,
+    user: User,
+    team: Team,
+) -> Dict[str, Any]:
+    now = _utc_now()
+    project = SluvoProject(
+        owner_user_id=user.id,
+        team_id=team.id,
+        title=f"Fork 自 {item.title}"[:255],
+        description=item.description,
+        status="active",
+        visibility="project_members",
+        settings_json=_json_dump(
+            {
+                "source": "community_fork",
+                "publicationId": encode_id(item.id),
+                "sourceProjectId": encode_id(item.source_project_id),
+            }
+        ),
+        cover_url=item.cover_url,
+        created_at=now,
+        updated_at=now,
+        last_opened_at=now,
+    )
+    session.add(project)
+    session.flush()
+    member = SluvoProjectMember(
+        project_id=project.id,
+        user_id=user.id,
+        role=SLUVO_MEMBER_ROLE_OWNER,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(member)
+    canvas = SluvoCanvas(
+        project_id=project.id,
+        canvas_key="main",
+        title=item.title or "Main Canvas",
+        viewport_json=item.viewport_json or "{}",
+        snapshot_json=item.snapshot_json or "{}",
+        schema_version=int(item.schema_version or 1),
+        revision=1,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(canvas)
+    session.flush()
+
+    node_id_map: Dict[str, int] = {}
+    for index, node_payload in enumerate(_json_load(item.nodes_json, [])):
+        position = node_payload.get("position") or {}
+        size = node_payload.get("size") or {}
+        node = SluvoCanvasNode(
+            canvas_id=canvas.id,
+            node_type=normalize_sluvo_node_type(node_payload.get("nodeType")),
+            title=node_payload.get("title") or "",
+            position_x=float(position.get("x", 0.0)),
+            position_y=float(position.get("y", 0.0)),
+            width=size.get("width"),
+            height=size.get("height"),
+            z_index=int(node_payload.get("zIndex") if node_payload.get("zIndex") is not None else index),
+            rotation=float(node_payload.get("rotation") or 0.0),
+            status=node_payload.get("status") or "idle",
+            hidden=bool(node_payload.get("hidden") or False),
+            locked=bool(node_payload.get("locked") or False),
+            collapsed=bool(node_payload.get("collapsed") or False),
+            data_json=_json_dump(node_payload.get("data") or {}),
+            ports_json=_json_dump(node_payload.get("ports") or {}),
+            ai_config_json=_json_dump(node_payload.get("aiConfig") or {}),
+            style_json=_json_dump(node_payload.get("style") or {}),
+            revision=1,
+            created_by_user_id=user.id,
+            updated_by_user_id=user.id,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(node)
+        session.flush()
+        old_id = str(node_payload.get("id") or "")
+        if old_id:
+            node_id_map[old_id] = node.id
+
+    for edge_payload in _json_load(item.edges_json, []):
+        source_id = node_id_map.get(str(edge_payload.get("sourceNodeId") or ""))
+        target_id = node_id_map.get(str(edge_payload.get("targetNodeId") or ""))
+        if not source_id or not target_id:
+            continue
+        edge = SluvoCanvasEdge(
+            canvas_id=canvas.id,
+            source_node_id=source_id,
+            target_node_id=target_id,
+            source_port_id=edge_payload.get("sourcePortId"),
+            target_port_id=edge_payload.get("targetPortId"),
+            edge_type=normalize_sluvo_edge_type(edge_payload.get("edgeType")),
+            label=edge_payload.get("label"),
+            data_json=_json_dump(edge_payload.get("data") or {}),
+            style_json=_json_dump(edge_payload.get("style") or {}),
+            hidden=bool(edge_payload.get("hidden") or False),
+            revision=1,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(edge)
+
+    for asset in session.exec(
+        select(SluvoCanvasAsset).where(SluvoCanvasAsset.project_id == item.source_project_id, SluvoCanvasAsset.deleted_at == None)
+    ).all():
+        next_node_id = node_id_map.get(encode_id(asset.node_id)) if asset.node_id else None
+        session.add(
+            SluvoCanvasAsset(
+                project_id=project.id,
+                canvas_id=canvas.id,
+                node_id=next_node_id,
+                owner_user_id=user.id,
+                media_type=asset.media_type,
+                source_type="community_reference",
+                url=asset.url,
+                thumbnail_url=asset.thumbnail_url,
+                storage_object_id=asset.storage_object_id,
+                mime_type=asset.mime_type,
+                file_size=asset.file_size,
+                width=asset.width,
+                height=asset.height,
+                duration_seconds=asset.duration_seconds,
+                metadata_json=_json_dump(
+                    {
+                        **_json_load(asset.metadata_json, {}),
+                        "forkedFromPublicationId": encode_id(item.id),
+                        "sourceAssetId": encode_id(asset.id),
+                    }
+                ),
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    item.fork_count = int(item.fork_count or 0) + 1
+    item.updated_at = now
+    session.add(item)
+    session.commit()
+    session.refresh(project)
+    session.refresh(canvas)
+    return {
+        "project": serialize_sluvo_project(project, SLUVO_MEMBER_ROLE_OWNER, item.cover_url),
         "canvas": serialize_sluvo_canvas(canvas),
     }
 

@@ -63,6 +63,33 @@
           <span>{{ item.description }}</span>
         </article>
       </section>
+
+      <section class="guest-community-band" aria-labelledby="guest-community-title">
+        <div class="section-heading section-heading--stacked">
+          <h2 id="guest-community-title">
+            <GitFork :size="22" />
+            开放画布社区
+          </h2>
+          <p>游客可以先浏览社区画布，登录后查看完整画布并 Fork 到自己的工作台。</p>
+        </div>
+        <div class="community-grid">
+          <article v-for="item in visibleCommunityCanvases" :key="item.id" class="community-card" tabindex="0" @click="openCommunityDetail(item)">
+            <span class="community-card__cover">
+              <img v-if="item.coverUrl" :src="item.coverUrl" :alt="item.title" loading="lazy" />
+              <span v-else>开放画布</span>
+            </span>
+            <span class="community-card__meta">{{ item.author?.nickname || 'Sluvo 创作者' }} · {{ item.forkCount || 0 }} Fork</span>
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.description || '一张可学习、可复用的社区画布。' }}</p>
+            <button type="button" @click.stop="openCommunityDetail(item)">登录查看详情</button>
+          </article>
+          <article v-if="!communityLoading && visibleCommunityCanvases.length === 0" class="community-card community-card--empty">
+            <span class="community-card__cover">等待发布</span>
+            <strong>社区画布即将出现</strong>
+            <p>发布你的第一张开放画布，让其他创作者可以学习和 Fork。</p>
+          </article>
+        </div>
+      </section>
     </section>
 
     <section v-else class="home-workbench">
@@ -255,6 +282,45 @@
           </div>
         </section>
 
+        <section class="home-section community-section" aria-labelledby="community-title">
+          <div class="section-heading section-heading--stacked">
+            <h2 id="community-title">
+              <GitFork :size="22" />
+              社区画布
+            </h2>
+            <p>从其他创作者的画布快照开始，把结构、素材和生成链路 Fork 成你的新项目。</p>
+          </div>
+          <p v-if="communityError" class="home-section__error">{{ communityError }}</p>
+          <div class="community-grid">
+            <article v-for="item in visibleCommunityCanvases" :key="item.id" class="community-card" tabindex="0" @click="openCommunityDetail(item)">
+              <span class="community-card__cover">
+                <img v-if="item.coverUrl" :src="item.coverUrl" :alt="item.title" loading="lazy" />
+                <span v-else>开放画布</span>
+              </span>
+              <span class="community-card__meta">{{ item.author?.nickname || 'Sluvo 创作者' }} · {{ item.forkCount || 0 }} Fork</span>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.description || '一张可学习、可复用的社区画布。' }}</p>
+              <div class="community-card__actions">
+                <button type="button" @click.stop="openCommunityDetail(item)">查看详情</button>
+                <button type="button" :disabled="forkingCommunityIds.has(item.id)" @click.stop="forkCommunityCanvas(item)">
+                  <Loader2 v-if="forkingCommunityIds.has(item.id)" class="spin" :size="15" />
+                  Fork 到我的画布
+                </button>
+              </div>
+            </article>
+            <article v-if="communityLoading" class="community-card community-card--empty">
+              <span class="community-card__cover">同步中</span>
+              <strong>正在加载社区画布</strong>
+              <p>稍等片刻，Sluvo 正在拉取最新开放画布。</p>
+            </article>
+            <article v-if="!communityLoading && visibleCommunityCanvases.length === 0" class="community-card community-card--empty">
+              <span class="community-card__cover">等待发布</span>
+              <strong>还没有社区画布</strong>
+              <p>你可以先创建项目，在画布工作台里发布到社区。</p>
+            </article>
+          </div>
+        </section>
+
         <section ref="projectsSection" class="home-section recent-projects" aria-labelledby="recent-title">
           <div class="section-heading section-heading--stacked">
             <h2 id="recent-title">
@@ -425,6 +491,7 @@ import {
   FolderOpen,
   Globe2,
   GitFork,
+  Loader2,
   Image,
   Layers,
   LogIn,
@@ -444,7 +511,7 @@ import logoUrl from '../../LOGO.png'
 import { useAuthStore } from '../stores/authStore'
 import { useProjectStore } from '../stores/projectStore'
 import { fetchUserDashboard } from '../api/authApi'
-import { saveSluvoCanvasBatch } from '../api/sluvoApi'
+import { fetchSluvoCommunityCanvases, forkSluvoCommunityCanvas, saveSluvoCanvasBatch } from '../api/sluvoApi'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -456,6 +523,10 @@ const deletingProjectIds = ref(new Set())
 const activeShowcaseIndex = ref(0)
 let showcaseRotationTimer = null
 const accountPoints = ref(0)
+const communityCanvases = ref([])
+const communityLoading = ref(false)
+const communityError = ref('')
+const forkingCommunityIds = ref(new Set())
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const isCreatingProject = computed(() => projectStore.creatingProject)
@@ -466,6 +537,7 @@ const visibleShowcaseItems = computed(() => {
     .map((offset) => showcaseItems[(activeShowcaseIndex.value + offset) % showcaseItems.length])
     .filter(Boolean)
 })
+const visibleCommunityCanvases = computed(() => communityCanvases.value.slice(0, 6))
 
 const remoteMedia = {
   character: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-character-board.webp',
@@ -727,6 +799,50 @@ function openLogin() {
   router.push({ name: 'login' })
 }
 
+async function loadCommunityCanvases() {
+  communityLoading.value = true
+  communityError.value = ''
+  try {
+    communityCanvases.value = await fetchSluvoCommunityCanvases({ limit: 6, sort: 'latest' })
+  } catch (error) {
+    communityError.value = error instanceof Error ? error.message : '社区画布加载失败'
+  } finally {
+    communityLoading.value = false
+  }
+}
+
+function openCommunityDetail(item) {
+  if (!authStore.isAuthenticated) {
+    router.push({ name: 'login', query: { redirect: `/community/canvases/${item.id}` } })
+    return
+  }
+  router.push({ name: 'community-canvas-detail', params: { publicationId: item.id } })
+}
+
+async function forkCommunityCanvas(item) {
+  if (!authStore.isAuthenticated) {
+    router.push({ name: 'login', query: { redirect: `/community/canvases/${item.id}` } })
+    return
+  }
+  if (!item?.id || forkingCommunityIds.value.has(item.id)) return
+  forkingCommunityIds.value = new Set([...forkingCommunityIds.value, item.id])
+  try {
+    const payload = await forkSluvoCommunityCanvas(item.id)
+    const projectId = payload?.project?.id
+    if (projectId) {
+      await projectStore.loadProjects().catch(() => {})
+      router.push(`/projects/${projectId}/canvas`)
+    }
+  } catch (error) {
+    communityError.value = error instanceof Error ? error.message : 'Fork 社区画布失败'
+    if (error?.status === 401) authStore.logout()
+  } finally {
+    const next = new Set(forkingCommunityIds.value)
+    next.delete(item.id)
+    forkingCommunityIds.value = next
+  }
+}
+
 function logout() {
   authStore.logout()
   accountPoints.value = 0
@@ -974,6 +1090,7 @@ function focusProjects() {
 
 onMounted(() => {
   readAuthState()
+  loadCommunityCanvases()
   startShowcaseRotation()
   window.addEventListener('storage', handleStorage)
 })
@@ -2262,6 +2379,141 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.guest-community-band {
+  width: min(1120px, calc(100vw - 48px));
+  margin: 64px auto 0;
+}
+
+.community-section {
+  margin-top: 46px;
+}
+
+.community-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.community-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 10px 16px;
+  border: 1px solid rgba(214, 181, 109, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(214, 181, 109, 0.08), transparent 58%),
+    rgba(255, 255, 255, 0.045);
+  color: #fff8e6;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.community-card:hover,
+.community-card:focus-visible {
+  border-color: rgba(214, 181, 109, 0.36);
+  background: rgba(214, 181, 109, 0.075);
+  transform: translateY(-3px);
+}
+
+.community-card:focus-visible {
+  outline: 2px solid rgba(229, 200, 137, 0.62);
+  outline-offset: 2px;
+}
+
+.community-card__cover {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(214, 181, 109, 0.18), transparent 42%),
+    #17130d;
+  color: rgba(255, 248, 230, 0.56);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.community-card__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.community-card__meta {
+  padding: 0 4px;
+  color: rgba(214, 181, 109, 0.78);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.community-card strong {
+  padding: 0 4px;
+  overflow: hidden;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-card p {
+  display: -webkit-box;
+  min-height: 42px;
+  margin: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  color: rgba(249, 241, 220, 0.58);
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.community-card__actions {
+  display: flex;
+  gap: 8px;
+  padding: 2px 4px 0;
+}
+
+.community-card button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 241, 199, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #fff1c7;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.community-card__actions button:last-child,
+.guest-community-band .community-card button {
+  border-color: rgba(255, 221, 151, 0.42);
+  background: linear-gradient(180deg, #d6b56d, #9f722c);
+  color: #160f06;
+}
+
+.community-card button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.community-card--empty {
+  cursor: default;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
 .open-ecosystem-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2562,6 +2814,12 @@ onBeforeUnmount(() => {
   }
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 1180px) {
   .guest-hero {
     grid-template-columns: 1fr;
@@ -2634,6 +2892,7 @@ onBeforeUnmount(() => {
   }
 
   .capability-band,
+  .community-grid,
   .open-ecosystem-grid,
   .project-grid,
   .agent-panel {

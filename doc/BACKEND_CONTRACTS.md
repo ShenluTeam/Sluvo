@@ -80,8 +80,15 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | Send Agent message/proposed action | POST | `/api/sluvo/agent/sessions/{session_id}/messages` |
 | Approve Agent action | POST | `/api/sluvo/agent/actions/{action_id}/approve` |
 | Cancel Agent action | POST | `/api/sluvo/agent/actions/{action_id}/cancel` |
+| List community canvases | GET | `/api/sluvo/community/canvases` |
+| Read community canvas detail | GET | `/api/sluvo/community/canvases/{publication_id}` |
+| Publish project to community | POST | `/api/sluvo/projects/{project_id}/community/publish` |
+| Fork community canvas | POST | `/api/sluvo/community/canvases/{publication_id}/fork` |
+| Unpublish community canvas | POST | `/api/sluvo/community/canvases/{publication_id}/unpublish` |
 
 Project payloads include `firstImageUrl` when the project has at least one active image asset. The frontend may use this as the recent-project cover; if no first image exists, project cards should not invent a showcase cover.
+
+Community canvas list responses are public and return card metadata only. Community detail and fork require `shenlu_token`. Publishing stores a snapshot of the source canvas; later source-project edits do not alter the community version until the user publishes again. Fork creates a new Sluvo project and references the original OSS media URLs instead of copying large media files.
 
 All IDs are encoded with the existing Shenlu `encode_id` scheme. Canvas, node, and edge updates support `expectedRevision`; stale writes return `409`.
 
@@ -126,6 +133,7 @@ Sluvo standalone product terms map to new `sluvo_*` backend models.
 | Canvas node | `SluvoCanvasNode` |
 | Canvas edge | `SluvoCanvasEdge` |
 | Canvas asset | `SluvoCanvasAsset` |
+| Community canvas publication | `SluvoCommunityCanvas` |
 | Agent session | `SluvoAgentSession` |
 | Agent event | `SluvoAgentEvent` |
 | Agent action | `SluvoAgentAction` |

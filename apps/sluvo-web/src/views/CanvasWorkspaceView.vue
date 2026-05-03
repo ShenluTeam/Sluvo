@@ -403,6 +403,7 @@
         @go-home="goHome"
         @logout="logoutCanvas"
         @save="saveCanvasNow"
+        @publish="openPublishDialog"
       />
 
       <CanvasToolRail
@@ -626,6 +627,44 @@
         <img :src="imagePreview.url" :alt="imagePreview.alt" draggable="false" @click.stop />
       </div>
 
+      <div v-if="publishDialog.visible" class="publish-overlay" role="dialog" aria-modal="true" aria-label="发布到社区" @click.stop>
+        <section class="publish-dialog">
+          <header>
+            <div>
+              <span>开放画布社区</span>
+              <h2>{{ publishDialog.publicationId ? '更新发布版本' : '发布到社区' }}</h2>
+            </div>
+            <button type="button" aria-label="关闭" @click="closePublishDialog">
+              <X :size="24" />
+            </button>
+          </header>
+          <label>
+            标题
+            <input v-model="publishForm.title" type="text" maxlength="80" />
+          </label>
+          <label>
+            简介
+            <textarea v-model="publishForm.description" rows="4" maxlength="280" />
+          </label>
+          <label>
+            标签
+            <input v-model="publishForm.tagsText" type="text" placeholder="漫剧, 分镜, 角色设定" />
+          </label>
+          <label>
+            封面 URL
+            <input v-model="publishForm.coverUrl" type="url" placeholder="默认使用项目第一张图片" />
+          </label>
+          <p v-if="publishDialog.error" class="publish-dialog__error">{{ publishDialog.error }}</p>
+          <footer>
+            <button v-if="publishDialog.publicationId" type="button" :disabled="publishDialog.submitting" @click="unpublishCurrentCanvas">取消发布</button>
+            <button type="button" @click="closePublishDialog">稍后</button>
+            <button class="publish-dialog__primary" type="button" :disabled="publishDialog.submitting" @click="publishCurrentCanvas">
+              {{ publishDialog.submitting ? '发布中' : (publishDialog.publicationId ? '更新发布版本' : '发布到社区') }}
+            </button>
+          </footer>
+        </section>
+      </div>
+
       <div v-if="toastMessage" class="canvas-toast">{{ toastMessage }}</div>
     </section>
   </div>
@@ -651,7 +690,14 @@ import {
   fetchTask,
   submitCreativeImage
 } from '../api/creativeApi'
-import { fetchSluvoProjectCanvas, saveSluvoCanvasBatch, SluvoRevisionConflictError, uploadSluvoCanvasAsset } from '../api/sluvoApi'
+import {
+  fetchSluvoProjectCanvas,
+  publishSluvoProjectToCommunity,
+  saveSluvoCanvasBatch,
+  SluvoRevisionConflictError,
+  unpublishSluvoCommunityCanvas,
+  uploadSluvoCanvasAsset
+} from '../api/sluvoApi'
 import { buildApiUrl } from '../api/client'
 import { useCanvasStore } from '../stores/canvasStore'
 import { useProjectStore } from '../stores/projectStore'
@@ -754,6 +800,18 @@ const canvasFrame = ref(null)
 const deleteKeySink = ref(null)
 const uploadInput = ref(null)
 const referenceUploadInput = ref(null)
+const publishForm = reactive({
+  title: '',
+  description: '',
+  tagsText: '',
+  coverUrl: ''
+})
+const publishDialog = reactive({
+  visible: false,
+  submitting: false,
+  error: '',
+  publicationId: ''
+})
 const directNodeElements = new Map()
 const directPromptEditorElements = new Map()
 const directPromptEditorSignatures = new Map()
@@ -1240,6 +1298,73 @@ function getWorkspaceTitle(workspace) {
   const canvasTitle = String(workspace?.canvas?.title || '').trim()
   if (canvasTitle && canvasTitle !== 'Main Canvas') return canvasTitle
   return workspace?.project?.title || canvasTitle || copy.untitled
+}
+
+function openPublishDialog() {
+  const project = projectStore.activeProject || {}
+  const settings = project.settings || {}
+  publishForm.title = projectTitle.value || project.title || copy.untitled
+  publishForm.description = project.description || ''
+  publishForm.tagsText = Array.isArray(settings.communityTags) ? settings.communityTags.join(', ') : ''
+  publishForm.coverUrl = project.coverUrl || project.firstImageUrl || ''
+  publishDialog.publicationId = project.communityPublication?.id || settings.communityPublicationId || ''
+  publishDialog.error = ''
+  publishDialog.visible = true
+}
+
+function closePublishDialog() {
+  if (publishDialog.submitting) return
+  publishDialog.visible = false
+  publishDialog.error = ''
+}
+
+async function publishCurrentCanvas() {
+  const projectId = projectStore.activeProject?.id || String(route.params.projectId || '')
+  if (!projectId || publishDialog.submitting) return
+  publishDialog.submitting = true
+  publishDialog.error = ''
+  try {
+    await saveCanvasNow()
+    const payload = await publishSluvoProjectToCommunity(projectId, {
+      title: publishForm.title.trim() || projectTitle.value || copy.untitled,
+      description: publishForm.description.trim() || null,
+      tags: parsePublishTags(publishForm.tagsText),
+      coverUrl: publishForm.coverUrl.trim() || null
+    })
+    const publication = payload?.publication
+    publishDialog.publicationId = publication?.id || ''
+    publishDialog.visible = false
+    showToast('已发布到开放画布社区')
+  } catch (error) {
+    publishDialog.error = error instanceof Error ? error.message : '发布失败，请稍后重试'
+    if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
+  } finally {
+    publishDialog.submitting = false
+  }
+}
+
+async function unpublishCurrentCanvas() {
+  if (!publishDialog.publicationId || publishDialog.submitting) return
+  publishDialog.submitting = true
+  publishDialog.error = ''
+  try {
+    await unpublishSluvoCommunityCanvas(publishDialog.publicationId)
+    publishDialog.visible = false
+    publishDialog.publicationId = ''
+    showToast('已取消发布')
+  } catch (error) {
+    publishDialog.error = error instanceof Error ? error.message : '取消发布失败'
+  } finally {
+    publishDialog.submitting = false
+  }
+}
+
+function parsePublishTags(value) {
+  return String(value || '')
+    .split(/[，,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 8)
 }
 
 function syncCanvasRevisionState(workspace) {

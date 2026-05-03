@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import CanvasWorkspaceView from '../views/CanvasWorkspaceView.vue'
+import CommunityCanvasView from '../views/CommunityCanvasView.vue'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
 
@@ -20,6 +21,12 @@ const router = createRouter({
       path: '/projects/:projectId/canvas',
       name: 'canvas',
       component: CanvasWorkspaceView,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/community/canvases/:publicationId',
+      name: 'community-canvas-detail',
+      component: CommunityCanvasView,
       meta: { requiresAuth: true }
     },
     {

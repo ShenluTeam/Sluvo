@@ -53,6 +53,7 @@ apps/sluvo-web/
     views/
       HomeView.vue
       LoginView.vue
+      CommunityCanvasView.vue
       ProjectListView.vue
       CanvasWorkspaceView.vue
     App.vue
@@ -102,12 +103,15 @@ Current MVP routes:
 | `/` | `HomeView.vue` |
 | `/projects` | `HomeView.vue` |
 | `/projects/:projectId/canvas` | `CanvasWorkspaceView.vue` |
+| `/community/canvases/:publicationId` | `CommunityCanvasView.vue` |
 
 `HomeView.vue` is a dual-state entry:
 - Without `localStorage.shenlu_token`, it shows the public black/gold Sluvo brand entry and sends login to `/login`.
 - With `localStorage.shenlu_token`, it shows the OiiOii-style creation workbench backed by real `/api/sluvo/projects` data.
 
 Home project cards route to `/projects/{projectId}/canvas`. The central prompt composer creates a real Sluvo project, writes the prompt as the first `note` node on the main canvas, then routes to the canvas page.
+
+Community canvas cards are visible on the public and logged-in home. Guests can browse cards but must log in before opening detail or forking. Logged-in users can open the read-only community detail view and fork a publication into a new editable Sluvo project.
 
 ## 6. Canvas State Rule
 

@@ -388,6 +388,8 @@ Business:
 - Should note and prompt nodes be canvas-only, or saved as reusable prompt assets?
 - Should the subsite use Vue to stay close to the current stack, or React to access stronger canvas ecosystems?
 - Should public template sharing wait until billing and permissions are more granular?
+
+2026-05-03 update: Open canvas community v1 is now in scope before the broader marketplace. It supports public card browsing, login-gated read-only detail, creator publishing as a snapshot, unpublish, and fork into a new editable Sluvo project. v1 forks reference original OSS media URLs and do not copy large assets.
 - Should `ai.shenlu.top` link to the subsite only from project pages, or also from the dashboard?
 
 ## 16. Final Recommendation
