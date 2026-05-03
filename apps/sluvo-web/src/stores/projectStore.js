@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   createSluvoProject,
+  deleteSluvoProject,
   fetchSluvoProjectCanvas,
   fetchSluvoProjects,
   updateSluvoProject
@@ -89,6 +90,14 @@ export const useProjectStore = defineStore('project', () => {
     return payload?.project || null
   }
 
+  async function deleteProject(projectId) {
+    if (!projectId) return null
+    const payload = await deleteSluvoProject(projectId)
+    projects.value = projects.value.filter((project) => project.id !== projectId)
+    if (activeProject.value?.id === projectId) clearWorkspace()
+    return payload
+  }
+
   function setWorkspace(workspace) {
     activeProject.value = workspace?.project || null
     activeCanvas.value = workspace?.canvas || null
@@ -121,6 +130,7 @@ export const useProjectStore = defineStore('project', () => {
     createProjectFromPrompt,
     openProject,
     renameActiveProject,
+    deleteProject,
     setWorkspace,
     clearWorkspace
   }

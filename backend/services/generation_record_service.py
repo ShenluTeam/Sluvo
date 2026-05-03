@@ -99,6 +99,8 @@ from services.video_model_registry import (
 from services.image_model_registry import (
     GEN_IMAGE,
     GEN_TEXT,
+    IMAGE_ASPECT_RATIO_OPTIONS,
+    IMAGE_RESOLUTION_OPTIONS,
     MODEL_GPT_IMAGE_2_FAST,
     build_image_catalog,
     estimate_image_price,
@@ -173,7 +175,8 @@ VALID_IMAGE_MODES = {IMAGE_MODE_TEXT, IMAGE_MODE_IMAGE}
 IMAGE_MODEL_LOW_COST = "low_cost"
 IMAGE_MODEL_STABLE = "stable"
 VALID_IMAGE_MODELS = {IMAGE_MODEL_LOW_COST, IMAGE_MODEL_STABLE}
-VALID_IMAGE_RESOLUTIONS = {"1k", "2k", "4k"}
+VALID_IMAGE_RESOLUTIONS = set(IMAGE_RESOLUTION_OPTIONS)
+VALID_IMAGE_ASPECT_RATIOS = set(IMAGE_ASPECT_RATIO_OPTIONS)
 
 VIDEO_TYPE_STANDARD = "standard"
 VIDEO_TYPE_DIGITAL_HUMAN = "digital_human"
@@ -469,7 +472,7 @@ def _normalize_duration(value: Any) -> int:
 
 def _normalize_aspect_ratio(value: Optional[str]) -> str:
     ratio = str(value or "16:9").strip()
-    if ratio not in {"16:9", "9:16", "1:1", "4:3"}:
+    if ratio not in VALID_IMAGE_ASPECT_RATIOS:
         raise public_http_error(400, "invalid_request", "aspect_ratio 不合法", field="aspect_ratio")
     return ratio
 

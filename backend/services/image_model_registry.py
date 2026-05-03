@@ -506,6 +506,25 @@ def _feature_start_points(feature: ImageFeatureConfig) -> Optional[int]:
     return min(values) if values else None
 
 
+def _public_pricing_rules(feature: ImageFeatureConfig) -> List[Dict[str, Any]]:
+    return [
+        {
+            "pricing_rule_type": rule.get("pricing_rule_type"),
+            "generation_type": rule.get("generation_type"),
+            "resolution": rule.get("resolution"),
+            "quality": rule.get("quality"),
+            "sell_price_points": rule.get("sell_price_points"),
+            "pricing_note": rule.get("pricing_note"),
+            "pricing_details": {
+                "billing_unit": (rule.get("pricing_details") or {}).get("billing_unit"),
+                "resolution": (rule.get("pricing_details") or {}).get("resolution"),
+                "quality": (rule.get("pricing_details") or {}).get("quality"),
+            },
+        }
+        for rule in feature.get("pricing_rules") or []
+    ]
+
+
 def build_image_catalog() -> Dict[str, Any]:
     categories: List[Dict[str, Any]] = []
     items: List[Dict[str, Any]] = []
@@ -525,6 +544,7 @@ def build_image_catalog() -> Dict[str, Any]:
                     "defaults": feature["defaults"],
                     "fields": feature["fields"],
                     "pricing_rule_type": feature["pricing_rule_type"],
+                    "pricing_rules": _public_pricing_rules(feature),
                 }
             )
         items.append(

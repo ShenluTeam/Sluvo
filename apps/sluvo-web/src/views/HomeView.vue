@@ -184,21 +184,33 @@
           </div>
 
           <div v-else class="project-grid" :class="{ 'project-grid--empty': !projectStore.hasProjects }">
-            <button
+            <article
               v-for="(project, index) in projectStore.projects"
               :key="project.id"
               class="project-card"
-              type="button"
+              tabindex="0"
               @click="openProject(project.id)"
+              @keydown.enter.prevent="openProject(project.id)"
+              @keydown.space.prevent="openProject(project.id)"
             >
               <span class="project-card__preview" :class="`project-card__preview--${(index % 3) + 1}`">
                 <span />
                 <span />
                 <span />
               </span>
+              <button
+                class="project-card__delete"
+                type="button"
+                :disabled="deletingProjectIds.has(project.id)"
+                :title="`删除 ${project.title || '未命名画布'}`"
+                aria-label="删除项目"
+                @click.stop="deleteProject(project)"
+              >
+                <Trash2 :size="16" />
+              </button>
               <strong>{{ project.title || '未命名画布' }}</strong>
               <small>{{ formatProjectMeta(project) }}</small>
-            </button>
+            </article>
             <button
               class="project-card project-card--empty"
               type="button"
@@ -295,6 +307,7 @@ const projectStore = useProjectStore()
 const projectsSection = ref(null)
 const promptText = ref('')
 const projectFeedback = ref('')
+const deletingProjectIds = ref(new Set())
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const isCreatingProject = computed(() => projectStore.creatingProject)
@@ -496,6 +509,22 @@ async function createInitialPromptNode(canvas, prompt, title = '') {
 function openProject(projectId) {
   if (!projectId) return
   router.push(`/projects/${projectId}/canvas`)
+}
+
+async function deleteProject(project) {
+  if (!project?.id || deletingProjectIds.value.has(project.id)) return
+  const title = project.title || '未命名画布'
+  if (!window.confirm(`确定删除「${title}」吗？`)) return
+  deletingProjectIds.value = new Set([...deletingProjectIds.value, project.id])
+  try {
+    await projectStore.deleteProject(project.id)
+  } catch (error) {
+    projectFeedback.value = error instanceof Error ? error.message : '项目删除失败'
+  } finally {
+    const next = new Set(deletingProjectIds.value)
+    next.delete(project.id)
+    deletingProjectIds.value = next
+  }
 }
 
 function formatProjectMeta(project) {
@@ -1296,6 +1325,7 @@ onBeforeUnmount(() => {
 }
 
 .project-card {
+  position: relative;
   display: grid;
   gap: 8px;
   min-width: 0;
@@ -1304,6 +1334,7 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.055);
   color: #fff8e6;
+  cursor: pointer;
   text-align: left;
   transition:
     transform 0.18s ease,
@@ -1324,10 +1355,55 @@ onBeforeUnmount(() => {
 }
 
 .project-card:hover,
+.project-card:focus-visible,
 .agent-capability:hover {
   border-color: rgba(214, 181, 109, 0.34);
   background: rgba(214, 181, 109, 0.075);
   transform: translateY(-3px);
+}
+
+.project-card:focus-visible {
+  outline: 2px solid rgba(229, 200, 137, 0.62);
+  outline-offset: 2px;
+}
+
+.project-card__delete {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 187, 176, 0.22);
+  border-radius: 8px;
+  background: rgba(12, 10, 8, 0.72);
+  color: rgba(255, 222, 216, 0.88);
+  opacity: 0;
+  transform: translateY(-3px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.project-card:hover .project-card__delete,
+.project-card:focus-within .project-card__delete {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.project-card__delete:hover {
+  border-color: rgba(255, 156, 142, 0.5);
+  background: rgba(93, 30, 22, 0.82);
+  color: #fff2ef;
+}
+
+.project-card__delete:disabled {
+  cursor: wait;
+  opacity: 0.5;
 }
 
 .project-card__preview {

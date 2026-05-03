@@ -7,6 +7,10 @@
       @keydown.capture="handleCanvasKeyEvent"
       @keyup.capture="handleCanvasKeyEvent"
       @pointerdown.capture="handleFramePointerDown"
+      @wheel.capture="handleCanvasWheel"
+      @dragenter.prevent
+      @dragover.prevent="handleCanvasDragOver"
+      @drop.prevent="handleCanvasFileDrop"
       @dblclick="handleCanvasDoubleClick"
     >
       <VueFlow
@@ -139,28 +143,40 @@
             </button>
 
             <div v-if="node.type === 'uploaded_asset'" class="uploaded-asset">
-              <div v-if="node.upload?.status === 'uploading'" class="uploaded-asset__state">
-                <span>上传中 {{ node.upload.progress }}%</span>
-                <div class="uploaded-asset__progress">
-                  <span :style="{ width: `${node.upload.progress}%` }" />
-                </div>
+              <div v-if="node.media?.kind === 'image' && getUploadedImageSrc(node)" class="uploaded-asset__preview">
+                <img :src="getUploadedImageSrc(node)" :alt="node.media.name" draggable="false" @error="handleUploadedImageError(node.id)" />
+              </div>
+              <div v-else-if="node.media?.kind === 'video' && node.media?.url" class="uploaded-asset__preview">
+                <video :src="node.media.url" controls />
+              </div>
+              <div v-else-if="node.media?.kind === 'audio' && node.media?.url" class="uploaded-asset__audio">
+                <Music2 :size="42" />
+                <strong>{{ node.media.name }}</strong>
+                <audio :src="node.media.url" controls />
               </div>
               <div v-else-if="node.upload?.status === 'error'" class="uploaded-asset__state uploaded-asset__state--error">
                 <strong>{{ node.upload.message || '上传失败' }}</strong>
                 <button type="button" @click.stop="retryUploadedNode(node.id)">重试</button>
               </div>
-              <div v-else-if="node.upload?.status === 'success' && node.media?.kind === 'image'" class="uploaded-asset__preview">
-                <img :src="node.media.url" :alt="node.media.name" draggable="false" />
-              </div>
-              <div v-else-if="node.upload?.status === 'success' && node.media?.kind === 'video'" class="uploaded-asset__preview">
-                <video :src="node.media.url" controls />
-              </div>
-              <div v-else-if="node.upload?.status === 'success' && node.media?.kind === 'audio'" class="uploaded-asset__audio">
-                <Music2 :size="42" />
-                <strong>{{ node.media.name }}</strong>
-                <audio :src="node.media.url" controls />
+              <div v-else-if="node.upload?.status === 'uploading'" class="uploaded-asset__state">
+                <span>上传中 {{ node.upload.progress }}%</span>
+                <small v-if="node.upload.message">{{ node.upload.message }}</small>
+                <div class="uploaded-asset__progress">
+                  <span :style="{ width: `${node.upload.progress}%` }" />
+                </div>
               </div>
               <div v-else class="uploaded-asset__state">上传成功</div>
+              <div v-if="node.upload?.status === 'uploading' && node.media?.url" class="uploaded-asset__overlay">
+                <span>上传中 {{ node.upload.progress }}%</span>
+                <small v-if="node.upload.message">{{ node.upload.message }}</small>
+                <div class="uploaded-asset__progress">
+                  <span :style="{ width: `${node.upload.progress}%` }" />
+                </div>
+              </div>
+              <div v-if="node.upload?.status === 'error' && node.media?.url" class="uploaded-asset__overlay uploaded-asset__overlay--error">
+                <strong>{{ node.upload.message || '上传失败' }}</strong>
+                <button type="button" @click.stop="retryUploadedNode(node.id)">重试</button>
+              </div>
             </div>
 
             <div
@@ -169,7 +185,7 @@
             >
               <span class="generated-image__spinner" />
               <strong>{{ node.generationMessage || '图片生成中' }}</strong>
-              <small>{{ getImageModelLabel(node.imageModelId) }} · {{ node.aspectRatio || '16:9' }}</small>
+              <small>{{ getImageModelLabel(node.imageModelId) }} · {{ getImageResolutionLabel(node.imageResolution) }} · {{ node.aspectRatio || '16:9' }}</small>
             </div>
 
             <div
@@ -190,54 +206,133 @@
             </template>
           </div>
 
-          <textarea
-            v-if="node.type !== 'uploaded_asset'"
-            v-model="node.prompt"
-            class="direct-workflow-node__prompt"
-            :placeholder="node.promptPlaceholder"
-            aria-label="节点提示词"
-            @click.stop
-            @dblclick.stop
-            @keydown.stop
-            @keyup.stop
-            @pointerdown.stop
-            @mousedown.stop
-          />
           <div
-            v-if="node.type === 'image_unit'"
-            class="direct-workflow-node__generation-controls"
-            @click.stop
-            @dblclick.stop
-            @keydown.stop
-            @keyup.stop
-            @pointerdown.stop
-            @mousedown.stop
+            v-if="node.type !== 'uploaded_asset' && selectedDirectNodeIds.includes(node.id)"
+            class="direct-workflow-node__fixed-panel"
           >
-            <label class="direct-workflow-node__select">
-              <span>大模型</span>
-              <select v-model="node.imageModelId" :disabled="node.generationStatus === 'running'">
-                <option v-for="model in imageModelOptions" :key="model.id" :value="model.id">
-                  {{ model.label }}
-                </option>
-              </select>
-            </label>
-            <label class="direct-workflow-node__select direct-workflow-node__select--ratio">
-              <span>画面比例</span>
-              <select v-model="node.aspectRatio" :disabled="node.generationStatus === 'running'">
-                <option v-for="ratio in imageAspectRatioOptions" :key="ratio" :value="ratio">{{ ratio }}</option>
-              </select>
-            </label>
-            <button
-              class="direct-workflow-node__generate"
-              type="button"
-              :disabled="node.generationStatus === 'running' || !node.prompt.trim()"
-              @click.stop="runDirectImageNode(node)"
+            <textarea
+              v-model="node.prompt"
+              class="direct-workflow-node__prompt"
+              :placeholder="getDirectNodeTextareaPlaceholder(node)"
+              aria-label="节点提示词"
+              @focus="startDirectTextEdit(node.id)"
+              @input="markDirectTextEditDirty"
+              @blur="finishDirectTextEdit"
+              @keydown.ctrl.enter.stop.prevent="finishDirectTextEdit"
+              @keydown.meta.enter.stop.prevent="finishDirectTextEdit"
+              @click.stop
+              @dblclick.stop
+              @keydown.stop
+              @keyup.stop
+              @pointerdown.stop
+              @mousedown.stop
+            />
+            <div
+              v-if="node.type === 'image_unit'"
+              class="direct-workflow-node__references"
+              @click.stop
+              @dblclick.stop
+              @keydown.stop
+              @keyup.stop
+              @pointerdown.stop
+              @mousedown.stop
+              @dragover.prevent.stop
             >
-              {{ node.generationStatus === 'running' ? '生成中' : '生成图片' }}
-            </button>
-            <p v-if="node.generationStatus === 'error'" class="direct-workflow-node__generation-error">
-              {{ node.generationMessage || '生成失败，请稍后重试' }}
-            </p>
+              <button
+                class="direct-workflow-node__reference-upload"
+                type="button"
+                title="上传参考图"
+                @click.stop="openReferenceUploadDialog(node.id)"
+              >
+                <Upload :size="17" />
+              </button>
+              <div
+                v-for="(reference, index) in getDirectImageReferenceItems(node.id)"
+                :key="reference.id"
+                class="direct-workflow-node__reference-thumb"
+                :class="{ 'is-uploading': reference.status === 'uploading', 'is-error': reference.status === 'error' }"
+                :style="{ '--reference-aspect': getReferenceAspectRatio(reference) }"
+                draggable="true"
+                @click.stop="insertReferenceToken(node.id, index)"
+                @dragstart.stop="startReferenceDrag(node.id, reference.id)"
+                @dragover.prevent.stop
+                @drop.stop.prevent="dropReference(node.id, reference.id)"
+              >
+                <img :src="reference.previewUrl || reference.url" :alt="reference.name || `参考图 ${index + 1}`" draggable="false" />
+                <div class="direct-workflow-node__reference-popout" aria-hidden="true">
+                  <img :src="reference.previewUrl || reference.url" alt="" draggable="false" />
+                </div>
+                <span>{{ index + 1 }}</span>
+                <button
+                  v-if="reference.source === 'manual'"
+                  type="button"
+                  title="移除参考图"
+                  @click.stop="removeManualReferenceImage(node.id, reference.id)"
+                >
+                  <X :size="12" />
+                </button>
+                <small v-if="reference.status === 'uploading'">{{ reference.progress || 0 }}%</small>
+                <small v-else-if="reference.status === 'error'">失败</small>
+              </div>
+            </div>
+            <div
+              v-if="node.type === 'image_unit'"
+              class="direct-workflow-node__generation-controls"
+              @click.stop
+              @dblclick.stop
+              @keydown.stop
+              @keyup.stop
+              @pointerdown.stop
+              @mousedown.stop
+            >
+              <label class="direct-workflow-node__select">
+                <span>大模型</span>
+                <select v-model="node.imageModelId" :disabled="node.generationStatus === 'running'" @change="syncImageNodeSettings(node)">
+                  <option v-for="model in imageModelOptions" :key="model.id" :value="model.id">
+                    {{ model.label }}
+                  </option>
+                </select>
+              </label>
+              <label v-if="hasImageField(node, 'resolution')" class="direct-workflow-node__select direct-workflow-node__select--resolution">
+                <span>&#20998;&#36776;&#29575;</span>
+                <select v-model="node.imageResolution" :disabled="node.generationStatus === 'running'">
+                  <option v-for="resolution in getImageFieldOptions(node, 'resolution', imageResolutionOptions)" :key="resolution.id" :value="resolution.id">
+                    {{ resolution.label }}
+                  </option>
+                </select>
+              </label>
+              <label v-if="hasImageField(node, 'quality')" class="direct-workflow-node__select direct-workflow-node__select--quality">
+                <span>画质等级</span>
+                <select v-model="node.imageQuality" :disabled="node.generationStatus === 'running'">
+                  <option v-for="quality in getImageFieldOptions(node, 'quality', fallbackImageQualityOptions)" :key="quality.id" :value="quality.id">
+                    {{ quality.label }}
+                  </option>
+                </select>
+              </label>
+              <label v-if="hasImageField(node, 'aspect_ratio')" class="direct-workflow-node__select direct-workflow-node__select--ratio">
+                <span>画面比例</span>
+                <select v-model="node.aspectRatio" :disabled="node.generationStatus === 'running'">
+                  <option v-for="ratio in getImageFieldOptions(node, 'aspect_ratio', imageAspectRatioOptions)" :key="ratio.id || ratio" :value="ratio.id || ratio">
+                    {{ ratio.label || ratio }}
+                  </option>
+                </select>
+              </label>
+              <button
+                class="direct-workflow-node__generate"
+                type="button"
+                :disabled="node.generationStatus === 'running' || !node.prompt.trim() || hasPendingReferenceUploads(node.id)"
+                @click.stop="runDirectImageNode(node)"
+              >
+                <span class="direct-workflow-node__generate-cost">
+                  <Star :size="14" />
+                  {{ getImageGenerationPointsButtonLabel(node) }}
+                </span>
+                <span>{{ node.generationStatus === 'running' ? '生成中' : '生成图片' }}</span>
+              </button>
+              <p v-if="node.generationStatus === 'error'" class="direct-workflow-node__generation-error">
+                {{ node.generationMessage || '生成失败，请稍后重试' }}
+              </p>
+            </div>
           </div>
         </article>
       </div>
@@ -251,8 +346,8 @@
         autocomplete="off"
         readonly
         tabindex="-1"
-        @keydown.stop.prevent="handleDeleteSinkKey"
-        @keyup.stop.prevent="handleDeleteSinkKey"
+        @keydown.stop="handleDeleteSinkKey"
+        @keyup.stop="handleDeleteSinkKey"
       />
 
       <input
@@ -261,6 +356,14 @@
         type="file"
         accept="image/*,video/*,audio/*"
         @change="handleUploadInputChange"
+      />
+      <input
+        ref="referenceUploadInput"
+        class="hidden-upload-input"
+        type="file"
+        accept="image/*"
+        multiple
+        @change="handleReferenceUploadInputChange"
       />
 
       <CommandBar
@@ -480,7 +583,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { ArrowUpDown, ListChecks, Minus, Music2, Plus, Upload, X } from 'lucide-vue-next'
+import { ArrowUpDown, ListChecks, Minus, Music2, Plus, Star, Upload, X } from 'lucide-vue-next'
 import CommandBar from '../components/layout/CommandBar.vue'
 import AddNodeMenu from '../components/canvas/AddNodeMenu.vue'
 import CanvasBottomControls from '../components/canvas/CanvasBottomControls.vue'
@@ -596,6 +699,7 @@ const saveStatus = ref('idle')
 const canvasFrame = ref(null)
 const deleteKeySink = ref(null)
 const uploadInput = ref(null)
+const referenceUploadInput = ref(null)
 const directNodeElements = new Map()
 let previousDocumentKeydown = null
 let previousWindowKeydown = null
@@ -604,6 +708,13 @@ let uploadTimer = null
 let autoSaveTimer = null
 const imageGenerationTimers = new Map()
 const uploadFileMap = new Map()
+const localUploadPreviewUrls = new Map()
+const activeUploadSignatures = new Map()
+const uploadSignatureByNodeId = new Map()
+let uploadDialogOpening = false
+let lastUploadSelection = { signature: '', at: 0 }
+let lastClipboardImagePasteAt = 0
+let clipboardPasteFallbackTimer = null
 let undoShortcutLocked = false
 let lastUndoShortcutAt = 0
 const nodes = ref([])
@@ -615,13 +726,16 @@ const nodeRevisionMap = ref({})
 const edgeRevisionMap = ref({})
 const isHydratingCanvas = ref(false)
 const saveAfterHydration = ref(false)
+const saveAfterUploads = ref(false)
+const activeTextEditNodeId = ref('')
+const saveAfterTextEdit = ref(false)
 const selectedDirectNodeIds = ref([])
 const focusedDirectNodeId = ref('')
 const activeDirectNodeId = ref('')
 const lastTouchedDirectNodeId = ref('')
 const gridVisible = ref(true)
 const snapEnabled = ref(true)
-const minimapVisible = ref(true)
+const minimapVisible = ref(false)
 const helpVisible = ref(false)
 const activeRailPanel = ref('')
 const activeAssetLibrary = ref('assets')
@@ -631,6 +745,7 @@ const historyBatchMode = ref(false)
 const historySortAscending = ref(false)
 const pendingUploadFlowPosition = ref(null)
 const replacingUploadNodeId = ref('')
+const referenceUploadTargetNodeId = ref('')
 const toastMessage = ref('')
 const historyStack = ref([])
 const clipboardNodes = ref([])
@@ -674,6 +789,10 @@ const directDrag = reactive({
   startScreen: { x: 0, y: 0 },
   originals: []
 })
+const referenceDrag = reactive({
+  nodeId: '',
+  referenceId: ''
+})
 const directConnection = reactive({
   active: false,
   sourceId: '',
@@ -698,6 +817,27 @@ const historyTabs = [
   { id: 'video', label: '视频历史(0)' },
   { id: 'audio', label: '音频历史(0)' }
 ]
+const fallbackImagePricingRules = {
+  'nano-banana-pro': { '1k': 9, '2k': 11, '4k': 16 },
+  'nano-banana-2': { '1k': 9, '2k': 11, '4k': 13 },
+  'nano-banana-2-低价版': { '1k': 2, '2k': 2, '4k': 3 },
+  'nano-banana-2-low': { '1k': 2, '2k': 2, '4k': 3 },
+  'nano-banana-pro-低价版': { '1k': 5, '2k': 5, '4k': 6 },
+  'nano-banana-pro-low': { '1k': 5, '2k': 5, '4k': 6 },
+  'gpt-image-2-fast': { fixed: 3 },
+  'gpt-image-2': { '1k': 7, '2k': 10, '4k': 15 }
+}
+const fallbackImageAspectRatioOptions = ['16:9', '9:16', '1:1', '4:3', '3:4', '3:2', '2:3', '5:4', '4:5', '21:9']
+const fallbackImageResolutionOptions = [
+  { id: '1k', label: '1K' },
+  { id: '2k', label: '2K' },
+  { id: '4k', label: '4K' }
+]
+const fallbackImageQualityOptions = [
+  { id: 'low', label: 'Low' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'high', label: 'High' }
+]
 const fallbackImageModelOptions = [
   { id: 'nano-banana-pro', label: 'nano-banana-pro' },
   { id: 'nano-banana-2', label: 'nano-banana-2' },
@@ -705,10 +845,14 @@ const fallbackImageModelOptions = [
   { id: 'nano-banana-pro-low', label: 'nano-banana-pro-低价版' },
   { id: 'gpt-image-2-fast', label: 'gpt-image-2-fast' },
   { id: 'gpt-image-2', label: 'gpt-image-2' }
-]
-const fallbackImageAspectRatioOptions = ['16:9', '9:16', '1:1', '4:3']
+].map((model) => ({
+  ...model,
+  features: buildFallbackImageFeatures(model.id),
+  pricingRules: buildFallbackImagePricingRules(model.id)
+}))
 const imageModelOptions = ref([...fallbackImageModelOptions])
 const imageAspectRatioOptions = ref([...fallbackImageAspectRatioOptions])
+const imageResolutionOptions = ref([...fallbackImageResolutionOptions])
 const librarySourceTabs = ['Sluvo', 'Sluvo生成器', 'WebUI', 'ComfyUI', 'AI应用']
 const libraryTypeTabs = ['图片', '视频', '音频']
 const libraryPicker = reactive({
@@ -760,9 +904,15 @@ const showStarterStrip = computed(
     !addMenu.visible &&
     !activeRailPanel.value
 )
-const directLayerStyle = computed(() => ({
-  transform: `translate(${viewport.value?.x || 0}px, ${viewport.value?.y || 0}px) scale(${viewport.value?.zoom || 1})`
-}))
+const directLayerStyle = computed(() => {
+  const zoom = Number(viewport.value?.zoom || 1)
+  const safeZoom = zoom > 0 ? zoom : 1
+  return {
+    '--direct-viewport-zoom': safeZoom,
+    '--direct-fixed-panel-scale': 1 / safeZoom,
+    transform: `translate(${viewport.value?.x || 0}px, ${viewport.value?.y || 0}px) scale(${safeZoom})`
+  }
+})
 const selectionBoxStyle = computed(() => {
   const rect = getSelectionRect()
   return {
@@ -905,10 +1055,12 @@ onMounted(() => {
   })
   document.addEventListener('keydown', handleDocumentKeydown, true)
   document.addEventListener('keyup', handleDocumentKeyup, true)
+  document.addEventListener('paste', handleWindowPaste, true)
   window.addEventListener('keydown', handleWindowKeyEvent, true)
   window.addEventListener('keyup', handleWindowKeyEvent, true)
   window.addEventListener('keydown', handleKeydown)
   window.addEventListener('keyup', handleKeyup)
+  window.addEventListener('paste', handleWindowPaste)
   window.addEventListener('pointermove', handleWindowPointerMove)
   window.addEventListener('pointerup', handleWindowPointerUp)
   window.addEventListener('mousemove', handleWindowPointerMove)
@@ -930,10 +1082,12 @@ onBeforeUnmount(() => {
   window.onkeydown = previousWindowKeydown
   document.removeEventListener('keydown', handleDocumentKeydown, true)
   document.removeEventListener('keyup', handleDocumentKeyup, true)
+  document.removeEventListener('paste', handleWindowPaste, true)
   window.removeEventListener('keydown', handleWindowKeyEvent, true)
   window.removeEventListener('keyup', handleWindowKeyEvent, true)
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('keyup', handleKeyup)
+  window.removeEventListener('paste', handleWindowPaste)
   window.removeEventListener('pointermove', handleWindowPointerMove)
   window.removeEventListener('pointerup', handleWindowPointerUp)
   window.removeEventListener('mousemove', handleWindowPointerMove)
@@ -942,6 +1096,7 @@ onBeforeUnmount(() => {
   frameResizeObserver?.disconnect()
   window.clearTimeout(autoSaveTimer)
   window.clearInterval(uploadTimer)
+  window.clearTimeout(clipboardPasteFallbackTimer)
   clearLocalPreviewUrls()
   clearImageGenerationTimers()
   resetHoverEffects()
@@ -965,6 +1120,10 @@ async function loadProjectCanvas() {
   } finally {
     nextTick(() => {
       isHydratingCanvas.value = false
+      if (saveAfterHydration.value) {
+        saveAfterHydration.value = false
+        scheduleCanvasSave(220)
+      }
     })
   }
 }
@@ -980,9 +1139,13 @@ function hydrateCanvasWorkspace(workspace) {
   directEdges.value = (workspace?.edges || [])
     .map(mapBackendEdgeToDirectEdge)
     .filter((edge) => directNodes.value.some((node) => node.id === edge.sourceId) && directNodes.value.some((node) => node.id === edge.targetId))
+  const directNodeCountBeforeDedupe = directNodes.value.length
+  dedupeUploadedAssetNodes({ silent: true })
+  if (directNodes.value.length !== directNodeCountBeforeDedupe) saveAfterHydration.value = true
   selectedDirectNodeIds.value = []
   selectedEdgeIds.value = []
   canvasStore.clearSelection()
+  saveAfterUploads.value = false
   canvasActivated.value = directNodes.value.length > 0 || directEdges.value.length > 0
   historyStack.value = []
   const nextViewport = workspace?.canvas?.viewport
@@ -1004,6 +1167,12 @@ function getWorkspaceTitle(workspace) {
   return workspace?.project?.title || canvasTitle || copy.untitled
 }
 
+function syncCanvasRevisionState(workspace) {
+  if (workspace?.canvas) activeCanvas.value = workspace.canvas
+  nodeRevisionMap.value = Object.fromEntries((workspace?.nodes || []).map((node) => [node.id, node.revision || 1]))
+  edgeRevisionMap.value = Object.fromEntries((workspace?.edges || []).map((edge) => [edge.id, edge.revision || 1]))
+}
+
 function mapBackendNodeToDirectNode(node) {
   const data = node?.data || {}
   const directType = normalizeBackendDirectType(node.nodeType, data.directType)
@@ -1023,7 +1192,11 @@ function mapBackendNodeToDirectNode(node) {
     media: data.media || null,
     upload: data.upload || null,
     imageModelId: data.imageModelId || fallbackImageModelOptions[0].id,
+    imageResolution: normalizeImageResolutionValue(data.imageResolution || data.resolution),
+    imageQuality: normalizeImageQualityValue(data.imageQuality || data.quality),
     aspectRatio: data.aspectRatio || fallbackImageAspectRatioOptions[0],
+    referenceImages: normalizeManualReferenceImages(data.referenceImages),
+    referenceOrder: Array.isArray(data.referenceOrder) ? data.referenceOrder : [],
     generationStatus: data.generationStatus || node.status || 'idle',
     generationMessage: data.generationMessage || '',
     generationTaskId: data.generationTaskId || '',
@@ -1059,8 +1232,57 @@ function normalizeBackendDirectType(nodeType, directType = '') {
   return map[nodeType] || 'prompt_note'
 }
 
+function hasActiveCanvasUploads() {
+  return directNodes.value.some((node) => {
+    if (node.upload?.status === 'uploading') return true
+    return normalizeManualReferenceImages(node.referenceImages).some((reference) => reference.status === 'uploading')
+  })
+}
+
+function flushDeferredCanvasSave(delay = 180) {
+  if (!saveAfterUploads.value || hasActiveCanvasUploads()) return
+  saveAfterUploads.value = false
+  scheduleCanvasSave(delay)
+}
+
+function isDirectTextEditing() {
+  return Boolean(activeTextEditNodeId.value)
+}
+
+function startDirectTextEdit(nodeId) {
+  activeTextEditNodeId.value = nodeId
+  window.clearTimeout(autoSaveTimer)
+}
+
+function markDirectTextEditDirty() {
+  if (!isDirectTextEditing()) return
+  saveAfterTextEdit.value = true
+  saveStatus.value = 'dirty'
+  window.clearTimeout(autoSaveTimer)
+}
+
+function finishDirectTextEdit() {
+  if (!isDirectTextEditing()) return
+  activeTextEditNodeId.value = ''
+  if (!saveAfterTextEdit.value) return
+  saveAfterTextEdit.value = false
+  scheduleCanvasSave(220)
+}
+
 function scheduleCanvasSave(delay = 1200) {
   if (isHydratingCanvas.value || !activeCanvas.value?.id) return
+  if (isDirectTextEditing()) {
+    saveAfterTextEdit.value = true
+    saveStatus.value = 'dirty'
+    window.clearTimeout(autoSaveTimer)
+    return
+  }
+  if (hasActiveCanvasUploads()) {
+    saveAfterUploads.value = true
+    saveStatus.value = 'dirty'
+    window.clearTimeout(autoSaveTimer)
+    return
+  }
   saveStatus.value = saveStatus.value === 'saving' ? 'saving' : 'dirty'
   window.clearTimeout(autoSaveTimer)
   autoSaveTimer = window.setTimeout(() => {
@@ -1070,17 +1292,39 @@ function scheduleCanvasSave(delay = 1200) {
 
 async function saveCanvasNow() {
   if (isHydratingCanvas.value || !activeCanvas.value?.id) return
+  if (isDirectTextEditing()) {
+    saveAfterTextEdit.value = true
+    saveStatus.value = 'dirty'
+    window.clearTimeout(autoSaveTimer)
+    return
+  }
+  if (hasActiveCanvasUploads()) {
+    saveAfterUploads.value = true
+    saveStatus.value = 'dirty'
+    window.clearTimeout(autoSaveTimer)
+    showToast('文件上传中，上传完成后自动保存')
+    return
+  }
   window.clearTimeout(autoSaveTimer)
   const savePlan = buildCanvasSavePlan()
+  const selectionSnapshot = captureDirectSelection()
   saveStatus.value = 'saving'
   try {
     const response = await saveSluvoCanvasBatch(activeCanvas.value.id, savePlan.payload)
     const omittedEdges = savePlan.omittedEdges
+    const renamedProject = await syncActiveProjectTitle(savePlan.payload.title)
+    if (isDirectTextEditing()) {
+      syncCanvasRevisionState(response)
+      saveAfterTextEdit.value = true
+      saveStatus.value = 'dirty'
+      return
+    }
     isHydratingCanvas.value = true
     hydrateCanvasWorkspace({
-      project: projectStore.activeProject,
-      ...response
+      ...response,
+      project: renamedProject || response?.project || projectStore.activeProject
     })
+    restoreDirectSelection(selectionSnapshot)
     if (omittedEdges.length > 0) {
       directEdges.value = [...directEdges.value, ...mapOmittedEdgesAfterHydration(omittedEdges)]
       saveAfterHydration.value = true
@@ -1106,6 +1350,39 @@ async function saveCanvasNow() {
     }
     saveStatus.value = 'error'
     showToast(error instanceof Error ? error.message : '画布保存失败')
+  }
+}
+
+function captureDirectSelection() {
+  return {
+    selectedIds: [...selectedDirectNodeIds.value],
+    focusedId: focusedDirectNodeId.value,
+    activeId: activeDirectNodeId.value,
+    lastTouchedId: lastTouchedDirectNodeId.value
+  }
+}
+
+function restoreDirectSelection(snapshot) {
+  const existingIds = new Set(directNodes.value.map((node) => node.id))
+  const selectedIds = (snapshot?.selectedIds || []).filter((id) => existingIds.has(id))
+  selectedDirectNodeIds.value = selectedIds
+  focusedDirectNodeId.value = existingIds.has(snapshot?.focusedId) ? snapshot.focusedId : selectedIds.at(-1) || ''
+  activeDirectNodeId.value = existingIds.has(snapshot?.activeId) ? snapshot.activeId : selectedIds.at(-1) || ''
+  lastTouchedDirectNodeId.value = existingIds.has(snapshot?.lastTouchedId)
+    ? snapshot.lastTouchedId
+    : activeDirectNodeId.value || focusedDirectNodeId.value
+}
+
+async function syncActiveProjectTitle(title) {
+  const nextTitle = String(title || '').trim() || copy.untitled
+  if (!projectStore.activeProject?.id || projectStore.activeProject.title === nextTitle) {
+    return projectStore.activeProject
+  }
+  try {
+    return await projectStore.renameActiveProject(nextTitle)
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '项目重命名同步失败')
+    return projectStore.activeProject
   }
 }
 
@@ -1165,7 +1442,16 @@ function serializeDirectNodeForSave(node, index = 0) {
       media,
       upload: node.upload || null,
       imageModelId: node.imageModelId || '',
+      imageResolution: normalizeImageResolutionValue(node.imageResolution),
+      imageQuality: normalizeImageQualityValue(node.imageQuality),
       aspectRatio: node.aspectRatio || '',
+      referenceImages: normalizeManualReferenceImages(node.referenceImages)
+        .filter((item) => item.status !== 'uploading')
+        .map((item) => ({
+          ...item,
+          previewUrl: item.previewUrl?.startsWith('blob:') ? '' : item.previewUrl
+        })),
+      referenceOrder: Array.isArray(node.referenceOrder) ? node.referenceOrder : [],
       generationStatus: node.generationStatus || 'idle',
       generationMessage: node.generationMessage || '',
       generationTaskId: node.generationTaskId || '',
@@ -1188,8 +1474,16 @@ function sanitizeMediaForPersistence(media) {
     return {
       ...media,
       url: media.assetId ? media.url : '',
+      previewUrl: '',
       isLocalPreview: false,
       localPreviewDropped: true
+    }
+  }
+  const previewUrl = String(media.previewUrl || '')
+  if (previewUrl.startsWith('blob:')) {
+    return {
+      ...media,
+      previewUrl: ''
     }
   }
   return media
@@ -1335,6 +1629,7 @@ function buildCanvasSnapshot() {
 
 function handleDocumentKeydown(event) {
   if (handleGlobalUndoShortcut(event)) return
+  if (handleCanvasPasteShortcutEvent(event)) return
   if (!isDeleteKey(event) || shouldIgnoreDeleteEventTarget(event.target)) return
   if (deleteActiveDirectNodes(event)) return
 }
@@ -1346,12 +1641,14 @@ function handleDocumentKeyup(event) {
 }
 
 function handleWindowKeyEvent(event) {
+  if (event.type === 'keydown' && handleCanvasPasteShortcutEvent(event)) return
   if (!isDeleteKey(event) || shouldIgnoreDeleteEventTarget(event.target)) return
   deleteActiveDirectNodes(event)
 }
 
 function handleCanvasKeyEvent(event) {
   if (handleGlobalUndoShortcut(event)) return
+  if (handleCanvasPasteShortcutEvent(event)) return
   if (!isDeleteKey(event) || shouldIgnoreDeleteEventTarget(event.target)) return
   deleteActiveDirectNodes(event)
 }
@@ -1534,6 +1831,21 @@ function isDeleteKey(event) {
   )
 }
 
+function isPasteShortcut(event) {
+  return Boolean((event.ctrlKey || event.metaKey) && event.key?.toLowerCase?.() === 'v' && !event.altKey)
+}
+
+function shouldIgnorePasteEventTarget(target) {
+  return isTypingTarget(target) && !isDeleteKeySinkTarget(target)
+}
+
+function handleCanvasPasteShortcutEvent(event) {
+  if (!isPasteShortcut(event) || shouldIgnorePasteEventTarget(event.target)) return false
+
+  queueCanvasClipboardPasteFallback()
+  return true
+}
+
 function shouldIgnoreDeleteEventTarget(target) {
   return isTypingTarget(target) && !(target instanceof HTMLElement && target.classList.contains('delete-key-sink'))
 }
@@ -1573,11 +1885,12 @@ function deleteLastTouchedDirectNode(event) {
 }
 
 function handleDeleteSinkKey(event) {
+  if (event.type === 'keydown' && handleCanvasPasteShortcutEvent(event)) return
   if (!isDeleteKey(event)) return
+  event.preventDefault()
+  event.stopPropagation()
+  event.stopImmediatePropagation?.()
   if (!deleteActiveDirectNodes(event) && directNodes.value.length > 0) {
-    event.preventDefault()
-    event.stopPropagation()
-    event.stopImmediatePropagation?.()
     const fallbackId = activeDirectNodeId.value || selectedDirectNodeIds.value[0] || focusedDirectNodeId.value || lastTouchedDirectNodeId.value
     if (fallbackId) deleteDirectNodesByIds([fallbackId])
   }
@@ -1608,11 +1921,7 @@ function handleKeydown(event) {
     return
   }
 
-  if (command && event.key.toLowerCase() === 'v') {
-    event.preventDefault()
-    pasteSelection()
-    return
-  }
+  if (handleCanvasPasteShortcutEvent(event)) return
 
   if (command && event.key.toLowerCase() === 'd') {
     event.preventDefault()
@@ -1703,6 +2012,46 @@ function handleFramePointerDown(event) {
   selectionBox.active = true
   selectionBox.start = { x: event.clientX, y: event.clientY }
   selectionBox.current = { x: event.clientX, y: event.clientY }
+}
+
+function handleCanvasWheel(event) {
+  if (!isCanvasWheelZoomTarget(event.target)) return
+  const frame = canvasFrame.value
+  const rect = frame?.getBoundingClientRect?.()
+  if (!rect) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const currentZoom = Number(viewport.value?.zoom || 1)
+  const nextZoom = clampNumber(currentZoom * Math.exp(-event.deltaY * 0.0012), 0.22, 2)
+  if (!Number.isFinite(nextZoom) || Math.abs(nextZoom - currentZoom) < 0.001) return
+
+  const flowPoint = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
+  const pointerX = event.clientX - rect.left
+  const pointerY = event.clientY - rect.top
+  const nextViewport = {
+    x: pointerX - flowPoint.x * nextZoom,
+    y: pointerY - flowPoint.y * nextZoom,
+    zoom: nextZoom
+  }
+
+  setViewport(nextViewport, { duration: 0 })
+  canvasStore.setViewport(nextViewport)
+  syncPendingReferenceMenuScreen()
+  scheduleCanvasSave(900)
+}
+
+function isCanvasWheelZoomTarget(target) {
+  const element = target instanceof Element ? target : null
+  if (!element) return true
+  return !element.closest(
+    '.libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .add-node-menu'
+  )
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max)
 }
 
 function handleWindowPointerMove(event) {
@@ -2223,11 +2572,27 @@ function normalizeMenuSelection(selection) {
 }
 
 function openUploadDialog() {
-  nextTick(() => {
-    if (!uploadInput.value) return
+  if (uploadDialogOpening) return
+  uploadDialogOpening = true
+  if (uploadInput.value) {
     uploadInput.value.value = ''
     uploadInput.value.click()
-  })
+  }
+  window.setTimeout(() => {
+    uploadDialogOpening = false
+  }, 500)
+}
+
+function openReferenceUploadDialog(nodeId) {
+  referenceUploadTargetNodeId.value = nodeId
+  if (referenceUploadInput.value) {
+    referenceUploadInput.value.value = ''
+    referenceUploadInput.value.click()
+  } else {
+    window.setTimeout(() => {
+      referenceUploadInput.value?.click?.()
+    }, 0)
+  }
 }
 
 function replaceUploadedNode(nodeId) {
@@ -2238,23 +2603,288 @@ function replaceUploadedNode(nodeId) {
   openUploadDialog()
 }
 
+function handleCanvasDragOver(event) {
+  if (!event.dataTransfer) return
+  event.dataTransfer.dropEffect = hasImageDataTransfer(event.dataTransfer) ? 'copy' : 'none'
+}
+
+function handleCanvasFileDrop(event) {
+  const files = getImageFilesFromDataTransfer(event.dataTransfer)
+  if (files.length === 0) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  const flowPosition = getAvailableDirectNodePosition(screenToFlowCoordinate({ x: event.clientX, y: event.clientY }))
+  uploadImageFilesToCanvas(files, flowPosition)
+}
+
+function handleWindowPaste(event) {
+  if (isTypingTarget(event.target) && !isDeleteKeySinkTarget(event.target)) return
+
+  const files = getImageFilesFromDataTransfer(event.clipboardData)
+  if (files.length > 0) {
+    lastClipboardImagePasteAt = window.performance.now()
+    window.clearTimeout(clipboardPasteFallbackTimer)
+    event.preventDefault()
+    event.stopPropagation()
+    uploadImageFilesToCanvas(files, getAvailableDirectNodePosition(getViewportCenter()))
+    return
+  }
+
+  if (clipboardNodes.value.length > 0) {
+    event.preventDefault()
+    event.stopPropagation()
+    pasteSelection()
+  }
+}
+
+function isDeleteKeySinkTarget(target) {
+  return target instanceof HTMLElement && target.classList.contains('delete-key-sink')
+}
+
+async function handleCanvasClipboardPasteShortcut() {
+  const now = window.performance.now()
+  if (now - lastClipboardImagePasteAt < 600) return
+
+  const files = await readClipboardImageFiles()
+  if (files.length > 0) {
+    lastClipboardImagePasteAt = window.performance.now()
+    uploadImageFilesToCanvas(files, getAvailableDirectNodePosition(getViewportCenter()))
+    return
+  }
+
+  pasteSelection()
+}
+
+function queueCanvasClipboardPasteFallback() {
+  window.clearTimeout(clipboardPasteFallbackTimer)
+  clipboardPasteFallbackTimer = window.setTimeout(() => {
+    if (window.performance.now() - lastClipboardImagePasteAt < 600) return
+    handleCanvasClipboardPasteShortcut()
+  }, 90)
+}
+
+async function readClipboardImageFiles() {
+  if (!navigator.clipboard?.read) return []
+  try {
+    const items = await navigator.clipboard.read()
+    const files = []
+    for (const item of items) {
+      const imageType = item.types.find((type) => type.startsWith('image/'))
+      if (!imageType) continue
+      const blob = await item.getType(imageType)
+      const extension = imageType.split('/')[1] || 'png'
+      files.push(new File([blob], `clipboard-image-${Date.now()}.${extension}`, { type: imageType }))
+    }
+    return files
+  } catch {
+    return []
+  }
+}
+
+function getImageFilesFromDataTransfer(dataTransfer) {
+  if (!dataTransfer) return []
+  const files = []
+  const seen = new Set()
+  const addFile = (file) => {
+    if (!file || !file.type?.startsWith('image/')) return
+    const signature = getUploadFileSignature(file)
+    if (seen.has(signature)) return
+    seen.add(signature)
+    files.push(file)
+  }
+
+  Array.from(dataTransfer.files || []).forEach(addFile)
+  Array.from(dataTransfer.items || []).forEach((item) => {
+    if (item.kind !== 'file' || !item.type?.startsWith('image/')) return
+    addFile(item.getAsFile())
+  })
+  return files
+}
+
+function hasImageDataTransfer(dataTransfer) {
+  return (
+    Array.from(dataTransfer?.files || []).some((file) => file.type?.startsWith('image/')) ||
+    Array.from(dataTransfer?.items || []).some((item) => item.type?.startsWith('image/'))
+  )
+}
+
+function uploadImageFilesToCanvas(files, flowPosition) {
+  const base = flowPosition || getViewportCenter()
+  let createdCount = 0
+  files.forEach((file, index) => {
+    const position = getAvailableDirectNodePosition({
+      x: base.x + index * 44,
+      y: base.y + index * 44
+    })
+    const nodeId = startCanvasAssetUpload(file, {
+      flowPosition: position,
+      allowKinds: ['image'],
+      rememberChange: createdCount === 0
+    })
+    if (nodeId) createdCount += 1
+  })
+
+  if (createdCount > 0) {
+    showToast(createdCount > 1 ? `已添加 ${createdCount} 张图片` : '已添加图片')
+  }
+}
+
 function handleUploadInputChange(event) {
   const file = event.target?.files?.[0]
   if (!file) return
 
-  const kind = getUploadKind(file)
-  if (!kind) {
-    showToast('请选择图片、视频或音频文件')
+  startCanvasAssetUpload(file, {
+    flowPosition: pendingUploadFlowPosition.value,
+    replacingNodeId: replacingUploadNodeId.value,
+    allowKinds: ['image', 'video', 'audio']
+  })
+  event.target.value = ''
+}
+
+function handleReferenceUploadInputChange(event) {
+  const nodeId = referenceUploadTargetNodeId.value
+  const files = Array.from(event.target?.files || []).filter((file) => file.type?.startsWith('image/'))
+  if (!nodeId || files.length === 0) {
+    if (event.target) event.target.value = ''
     return
   }
-  if (file.size > 20 * 1024 * 1024) {
-    showToast('上传文件不能超过 20MB')
-    return
-  }
+  uploadReferenceImages(nodeId, files)
+  if (event.target) event.target.value = ''
+}
+
+function uploadReferenceImages(nodeId, files) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!node) return
   if (!activeCanvas.value?.id) {
     showToast('画布尚未加载完成，请稍后重试')
     return
   }
+
+  const validFiles = files.filter((file) => {
+    if (!file.type?.startsWith('image/')) return false
+    if (file.size > 20 * 1024 * 1024) {
+      showToast('参考图不能超过 20MB')
+      return false
+    }
+    return true
+  })
+  if (!validFiles.length) return
+
+  rememberHistory()
+  const nextReferences = normalizeManualReferenceImages(node.referenceImages)
+  const nextOrder = Array.isArray(node.referenceOrder) ? [...node.referenceOrder] : getDirectImageReferenceItems(nodeId).map((item) => item.id)
+  const refsToUpload = validFiles.map((file, index) => {
+    const id = `manual-ref-${Date.now()}-${index}-${Math.round(Math.random() * 10000)}`
+    const previewUrl = URL.createObjectURL(file)
+    const reference = {
+      id,
+      source: 'manual',
+      url: '',
+      previewUrl,
+      name: file.name || '参考图',
+      status: 'uploading',
+      progress: 8,
+      width: 0,
+      height: 0,
+      assetId: '',
+      storageObjectId: ''
+    }
+    nextReferences.push(reference)
+    nextOrder.push(id)
+    return { file, reference, previewUrl }
+  })
+  updateDirectNode(nodeId, { referenceImages: nextReferences, referenceOrder: nextOrder })
+
+  refsToUpload.forEach(({ file, reference, previewUrl }) => uploadReferenceImage(nodeId, reference.id, file, previewUrl))
+  showToast(validFiles.length > 1 ? `正在上传 ${validFiles.length} 张参考图` : '正在上传参考图')
+}
+
+async function uploadReferenceImage(nodeId, referenceId, file, previewUrl) {
+  try {
+    const metadata = await readUploadMetadata('image', previewUrl)
+    patchManualReferenceImage(nodeId, referenceId, {
+      width: metadata?.width || 0,
+      height: metadata?.height || 0
+    })
+    const response = await uploadSluvoCanvasAsset(activeCanvas.value.id, file, {
+      mediaType: 'image',
+      width: metadata?.width,
+      height: metadata?.height,
+      metadata: {
+        localNodeId: nodeId,
+        referenceId
+      },
+      onProgress: (progress) => {
+        patchManualReferenceImage(nodeId, referenceId, { status: 'uploading', progress })
+      }
+    })
+    const asset = response?.asset || {}
+    const nextUrl = response?.fileUrl || asset.url
+    if (!nextUrl) throw new Error('上传接口未返回文件地址')
+    patchManualReferenceImage(nodeId, referenceId, {
+      url: nextUrl,
+      previewUrl,
+      status: 'success',
+      progress: 100,
+      width: asset.width || metadata?.width || 0,
+      height: asset.height || metadata?.height || 0,
+      assetId: asset.id || '',
+      storageObjectId: response?.storageObjectId || asset.storageObjectId || ''
+    })
+    flushDeferredCanvasSave(220)
+  } catch (error) {
+    patchManualReferenceImage(nodeId, referenceId, {
+      status: 'error',
+      progress: 0,
+      message: error instanceof Error ? error.message : '上传失败'
+    })
+    showToast(error instanceof Error ? error.message : '参考图上传失败')
+    flushDeferredCanvasSave(220)
+  }
+}
+
+function startCanvasAssetUpload(file, options = {}) {
+  const kind = getUploadKind(file)
+  const allowKinds = options.allowKinds || ['image', 'video', 'audio']
+  if (!kind || !allowKinds.includes(kind)) {
+    showToast(allowKinds.length === 1 && allowKinds[0] === 'image' ? '请拖入或粘贴图片文件' : '请选择图片、视频或音频文件')
+    return ''
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    showToast('上传文件不能超过 20MB')
+    return ''
+  }
+  if (!activeCanvas.value?.id) {
+    showToast('画布尚未加载完成，请稍后重试')
+    return ''
+  }
+
+  const signature = getUploadFileSignature(file)
+  const looseSignature = getUploadFileLooseSignature(file)
+  const now = window.performance.now()
+  const existingUploadedNodeId = options.replacingNodeId ? '' : findExistingUploadedAssetNode(file)
+  if (existingUploadedNodeId) {
+    selectedDirectNodeIds.value = [existingUploadedNodeId]
+    activeDirectNodeId.value = existingUploadedNodeId
+    focusedDirectNodeId.value = existingUploadedNodeId
+    lastTouchedDirectNodeId.value = existingUploadedNodeId
+    showToast('画布里已经有这张图了')
+    return ''
+  }
+  const duplicateNodeId = activeUploadSignatures.get(signature)
+  if (duplicateNodeId && directNodes.value.some((node) => node.id === duplicateNodeId && node.upload?.status === 'uploading')) {
+    selectedDirectNodeIds.value = [duplicateNodeId]
+    activeDirectNodeId.value = duplicateNodeId
+    focusedDirectNodeId.value = duplicateNodeId
+    lastTouchedDirectNodeId.value = duplicateNodeId
+    showToast('这个文件正在上传')
+    return ''
+  }
+  if (lastUploadSelection.signature === signature && now - lastUploadSelection.at < 1200) {
+    return ''
+  }
+  lastUploadSelection = { signature, at: now }
 
   const url = URL.createObjectURL(file)
   const media = {
@@ -2265,13 +2895,15 @@ function handleUploadInputChange(event) {
     fileSize: file.size,
     width: kind === 'audio' ? null : 1459,
     height: kind === 'audio' ? null : 2117,
+    uploadSignature: signature,
+    uploadLooseSignature: looseSignature,
     isLocalPreview: true
   }
 
-  rememberHistory()
+  if (options.rememberChange !== false) rememberHistory()
   canvasActivated.value = true
 
-  const existingId = replacingUploadNodeId.value
+  const existingId = options.replacingNodeId || ''
   let nodeId = existingId
 
   if (existingId) {
@@ -2288,7 +2920,7 @@ function handleUploadInputChange(event) {
         : node
     )
   } else {
-    const position = pendingUploadFlowPosition.value || getViewportCenter()
+    const position = options.flowPosition || getViewportCenter()
     const node = createDirectNodeAtFlow('uploaded_asset', position, {
       title: getUploadedAssetTitle(kind),
       icon: getUploadedAssetIcon(kind),
@@ -2299,13 +2931,178 @@ function handleUploadInputChange(event) {
   }
 
   uploadFileMap.set(nodeId, file)
+  rememberLocalUploadPreview(nodeId, kind === 'image' ? url : '')
+  activeUploadSignatures.set(signature, nodeId)
+  uploadSignatureByNodeId.set(nodeId, signature)
   selectedDirectNodeIds.value = [nodeId]
   activeDirectNodeId.value = nodeId
   focusedDirectNodeId.value = nodeId
   lastTouchedDirectNodeId.value = nodeId
   pendingUploadFlowPosition.value = null
   replacingUploadNodeId.value = ''
+  const originalNodeId = nodeId
+  const keptNodeId = dedupeUploadedAssetNodes({ preferId: nodeId, silent: true }) || nodeId
+  if (keptNodeId !== originalNodeId) {
+    selectedDirectNodeIds.value = [keptNodeId]
+    activeDirectNodeId.value = keptNodeId
+    focusedDirectNodeId.value = keptNodeId
+    lastTouchedDirectNodeId.value = keptNodeId
+    return ''
+  }
   uploadFileForNode(nodeId, file, kind, url)
+  return nodeId
+}
+
+function getUploadFileSignature(file) {
+  return [file.name || '', file.size || 0, file.lastModified || 0, file.type || ''].join(':')
+}
+
+function getUploadFileLooseSignature(file) {
+  return [file.name || '', file.size || 0, file.type || ''].join(':')
+}
+
+function findExistingUploadedAssetNode(file) {
+  const signature = getUploadFileSignature(file)
+  const looseSignature = getUploadFileLooseSignature(file)
+  const kind = getUploadKind(file)
+  const existing = directNodes.value.find((node) => {
+    if (node.type !== 'uploaded_asset' || node.media?.kind !== kind) return false
+    const media = node.media || {}
+    if (media.uploadSignature && media.uploadSignature === signature) return true
+    if (media.uploadLooseSignature && media.uploadLooseSignature === looseSignature) return true
+    return media.name === file.name && Number(media.fileSize || 0) === Number(file.size || 0) && media.mime === file.type
+  })
+  return existing?.id || ''
+}
+
+function getUploadedAssetDuplicateKey(node) {
+  if (node?.type !== 'uploaded_asset' || !node.media) return ''
+  const media = node.media || {}
+  const kind = media.kind || ''
+  if (!kind) return ''
+  if (media.uploadLooseSignature) return `${kind}:signature:${media.uploadLooseSignature}`
+  if (media.uploadSignature) return `${kind}:signature:${media.uploadSignature}`
+  const name = String(media.name || '').trim()
+  const size = Number(media.fileSize || 0)
+  const mime = String(media.mime || '').trim()
+  if (name && size > 0 && mime) return `${kind}:file:${name}:${size}:${mime}`
+  const stableId = media.storageObjectId || media.storageObjectKey || media.assetId
+  if (stableId) return `${kind}:asset:${stableId}`
+  const url = String(media.url || '')
+  if (url && !url.startsWith('blob:')) return `${kind}:url:${url}`
+  return ''
+}
+
+function pickUploadedAssetKeeper(nodesInGroup, preferId = '') {
+  return [...nodesInGroup].sort((left, right) => {
+    if (left.id === preferId) return -1
+    if (right.id === preferId) return 1
+    const leftDone = left.upload?.status === 'success' || Boolean(left.media?.url && !String(left.media.url).startsWith('blob:'))
+    const rightDone = right.upload?.status === 'success' || Boolean(right.media?.url && !String(right.media.url).startsWith('blob:'))
+    if (leftDone !== rightDone) return leftDone ? -1 : 1
+    const leftUploading = left.upload?.status === 'uploading'
+    const rightUploading = right.upload?.status === 'uploading'
+    if (leftUploading !== rightUploading) return leftUploading ? 1 : -1
+    return String(left.id).localeCompare(String(right.id))
+  })[0]
+}
+
+function dedupeUploadedAssetNodes({ preferId = '', silent = false } = {}) {
+  const groups = new Map()
+  directNodes.value.forEach((node) => {
+    const key = getUploadedAssetDuplicateKey(node)
+    if (!key) return
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(node)
+  })
+
+  const duplicateToKeeper = new Map()
+  groups.forEach((group) => {
+    if (group.length < 2) return
+    const keeper = pickUploadedAssetKeeper(group, preferId)
+    group.forEach((node) => {
+      if (node.id !== keeper.id) duplicateToKeeper.set(node.id, keeper.id)
+    })
+  })
+  if (duplicateToKeeper.size === 0) return preferId || ''
+
+  const duplicateIds = new Set(duplicateToKeeper.keys())
+  duplicateIds.forEach((id) => {
+    revokeLocalPreviewForNode(id)
+    uploadFileMap.delete(id)
+    releaseUploadSignature(id)
+    directNodeElements.delete(id)
+    clearImageGenerationTimer(id)
+  })
+
+  directEdges.value = directEdges.value
+    .map((edge) => ({
+      ...edge,
+      sourceId: duplicateToKeeper.get(edge.sourceId) || edge.sourceId,
+      targetId: duplicateToKeeper.get(edge.targetId) || edge.targetId
+    }))
+    .filter((edge, index, allEdges) => edge.sourceId !== edge.targetId && allEdges.findIndex((item) => item.sourceId === edge.sourceId && item.targetId === edge.targetId) === index)
+  directNodes.value = directNodes.value.filter((node) => !duplicateIds.has(node.id))
+
+  const selectedKeeperIds = selectedDirectNodeIds.value.map((id) => duplicateToKeeper.get(id) || id)
+  selectedDirectNodeIds.value = [...new Set(selectedKeeperIds)].filter((id) => directNodes.value.some((node) => node.id === id))
+  focusedDirectNodeId.value = duplicateToKeeper.get(focusedDirectNodeId.value) || focusedDirectNodeId.value
+  activeDirectNodeId.value = duplicateToKeeper.get(activeDirectNodeId.value) || activeDirectNodeId.value
+  lastTouchedDirectNodeId.value = duplicateToKeeper.get(lastTouchedDirectNodeId.value) || lastTouchedDirectNodeId.value
+  const keptPreferId = duplicateToKeeper.get(preferId) || preferId
+  if (!silent) showToast('已合并重复图片')
+  return keptPreferId
+}
+
+function patchManualReferenceImage(nodeId, referenceId, patch) {
+  directNodes.value = directNodes.value.map((node) => {
+    if (node.id !== nodeId) return node
+    return {
+      ...node,
+      referenceImages: normalizeManualReferenceImages(node.referenceImages).map((reference) =>
+        reference.id === referenceId ? { ...reference, ...patch } : reference
+      )
+    }
+  })
+}
+
+function removeManualReferenceImage(nodeId, referenceId) {
+  rememberHistory()
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const reference = normalizeManualReferenceImages(node?.referenceImages).find((item) => item.id === referenceId)
+  if (reference?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(reference.previewUrl)
+  updateDirectNode(nodeId, {
+    referenceImages: normalizeManualReferenceImages(node?.referenceImages).filter((item) => item.id !== referenceId),
+    referenceOrder: (node?.referenceOrder || []).filter((id) => id !== referenceId)
+  })
+  scheduleCanvasSave(180)
+}
+
+function startReferenceDrag(nodeId, referenceId) {
+  referenceDrag.nodeId = nodeId
+  referenceDrag.referenceId = referenceId
+}
+
+function dropReference(nodeId, targetReferenceId) {
+  if (referenceDrag.nodeId !== nodeId || !referenceDrag.referenceId || referenceDrag.referenceId === targetReferenceId) return
+  rememberHistory()
+  const orderedIds = getDirectImageReferenceItems(nodeId).map((item) => item.id)
+  const fromIndex = orderedIds.indexOf(referenceDrag.referenceId)
+  const toIndex = orderedIds.indexOf(targetReferenceId)
+  if (fromIndex < 0 || toIndex < 0) return
+  orderedIds.splice(toIndex, 0, orderedIds.splice(fromIndex, 1)[0])
+  updateDirectNode(nodeId, { referenceOrder: orderedIds })
+  referenceDrag.nodeId = ''
+  referenceDrag.referenceId = ''
+  scheduleCanvasSave(180)
+}
+
+function releaseUploadSignature(nodeId) {
+  const signature = uploadSignatureByNodeId.get(nodeId)
+  if (signature && activeUploadSignatures.get(signature) === nodeId) {
+    activeUploadSignatures.delete(signature)
+  }
+  uploadSignatureByNodeId.delete(nodeId)
 }
 
 function getUploadKind(file) {
@@ -2351,22 +3148,24 @@ async function uploadFileForNode(nodeId, file, kind, localUrl) {
       metadata: {
         localNodeId: nodeId
       },
-      onProgress: (progress) => {
+      onProgress: (progress, message = '正在上传到 OSS') => {
         updateDirectNodeUpload(nodeId, {
           status: 'uploading',
           progress,
-          message: '正在上传到 OSS'
+          message
         })
       }
     })
     completeUploadedNode(nodeId, response, file, kind, localUrl, metadata)
   } catch (error) {
+    releaseUploadSignature(nodeId)
     updateDirectNodeUpload(nodeId, {
       status: 'error',
       progress: 0,
       message: error instanceof Error ? error.message : '上传失败，请重试'
     })
     showToast(error instanceof Error ? error.message : '上传失败，请重试')
+    flushDeferredCanvasSave(220)
   }
 }
 
@@ -2376,6 +3175,7 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
   if (!nextUrl) {
     throw new Error('上传接口未返回文件地址')
   }
+  rememberLocalUploadPreview(nodeId, kind === 'image' ? localUrl : '')
   directNodes.value = directNodes.value.map((node) =>
     node.id === nodeId
       ? {
@@ -2383,10 +3183,13 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
           media: {
             kind,
             url: nextUrl,
+            previewUrl: kind === 'image' && localUrl?.startsWith('blob:') ? localUrl : '',
             thumbnailUrl: response?.thumbnailUrl || asset.thumbnailUrl || '',
             name: file.name,
             mime: file.type,
             fileSize: file.size,
+            uploadSignature: getUploadFileSignature(file),
+            uploadLooseSignature: getUploadFileLooseSignature(file),
             width: asset.width || metadata?.width || node.media?.width || null,
             height: asset.height || metadata?.height || node.media?.height || null,
             durationSeconds: asset.durationSeconds || metadata?.durationSeconds || null,
@@ -2403,9 +3206,11 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
         }
       : node
   )
-  if (localUrl?.startsWith('blob:')) URL.revokeObjectURL(localUrl)
+  if (localUrl?.startsWith('blob:') && kind !== 'image') URL.revokeObjectURL(localUrl)
+  releaseUploadSignature(nodeId)
+  dedupeUploadedAssetNodes({ preferId: nodeId, silent: true })
   showToast('上传成功')
-  scheduleCanvasSave(120)
+  flushDeferredCanvasSave(120)
 }
 
 function retryUploadedNode(nodeId) {
@@ -2420,6 +3225,9 @@ function retryUploadedNode(nodeId) {
     progress: 8,
     message: '正在重新上传'
   })
+  const signature = getUploadFileSignature(file)
+  activeUploadSignatures.set(signature, nodeId)
+  uploadSignatureByNodeId.set(nodeId, signature)
   uploadFileForNode(nodeId, file, node.media.kind || getUploadKind(file), node.media.url)
 }
 
@@ -2500,10 +3308,63 @@ function getUploadedAssetDimensions(node) {
   return `${width} × ${height}`
 }
 
+function getUploadedImageSrc(node) {
+  const media = node?.media || {}
+  return getLocalUploadPreviewUrl(node) || media.previewUrl || media.thumbnailUrl || media.url || ''
+}
+
+function handleUploadedImageError(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const localPreviewUrl = getLocalUploadPreviewUrl(node)
+  const fallbackUrl = localPreviewUrl || node?.media?.previewUrl || ''
+  if (!fallbackUrl || fallbackUrl === node?.media?.url) return
+  directNodes.value = directNodes.value.map((item) =>
+    item.id === nodeId
+      ? {
+          ...item,
+          media: {
+            ...item.media,
+            thumbnailUrl: '',
+            url: fallbackUrl,
+            isLocalPreview: true
+          }
+        }
+      : item
+  )
+}
+
+function rememberLocalUploadPreview(nodeId, previewUrl) {
+  if (!previewUrl?.startsWith?.('blob:')) return
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  localUploadPreviewUrls.set(nodeId, previewUrl)
+  if (node?.clientId) localUploadPreviewUrls.set(node.clientId, previewUrl)
+}
+
+function getLocalUploadPreviewUrl(node) {
+  if (!node) return ''
+  return localUploadPreviewUrls.get(node.id) || localUploadPreviewUrls.get(node.clientId) || ''
+}
+
+function releaseLocalUploadPreview(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const keys = [nodeId, node?.clientId].filter(Boolean)
+  const urls = new Set(keys.map((key) => localUploadPreviewUrls.get(key)).filter(Boolean))
+  urls.forEach((url) => {
+    if (url?.startsWith?.('blob:')) URL.revokeObjectURL(url)
+  })
+  keys.forEach((key) => localUploadPreviewUrls.delete(key))
+}
+
 function revokeLocalPreviewForNode(nodeId) {
   const node = directNodes.value.find((item) => item.id === nodeId)
   const url = node?.media?.isLocalPreview ? node.media.url : ''
   if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+  const previewUrl = node?.media?.previewUrl || ''
+  if (previewUrl?.startsWith('blob:') && previewUrl !== url) URL.revokeObjectURL(previewUrl)
+  normalizeManualReferenceImages(node?.referenceImages).forEach((reference) => {
+    if (reference.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(reference.previewUrl)
+  })
+  releaseLocalUploadPreview(nodeId)
 }
 
 function clearLocalPreviewUrls() {
@@ -2511,7 +3372,17 @@ function clearLocalPreviewUrls() {
     if (node.media?.isLocalPreview && node.media.url?.startsWith('blob:')) {
       URL.revokeObjectURL(node.media.url)
     }
+    if (node.media?.previewUrl?.startsWith('blob:') && node.media.previewUrl !== node.media.url) {
+      URL.revokeObjectURL(node.media.previewUrl)
+    }
+    normalizeManualReferenceImages(node.referenceImages).forEach((reference) => {
+      if (reference.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(reference.previewUrl)
+    })
   })
+  new Set(localUploadPreviewUrls.values()).forEach((url) => {
+    if (url?.startsWith?.('blob:')) URL.revokeObjectURL(url)
+  })
+  localUploadPreviewUrls.clear()
 }
 
 function openLibraryPicker() {
@@ -2537,11 +3408,14 @@ async function loadImageGenerationCatalog() {
 
     const models = normalizeImageCatalogModels(catalog)
     const ratios = normalizeImageCatalogRatios(catalog)
+    const resolutions = normalizeImageCatalogResolutions(catalog)
     if (models.length > 0) imageModelOptions.value = models
     if (ratios.length > 0) imageAspectRatioOptions.value = ratios
+    if (resolutions.length > 0) imageResolutionOptions.value = resolutions
   } catch {
     imageModelOptions.value = [...fallbackImageModelOptions]
     imageAspectRatioOptions.value = [...fallbackImageAspectRatioOptions]
+    imageResolutionOptions.value = [...fallbackImageResolutionOptions]
   }
 }
 
@@ -2556,10 +3430,129 @@ function normalizeImageCatalogModels(catalog) {
       if (!id) return null
       return {
         id,
-        label: item?.display_name || item?.label || item?.title || item?.name || id
+        label: item?.display_name || item?.label || item?.title || item?.model_name || item?.name || id,
+        startPoints: item?.start_points ?? item?.startPoints ?? null,
+        features: normalizeImageFeatures(item),
+        pricingRules: normalizeImagePricingRules(item)
       }
     })
     .filter(Boolean)
+}
+
+function normalizeImageFeatures(modelItem) {
+  const features = Array.isArray(modelItem?.features) ? modelItem.features : []
+  if (!features.length) return buildFallbackImageFeatures(modelItem?.model_code || modelItem?.id || modelItem?.value)
+
+  return features.map((feature) => ({
+    generationType: feature?.generation_type || feature?.generationType || '',
+    defaults: feature?.defaults || {},
+    fields: normalizeImageFeatureFields(feature?.fields)
+  }))
+}
+
+function normalizeImageFeatureFields(fields) {
+  return (Array.isArray(fields) ? fields : [])
+    .map((field) => {
+      const key = field?.key || field?.name || field?.id
+      if (!key) return null
+      return {
+        key,
+        label: field?.label || key,
+        options: normalizeImageFieldOptions(field?.options)
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeImageFieldOptions(options) {
+  return (Array.isArray(options) ? options : [])
+    .map((option) => {
+      if (typeof option === 'string') return { id: option, label: option.toUpperCase?.() || option }
+      const id = option?.value || option?.id || option?.key
+      if (!id) return null
+      return { id: String(id), label: option?.label || option?.name || String(id).toUpperCase() }
+    })
+    .filter(Boolean)
+}
+
+function buildFallbackImageFeatures(modelId) {
+  const normalized = normalizeImageModelPricingAlias(modelId)
+  const baseFields = [
+    { key: 'prompt', label: '图片描述', options: [] },
+    { key: 'resolution', label: '分辨率', options: fallbackImageResolutionOptions },
+    { key: 'aspect_ratio', label: '画面比例', options: fallbackImageAspectRatioOptions.map((ratio) => ({ id: ratio, label: ratio })) }
+  ]
+  const fields =
+    normalized === 'gpt-image-2-fast'
+      ? baseFields.filter((field) => field.key !== 'resolution')
+      : normalized === 'gpt-image-2'
+        ? [
+            baseFields[0],
+            { key: 'quality', label: '画质等级', options: fallbackImageQualityOptions },
+            ...baseFields.slice(1)
+          ]
+        : baseFields
+
+  return ['text_to_image', 'image_to_image'].map((generationType) => ({
+    generationType,
+    defaults: {
+      resolution: '2k',
+      quality: 'medium',
+      aspect_ratio: '16:9'
+    },
+    fields
+  }))
+}
+
+function normalizeImagePricingRules(modelItem) {
+  const features = Array.isArray(modelItem?.features) ? modelItem.features : []
+  const rules = []
+  features.forEach((feature) => {
+    const generationType = feature?.generation_type || feature?.generationType || ''
+    ;(feature?.pricing_rules || feature?.pricingRules || []).forEach((rule) => {
+      const points = Number(rule?.sell_price_points ?? rule?.sellPricePoints ?? rule?.points)
+      if (!Number.isFinite(points)) return
+      rules.push({
+        generationType: rule?.generation_type || rule?.generationType || generationType,
+        pricingRuleType: rule?.pricing_rule_type || rule?.pricingRuleType || feature?.pricing_rule_type || '',
+        resolution: String(rule?.resolution || rule?.pricing_details?.resolution || '').toLowerCase(),
+        quality: String(rule?.quality || rule?.pricing_details?.quality || '').toLowerCase(),
+        points
+      })
+    })
+  })
+
+  return rules.length > 0 ? rules : buildFallbackImagePricingRules(modelItem?.model_code || modelItem?.id || modelItem?.value)
+}
+
+function buildFallbackImagePricingRules(modelId) {
+  const pricing = fallbackImagePricingRules[modelId] || fallbackImagePricingRules[normalizeImageModelPricingAlias(modelId)] || null
+  if (!pricing) return []
+  if (pricing.fixed) {
+    return [{ generationType: '', pricingRuleType: 'single_fixed', resolution: '', quality: '', points: pricing.fixed }]
+  }
+  return Object.entries(pricing).map(([resolution, points]) => ({
+    generationType: '',
+    pricingRuleType: 'fixed_table',
+    resolution,
+    quality: '',
+    points
+  }))
+}
+
+function normalizeImageModelPricingAlias(modelId) {
+  const value = String(modelId || '').trim().toLowerCase()
+  const aliases = {
+    low_cost: 'nano-banana-2-低价版',
+    'shenlu-image-fast': 'nano-banana-2-低价版',
+    'nano_banana_2_low': 'nano-banana-2-低价版',
+    'nano-banana-2-low': 'nano-banana-2-低价版',
+    'nano_banana_pro_low': 'nano-banana-pro-低价版',
+    'nano-banana-pro-low': 'nano-banana-pro-低价版',
+    'gpt_image_2_fast': 'gpt-image-2-fast',
+    'gpt-image-2-low': 'gpt-image-2-fast'
+  }
+  return aliases[value] || modelId
 }
 
 function normalizeImageCatalogRatios(catalog) {
@@ -2569,6 +3562,26 @@ function normalizeImageCatalogRatios(catalog) {
   if (!ratioItems) return []
 
   return [...new Set(ratioItems.map((item) => (typeof item === 'string' ? item : item?.value || item?.id)).filter(Boolean))]
+}
+
+function normalizeImageCatalogResolutions(catalog) {
+  const resolutionItems =
+    findArrayByKey(catalog, ['resolutions', 'resolution_options', 'resolutionOptions', 'image_resolutions', 'imageResolutions']) ||
+    findFirstStringArray(catalog, (item) => /^[124]k$/i.test(item))
+  if (!resolutionItems) return []
+
+  const seen = new Set()
+  return resolutionItems
+    .map((item) => {
+      const id = String(typeof item === 'string' ? item : item?.value || item?.id || item?.key || '').trim().toLowerCase()
+      if (!id || seen.has(id)) return null
+      seen.add(id)
+      return {
+        id,
+        label: item?.label || item?.name || id.toUpperCase()
+      }
+    })
+    .filter(Boolean)
 }
 
 function findArrayByKey(value, keys, depth = 0) {
@@ -2612,8 +3625,201 @@ function findFirstStringArray(value, predicate, depth = 0) {
   return null
 }
 
+function getImageGenerationType(node) {
+  return getDirectImageReferenceUrls(node?.id).length > 0 ? 'image_to_image' : 'text_to_image'
+}
+
+function hasPendingReferenceUploads(nodeId) {
+  return getDirectImageReferenceItems(nodeId).some((reference) => reference.status === 'uploading')
+}
+
+function normalizeManualReferenceImages(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((item) => {
+      const id = item?.id || `manual-ref-${Date.now()}-${Math.round(Math.random() * 10000)}`
+      const url = item?.url || ''
+      const previewUrl = item?.previewUrl || item?.thumbnailUrl || url
+      if (!url && !previewUrl) return null
+      return {
+        id,
+        source: 'manual',
+        url,
+        previewUrl,
+        name: item?.name || '参考图',
+        status: item?.status || (url ? 'success' : 'uploading'),
+        progress: Number(item?.progress || 0),
+        width: Number(item?.width || 0),
+        height: Number(item?.height || 0),
+        assetId: item?.assetId || '',
+        storageObjectId: item?.storageObjectId || ''
+      }
+    })
+    .filter(Boolean)
+}
+
+function getDirectImageReferenceItems(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const connected = directEdges.value
+    .filter((edge) => edge.targetId === nodeId)
+    .map((edge) => {
+      const source = directNodes.value.find((item) => item.id === edge.sourceId)
+      const url = source?.generatedImage?.url || source?.media?.url || ''
+      const previewUrl =
+        source?.generatedImage?.url ||
+        (source?.type === 'uploaded_asset' ? getUploadedImageSrc(source) : '') ||
+        source?.media?.previewUrl ||
+        source?.media?.thumbnailUrl ||
+        url
+      if (!previewUrl && !url) return null
+      return {
+        id: `edge:${edge.sourceId}`,
+        source: 'edge',
+        url,
+        previewUrl,
+        name: source?.title || source?.media?.name || '连线参考图',
+        status: 'success',
+        progress: 100,
+        width: Number(source?.generatedImage?.width || source?.media?.width || 0),
+        height: Number(source?.generatedImage?.height || source?.media?.height || 0)
+      }
+    })
+    .filter(Boolean)
+  const manual = normalizeManualReferenceImages(node?.referenceImages)
+  const items = [...connected, ...manual]
+  const order = Array.isArray(node?.referenceOrder) ? node.referenceOrder : []
+  if (!order.length) return items
+
+  const itemMap = new Map(items.map((item) => [item.id, item]))
+  const ordered = order.map((id) => itemMap.get(id)).filter(Boolean)
+  const orderedIds = new Set(ordered.map((item) => item.id))
+  return [...ordered, ...items.filter((item) => !orderedIds.has(item.id))]
+}
+
+function getReferenceAspectRatio(reference) {
+  const width = Number(reference?.width || 0)
+  const height = Number(reference?.height || 0)
+  if (width > 0 && height > 0) return Math.min(Math.max(width / height, 0.42), 2.4)
+  return 1
+}
+
+function insertReferenceToken(nodeId, index) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!node) return
+  const token = `@参考图${index + 1}`
+  const prompt = String(node.prompt || '').trim()
+  updateDirectNode(nodeId, {
+    prompt: prompt ? `${prompt} ${token}` : token
+  })
+  showToast(`已引用${token}`)
+}
+
 function getImageModelLabel(modelId) {
   return imageModelOptions.value.find((model) => model.id === modelId)?.label || modelId || fallbackImageModelOptions[0].label
+}
+
+function getImageResolutionLabel(resolutionId) {
+  const normalized = normalizeImageResolutionValue(resolutionId)
+  return imageResolutionOptions.value.find((resolution) => resolution.id === normalized)?.label || normalized.toUpperCase()
+}
+
+function findImageModelOption(modelId) {
+  const normalizedAlias = normalizeImageModelPricingAlias(modelId)
+  return (
+    imageModelOptions.value.find((model) => model.id === modelId) ||
+    imageModelOptions.value.find((model) => model.id === normalizedAlias) ||
+    fallbackImageModelOptions.find((model) => model.id === modelId) ||
+    fallbackImageModelOptions.find((model) => model.id === normalizedAlias) ||
+    null
+  )
+}
+
+function getSelectedImageFeature(node) {
+  const model = findImageModelOption(node?.imageModelId || fallbackImageModelOptions[0].id)
+  const features = model?.features?.length ? model.features : buildFallbackImageFeatures(model?.id || node?.imageModelId)
+  const generationType = getImageGenerationType(node)
+  return features.find((feature) => feature.generationType === generationType) || features[0] || null
+}
+
+function getImageFieldConfig(node, key) {
+  return getSelectedImageFeature(node)?.fields?.find((field) => field.key === key) || null
+}
+
+function hasImageField(node, key) {
+  return Boolean(getImageFieldConfig(node, key))
+}
+
+function getImageFieldOptions(node, key, fallback) {
+  const options = getImageFieldConfig(node, key)?.options || []
+  if (options.length > 0) return options
+  return Array.isArray(fallback) ? fallback.map((item) => (typeof item === 'string' ? { id: item, label: item } : item)) : []
+}
+
+function getImageDefaultValue(node, key, fallback) {
+  const defaults = getSelectedImageFeature(node)?.defaults || {}
+  return defaults[key] || defaults[snakeToCamel(key)] || fallback
+}
+
+function snakeToCamel(value) {
+  return String(value || '').replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
+}
+
+function syncImageNodeSettings(node) {
+  if (!node) return
+  const resolutionOptions = getImageFieldOptions(node, 'resolution', fallbackImageResolutionOptions)
+  const qualityOptions = getImageFieldOptions(node, 'quality', fallbackImageQualityOptions)
+  const ratioOptions = getImageFieldOptions(node, 'aspect_ratio', imageAspectRatioOptions.value)
+  const patch = {}
+
+  if (hasImageField(node, 'resolution')) {
+    const current = normalizeImageResolutionValue(node.imageResolution)
+    const fallback = getImageDefaultValue(node, 'resolution', fallbackImageResolutionOptions[1].id)
+    patch.imageResolution = resolutionOptions.some((option) => option.id === current) ? current : fallback
+  }
+  if (hasImageField(node, 'quality')) {
+    const current = normalizeImageQualityValue(node.imageQuality)
+    const fallback = getImageDefaultValue(node, 'quality', 'medium')
+    patch.imageQuality = qualityOptions.some((option) => option.id === current) ? current : fallback
+  }
+  if (hasImageField(node, 'aspect_ratio')) {
+    const current = node.aspectRatio || fallbackImageAspectRatioOptions[0]
+    const fallback = getImageDefaultValue(node, 'aspect_ratio', fallbackImageAspectRatioOptions[0])
+    patch.aspectRatio = ratioOptions.some((option) => (option.id || option) === current) ? current : fallback
+  }
+  updateDirectNode(node.id, patch)
+}
+
+function getImageGenerationPoints(node) {
+  const modelId = node?.imageModelId || fallbackImageModelOptions[0].id
+  const model = findImageModelOption(modelId)
+  const rules = model?.pricingRules?.length ? model.pricingRules : buildFallbackImagePricingRules(modelId)
+  if (!rules.length) return Number(model?.startPoints) || null
+
+  const resolution = normalizeImageResolutionValue(node?.imageResolution)
+  const preferredQuality = hasImageField(node, 'quality') ? normalizeImageQualityValue(node?.imageQuality) : ''
+  const generationType = getImageGenerationType(node)
+  const candidates = [
+    (rule) => rule.generationType === generationType && rule.resolution === resolution && rule.quality === preferredQuality,
+    (rule) => rule.generationType === generationType && rule.resolution === resolution && !rule.quality,
+    (rule) => !rule.generationType && rule.resolution === resolution && !rule.quality,
+    (rule) => rule.resolution === resolution && rule.quality === preferredQuality,
+    (rule) => rule.resolution === resolution && !rule.quality,
+    (rule) => rule.pricingRuleType === 'single_fixed' || !rule.resolution
+  ]
+  const matched = candidates.map((predicate) => rules.find(predicate)).find(Boolean)
+  return Number.isFinite(Number(matched?.points)) ? Number(matched.points) : Number(model?.startPoints) || null
+}
+
+function getImageGenerationPointsButtonLabel(node) {
+  const points = getImageGenerationPoints(node)
+  return Number.isFinite(points) ? points : '--'
+}
+
+function normalizeImageResolutionValue(resolutionId) {
+  return String(resolutionId || fallbackImageResolutionOptions[1].id).trim().toLowerCase()
+}
+
+function normalizeImageQualityValue(quality) {
+  return String(quality || 'medium').trim().toLowerCase()
 }
 
 async function runDirectImageNode(node) {
@@ -2622,13 +3828,21 @@ async function runDirectImageNode(node) {
     showToast('请先输入图片提示词')
     return
   }
+  if (hasPendingReferenceUploads(node.id)) {
+    showToast('参考图还在上传中')
+    return
+  }
 
   rememberHistory()
   clearImageGenerationTimer(node.id)
   const modelCode = node.imageModelId || fallbackImageModelOptions[0].id
+  const resolution = normalizeImageResolutionValue(node.imageResolution)
+  const quality = normalizeImageQualityValue(node.imageQuality)
   const aspectRatio = node.aspectRatio || fallbackImageAspectRatioOptions[0]
   updateDirectNode(node.id, {
     imageModelId: modelCode,
+    imageResolution: resolution,
+    imageQuality: quality,
     aspectRatio,
     generationStatus: 'running',
     generationMessage: '正在提交图片生成任务',
@@ -2642,7 +3856,8 @@ async function runDirectImageNode(node) {
       ownership_mode: 'standalone',
       mode: 'text_to_image',
       model_code: modelCode,
-      resolution: '2k',
+      resolution,
+      quality: hasImageField(node, 'quality') ? quality : undefined,
       aspect_ratio: aspectRatio,
       reference_images: getDirectImageReferenceUrls(node.id),
       prompt
@@ -2661,6 +3876,8 @@ async function runDirectImageNode(node) {
         url: directUrl,
         prompt,
         modelCode,
+        resolution,
+        quality,
         aspectRatio,
         taskId: result.taskId,
         recordId: result.recordId || recordImage?.recordId
@@ -2716,6 +3933,8 @@ async function pollImageTask(nodeId, taskId, recordId = '', attempt = 0) {
         url: imageUrl,
         prompt: node.prompt,
         modelCode: node.imageModelId,
+        resolution: normalizeImageResolutionValue(node.imageResolution),
+        quality: normalizeImageQualityValue(node.imageQuality),
         aspectRatio: node.aspectRatio,
         taskId,
         recordId: nextRecordId || recordImage?.recordId || historyImage?.recordId
@@ -2842,10 +4061,8 @@ function clearImageGenerationTimers() {
 }
 
 function getDirectImageReferenceUrls(nodeId) {
-  return directEdges.value
-    .filter((edge) => edge.targetId === nodeId)
-    .map((edge) => directNodes.value.find((item) => item.id === edge.sourceId))
-    .map((source) => source?.generatedImage?.url || source?.media?.url || '')
+  return getDirectImageReferenceItems(nodeId)
+    .map((reference) => reference.url || '')
     .filter((url) => /^https?:\/\//.test(url))
 }
 
@@ -2994,7 +4211,11 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     media: patch.media || null,
     upload: patch.upload || null,
     imageModelId: patch.imageModelId || fallbackImageModelOptions[0].id,
+    imageResolution: normalizeImageResolutionValue(patch.imageResolution),
+    imageQuality: normalizeImageQualityValue(patch.imageQuality),
     aspectRatio: patch.aspectRatio || fallbackImageAspectRatioOptions[0],
+    referenceImages: normalizeManualReferenceImages(patch.referenceImages),
+    referenceOrder: Array.isArray(patch.referenceOrder) ? patch.referenceOrder : [],
     generationStatus: patch.generationStatus || 'idle',
     generationMessage: patch.generationMessage || '',
     generationTaskId: patch.generationTaskId || '',
@@ -3098,10 +4319,15 @@ function getDirectNodeActions(type) {
   return actions[type] || actions.prompt_note
 }
 
+function getDirectNodeTextareaPlaceholder(node) {
+  if (node?.type === 'image_unit') return '描述你想要生成的画面内容~'
+  return node?.promptPlaceholder || getDirectNodePrompt(node?.type)
+}
+
 function getDirectNodePrompt(type) {
   const prompts = {
     prompt_note: '写下你想讲的故事、场景或角色设定。例如：一个来自未来的机器人，在城市屋顶看星星。',
-    image_unit: '描述你想要生成的画面内容，按 / 呼出指令，@ 引用素材',
+    image_unit: '描述你想要生成的画面内容~',
     video_unit: '描述镜头运动、角色动作和画面节奏，也可以引用图片或文本节点。',
     media_board: '选择历史素材或多个视频片段，合成为一个可预览的结果。',
     uploaded_asset: '',
@@ -3334,6 +4560,7 @@ function deleteDirectNodesByIds(ids) {
   idSet.forEach((id) => {
     revokeLocalPreviewForNode(id)
     uploadFileMap.delete(id)
+    releaseUploadSignature(id)
     directNodeElements.delete(id)
     clearImageGenerationTimer(id)
   })

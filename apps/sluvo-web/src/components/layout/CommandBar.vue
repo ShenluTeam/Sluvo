@@ -49,7 +49,7 @@
         <span class="top-pill__sale">限时 39 折</span>
         <Gem :size="19" />
         会员特惠
-        <Zap :size="15" />
+        <Star :size="15" />
         {{ pointsLabel }}
       </button>
 
@@ -85,10 +85,10 @@
 
           <div class="top-quota-card">
             <button type="button">
-              <span>积分余额 {{ pointsLabel }} 点</span>
+              <span>灵感值余额 {{ pointsLabel }} 点</span>
               <ChevronRight :size="14" />
             </button>
-            <small>通用 {{ generalPointsLabel }} 点 | LibTV {{ libtvPointsLabel }} 点</small>
+            <small>永久 {{ permanentPointsLabel }} 点 | 临时 {{ temporaryPointsLabel }} 点</small>
             <button class="top-quota-card__action" type="button">充值</button>
           </div>
 
@@ -100,7 +100,6 @@
 
           <nav class="top-account-menu">
             <button type="button"><UserPlus :size="20" />创建团队</button>
-            <button type="button"><UserRound :size="20" />个人中心</button>
             <button type="button"><CreditCard :size="20" />订阅与开发票</button>
             <button type="button"><Sun :size="20" />模式切换 <span><Moon :size="15" /></span></button>
             <button type="button"><Settings :size="20" />AI 水印设置</button>
@@ -126,10 +125,9 @@ import {
   Settings,
   Share2,
   Store,
+  Star,
   Sun,
   UserPlus,
-  UserRound,
-  Zap
 } from 'lucide-vue-next'
 import { fetchCurrentUser, fetchUserDashboard } from '../../api/authApi'
 
@@ -153,11 +151,11 @@ const account = reactive({
   name: '',
   email: '',
   userId: '',
-  points: 100,
-  generalPoints: 20,
-  libtvPoints: 80,
+  points: 0,
+  permanentPoints: 0,
+  temporaryPoints: 0,
   storageUsedGb: 0,
-  storageTotalGb: 3,
+  storageTotalGb: 0,
   membership: '',
   benefitText: ''
 })
@@ -165,11 +163,11 @@ const account = reactive({
 const displayName = computed(() => account.name || account.email || buildFallbackName())
 const userInitial = computed(() => displayName.value.trim().slice(0, 1).toUpperCase() || 'S')
 const pointsLabel = computed(() => String(account.points ?? 0))
-const generalPointsLabel = computed(() => String(account.generalPoints ?? 0))
-const libtvPointsLabel = computed(() => String(account.libtvPoints ?? 0))
+const permanentPointsLabel = computed(() => String(account.permanentPoints ?? 0))
+const temporaryPointsLabel = computed(() => String(account.temporaryPoints ?? 0))
 const membershipLabel = computed(() => account.membership || '未开通会员')
 const benefitLabel = computed(() => account.benefitText || (account.membership ? '会员权益生效中' : '暂无会员权益'))
-const storageLabel = computed(() => `${account.storageUsedGb || 0}G /${account.storageTotalGb || 3}G`)
+const storageLabel = computed(() => `${formatGb(account.storageUsedGb)} /${formatGb(account.storageTotalGb)}`)
 const saveStatusLabel = computed(() => {
   const labels = {
     idle: '已同步',
@@ -258,22 +256,44 @@ function mergeUserPayload(payload) {
   account.name = user.nickname || user.name || user.username || user.wechat_name || user.display_name || account.name
   account.email = user.email || account.email
   account.userId = user.uuid || user.user_id || user.id || account.userId
-  account.points = pickNumber(user, ['points', 'point_balance', 'balance', 'credits'], account.points)
+  mergePointFields(user)
+  mergeStoragePayload(user.storage)
   account.membership = normalizeMembershipLabel(user.membership_name || user.membership || user.vip_name) || account.membership
   account.benefitText = normalizeBenefitLabel(user.membership || user.benefits || user.benefit_text) || account.benefitText
 }
 
 function mergeDashboardPayload(payload) {
   const data = payload?.dashboard || payload?.data || payload || {}
-  account.points = pickNumber(data, ['points', 'point_balance', 'balance', 'credits'], account.points)
-  account.generalPoints = pickNumber(data, ['general_points', 'generalPoints'], account.generalPoints)
-  account.libtvPoints = pickNumber(data, ['libtv_points', 'libtvPoints'], account.libtvPoints)
-  account.storageUsedGb = pickNumber(data, ['storage_used_gb', 'storageUsedGb'], account.storageUsedGb)
-  account.storageTotalGb = pickNumber(data, ['storage_total_gb', 'storageTotalGb'], account.storageTotalGb)
+  mergePointFields(data.points_summary || data.pointsSummary || data)
+  mergeStoragePayload(data.storage || data.storage_summary || data.storageSummary || data)
   account.membership =
     normalizeMembershipLabel(data.membership_name || data.membership || data.standalone_membership || data.team_membership) ||
     account.membership
   account.benefitText = normalizeBenefitLabel(data.membership || data.benefits || data.benefit_text) || account.benefitText
+}
+
+function mergePointFields(source) {
+  account.points = pickNumber(source, ['total_points', 'totalPoints', 'points', 'point_balance', 'balance', 'credits'], account.points)
+  account.permanentPoints = pickNumber(source, ['permanent_points', 'permanentPoints', 'general_points', 'generalPoints'], account.permanentPoints)
+  account.temporaryPoints = pickNumber(source, ['temporary_points', 'temporaryPoints', 'libtv_points', 'libtvPoints'], account.temporaryPoints)
+
+  const total = Number(account.points)
+  const permanent = Number(account.permanentPoints)
+  const temporary = Number(account.temporaryPoints)
+  if ((!Number.isFinite(total) || total === 0) && (permanent || temporary)) {
+    account.points = permanent + temporary
+  }
+}
+
+function mergeStoragePayload(storage) {
+  if (!storage || typeof storage !== 'object') return
+  const usedBytes = pickNumber(storage, ['used_bytes', 'usedBytes'], null)
+  const reservedBytes = pickNumber(storage, ['reserved_bytes', 'reservedBytes'], 0)
+  const quotaBytes = pickNumber(storage, ['quota_bytes', 'quotaBytes', 'quota_bytes_snapshot', 'quotaBytesSnapshot'], null)
+  account.storageUsedGb = pickNumber(storage, ['storage_used_gb', 'storageUsedGb', 'used_gb', 'usedGb'], account.storageUsedGb)
+  account.storageTotalGb = pickNumber(storage, ['storage_total_gb', 'storageTotalGb', 'quota_gb', 'quotaGb'], account.storageTotalGb)
+  if (usedBytes !== null) account.storageUsedGb = bytesToGb(usedBytes + reservedBytes)
+  if (quotaBytes !== null) account.storageTotalGb = bytesToGb(quotaBytes)
 }
 
 function normalizeMembershipLabel(value) {
@@ -323,6 +343,19 @@ function pickNumber(source, keys, fallback) {
     if (Number.isFinite(value)) return value
   }
   return fallback
+}
+
+function bytesToGb(value) {
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes <= 0) return 0
+  return bytes / (1024 * 1024 * 1024)
+}
+
+function formatGb(value) {
+  const gb = Number(value)
+  if (!Number.isFinite(gb) || gb <= 0) return '0G'
+  if (gb >= 10 || Number.isInteger(gb)) return `${Math.round(gb)}G`
+  return `${gb.toFixed(1).replace(/\.0$/, '')}G`
 }
 
 function buildFallbackName() {

@@ -116,7 +116,7 @@ const configs = {
   image_unit: {
     icon: Image,
     hero: 'image',
-    prompt: '描述你想要生成的画面内容，按 / 呼出指令，@ 引用素材',
+    prompt: '描述你想要生成的画面内容~',
     model: 'Sluvo Nano Pro · 16:9 · 2K',
     chips: ['风格', '标记', '聚焦'],
     suggestions: [

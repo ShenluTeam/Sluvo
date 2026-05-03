@@ -72,26 +72,35 @@ export function uploadSluvoCanvasAsset(canvasId, file, options = {}) {
 }
 
 async function uploadSluvoCanvasAssetBase64(canvasId, file, options = {}) {
-  options.onProgress?.(18)
+  options.onProgress?.(18, '正在读取文件')
   const dataBase64 = await readFileAsDataUrl(file)
-  options.onProgress?.(42)
-  const payload = await apiFetch(`/api/sluvo/canvases/${canvasId}/assets/upload/base64`, {
-    method: 'POST',
-    body: JSON.stringify({
-      filename: file.name || 'upload.bin',
-      contentType: file.type || 'application/octet-stream',
-      dataBase64,
-      mediaType: options.mediaType,
-      nodeId: options.nodeId || null,
-      width: options.width || null,
-      height: options.height || null,
-      durationSeconds: options.durationSeconds || null,
-      metadata: options.metadata || {}
-    }),
-    timeout: 60000
-  })
-  options.onProgress?.(100)
-  return payload
+  options.onProgress?.(42, '正在提交到服务')
+  let progress = 42
+  const progressTimer = setInterval(() => {
+    progress = Math.min(88, progress + (progress < 68 ? 8 : 3))
+    options.onProgress?.(progress, '服务正在处理')
+  }, 1400)
+  try {
+    const payload = await apiFetch(`/api/sluvo/canvases/${canvasId}/assets/upload/base64`, {
+      method: 'POST',
+      body: JSON.stringify({
+        filename: file.name || 'upload.bin',
+        contentType: file.type || 'application/octet-stream',
+        dataBase64,
+        mediaType: options.mediaType,
+        nodeId: options.nodeId || null,
+        width: options.width || null,
+        height: options.height || null,
+        durationSeconds: options.durationSeconds || null,
+        metadata: options.metadata || {}
+      }),
+      timeout: options.timeout || 120000
+    })
+    options.onProgress?.(100, '上传成功')
+    return payload
+  } finally {
+    clearInterval(progressTimer)
+  }
 }
 
 function uploadSluvoCanvasAssetMultipart(canvasId, file, options = {}) {

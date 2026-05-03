@@ -119,10 +119,6 @@
             <LogIn v-else :size="19" />
             {{ isSubmitting ? '登录中' : '登录并进入 Sluvo' }}
           </button>
-          <button v-if="isDevMode" class="dev-login-button" type="button" @click="enterDevWorkspace">
-            <LogIn :size="18" />
-            本地开发模式进入画布
-          </button>
         </form>
 
         <div class="login-card__meta">
@@ -162,7 +158,6 @@ const form = reactive({
 const rememberAccount = ref(Boolean(form.email))
 const showPassword = ref(false)
 const isSubmitting = ref(false)
-const isDevMode = import.meta.env.DEV
 const feedback = reactive({
   type: 'idle',
   message: ''
@@ -208,13 +203,6 @@ async function submitLogin() {
 
 function goHome() {
   router.push('/')
-}
-
-async function enterDevWorkspace() {
-  window.localStorage.setItem('shenlu_token', 'sluvo-local-dev-token')
-  window.localStorage.setItem('shenlu_nickname', 'Sluvo Local Dev')
-  window.localStorage.setItem('shenlu_email', form.email || 'local@sluvo.dev')
-  await router.replace(redirectPath.value)
 }
 
 function openReset() {
@@ -786,28 +774,6 @@ function openReset() {
   cursor: pointer;
   box-shadow: 0 18px 38px rgba(214, 181, 109, 0.18);
   transition: transform 160ms ease, filter 160ms ease;
-}
-
-.dev-login-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  min-height: 54px;
-  border: 1px dashed rgba(255, 241, 199, 0.34);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.045);
-  color: rgba(255, 248, 230, 0.82);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.dev-login-button:hover {
-  border-color: rgba(214, 181, 109, 0.62);
-  background: rgba(214, 181, 109, 0.09);
-  color: #fff8e6;
 }
 
 .login-card__meta {
