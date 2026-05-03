@@ -7,6 +7,19 @@ Changed files:
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
+- Changed the logged-in homepage inspiration samples from a manually scrollable strip to an automatic rotating showcase.
+- Added clickable progress dots while preserving sample-card project creation and hover video preview behavior.
+
+Verification:
+- `npm run build`
+
+## 2026-05-03
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
 - Replaced the first batch of logged-in homepage visual media with Shenlu OSS-hosted showcase assets.
 - Wired `hero-character-board.webp`, `hero-storyboard-board.webp`, `hero-first-frame.webp`, and `video-first-frame.mp4` into the homepage media configuration.
 

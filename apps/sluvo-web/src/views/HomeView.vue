@@ -207,11 +207,12 @@
             <p>从官方样片开始，把风格、角色和分镜拆成你的下一张画布。</p>
           </div>
 
-          <div class="showcase-rail" aria-label="灵感样片">
+          <div class="showcase-carousel" aria-label="灵感样片" @mouseenter="stopShowcaseRotation" @mouseleave="startShowcaseRotation">
             <article
-              v-for="item in showcaseItems"
+              v-for="(item, index) in visibleShowcaseItems"
               :key="item.title"
               class="showcase-card"
+              :class="{ 'showcase-card--primary': index === 0 }"
               tabindex="0"
               :style="{ '--card-accent': item.accent }"
               @click="startProjectFromPrompt(item.promptSeed)"
@@ -240,6 +241,17 @@
               <p>{{ item.description }}</p>
               <button type="button" :disabled="isCreatingProject" @click.stop="startProjectFromPrompt(item.promptSeed)">用这个风格开始</button>
             </article>
+          </div>
+
+          <div class="showcase-dots" aria-label="切换灵感样片">
+            <button
+              v-for="(item, index) in showcaseItems"
+              :key="item.title"
+              type="button"
+              :class="{ 'is-active': index === activeShowcaseIndex }"
+              :aria-label="`显示${item.title}`"
+              @click="selectShowcase(index)"
+            />
           </div>
         </section>
 
@@ -432,11 +444,18 @@ const projectsSection = ref(null)
 const promptText = ref('')
 const projectFeedback = ref('')
 const deletingProjectIds = ref(new Set())
+const activeShowcaseIndex = ref(0)
+let showcaseRotationTimer = null
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const isCreatingProject = computed(() => projectStore.creatingProject)
 const userName = computed(() => authStore.displayName)
 const userInitial = computed(() => authStore.userInitial)
+const visibleShowcaseItems = computed(() => {
+  return [0, 1, 2]
+    .map((offset) => showcaseItems[(activeShowcaseIndex.value + offset) % showcaseItems.length])
+    .filter(Boolean)
+})
 
 const remoteMedia = {
   character: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-character-board.webp',
@@ -817,6 +836,24 @@ function pausePreviewVideo(event) {
   video.pause?.()
 }
 
+function startShowcaseRotation() {
+  stopShowcaseRotation()
+  showcaseRotationTimer = window.setInterval(() => {
+    activeShowcaseIndex.value = (activeShowcaseIndex.value + 1) % showcaseItems.length
+  }, 4200)
+}
+
+function stopShowcaseRotation() {
+  if (!showcaseRotationTimer) return
+  window.clearInterval(showcaseRotationTimer)
+  showcaseRotationTimer = null
+}
+
+function selectShowcase(index) {
+  activeShowcaseIndex.value = index
+  startShowcaseRotation()
+}
+
 function getProjectCover(project, index = 0) {
   return (
     project?.coverUrl ||
@@ -854,6 +891,7 @@ function focusProjects() {
 
 onMounted(() => {
   readAuthState()
+  startShowcaseRotation()
   window.addEventListener('storage', handleStorage)
 })
 
@@ -867,6 +905,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  stopShowcaseRotation()
   window.removeEventListener('storage', handleStorage)
 })
 </script>
@@ -1817,24 +1856,12 @@ onBeforeUnmount(() => {
   padding-top: 8px;
 }
 
-.showcase-rail {
+.showcase-carousel {
   display: grid;
-  grid-auto-columns: minmax(246px, 286px);
-  grid-auto-flow: column;
+  grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 0.86fr));
   gap: 16px;
-  overflow-x: auto;
-  padding: 2px 4px 12px;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
-}
-
-.showcase-rail::-webkit-scrollbar {
-  height: 8px;
-}
-
-.showcase-rail::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(214, 181, 109, 0.22);
+  min-height: 390px;
+  padding: 2px 0 0;
 }
 
 .showcase-card {
@@ -1851,12 +1878,20 @@ onBeforeUnmount(() => {
     rgba(255, 255, 255, 0.045);
   color: #fff8e6;
   cursor: pointer;
-  scroll-snap-align: start;
   text-align: left;
+  animation: showcaseSwap 0.36s ease both;
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
     background 0.18s ease;
+}
+
+.showcase-card--primary {
+  min-height: 390px;
+}
+
+.showcase-card--primary .showcase-card__media {
+  aspect-ratio: 16 / 11;
 }
 
 .showcase-card:hover,
@@ -1922,6 +1957,27 @@ onBeforeUnmount(() => {
   color: #fff1c7;
   font-size: 12px;
   font-weight: 900;
+}
+
+.showcase-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.showcase-dots button {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 1px solid rgba(214, 181, 109, 0.32);
+  border-radius: 999px;
+  background: rgba(214, 181, 109, 0.14);
+}
+
+.showcase-dots button.is-active {
+  width: 24px;
+  background: #d6b56d;
 }
 
 .project-grid {
@@ -2396,6 +2452,18 @@ onBeforeUnmount(() => {
   }
 }
 
+@keyframes showcaseSwap {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 1180px) {
   .guest-hero {
     grid-template-columns: 1fr;
@@ -2539,8 +2607,13 @@ onBeforeUnmount(() => {
     width: 176px;
   }
 
-  .showcase-rail {
-    grid-auto-columns: minmax(220px, 76vw);
+  .showcase-carousel {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .showcase-card:not(.showcase-card--primary) {
+    display: none;
   }
 
   .agent-primary {
@@ -2642,6 +2715,10 @@ onBeforeUnmount(() => {
 
   .showcase-card {
     min-height: 330px;
+  }
+
+  .showcase-card--primary {
+    min-height: 340px;
   }
 
   .section-heading {
