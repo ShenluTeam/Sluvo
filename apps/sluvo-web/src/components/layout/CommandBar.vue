@@ -35,8 +35,9 @@
       <button class="top-icon-button" type="button" aria-label="保存" @click="$emit('save')">
         <Save :size="20" />
       </button>
-      <button class="top-icon-button" type="button" aria-label="发布到社区" title="发布到社区" @click="$emit('publish')">
+      <button class="top-pill top-pill--publish" type="button" aria-label="发布到社区" title="发布到社区" @click="$emit('publish')">
         <Share2 :size="20" />
+        <span>发布</span>
       </button>
       <button class="top-icon-button top-icon-button--notice" type="button" aria-label="通知">
         <Bell :size="20" />

@@ -2690,7 +2690,7 @@ function handleFramePointerDown(event) {
   const target = event.target instanceof Element ? event.target : null
   if (
     target?.closest(
-      '.direct-workflow-node, .vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu'
+      '.direct-workflow-node, .vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .publish-overlay'
     )
   ) {
     return
@@ -2740,7 +2740,7 @@ function isCanvasWheelZoomTarget(target) {
   const element = target instanceof Element ? target : null
   if (!element) return true
   return !element.closest(
-    '.libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .add-node-menu'
+    '.libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .add-node-menu, .publish-overlay'
   )
 }
 
@@ -3153,7 +3153,8 @@ function isCanvasContextMenuTarget(target) {
       '.starter-strip',
       '.canvas-help-panel',
       '.canvas-context-menu',
-      '.image-preview-overlay'
+      '.image-preview-overlay',
+      '.publish-overlay'
     ].join(', ')
   )
 }
@@ -3191,7 +3192,7 @@ function handleCanvasDoubleClick(event) {
   const target = event.target instanceof Element ? event.target : null
   if (
     target?.closest(
-      '.vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu'
+      '.vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .publish-overlay'
     )
   ) {
     return

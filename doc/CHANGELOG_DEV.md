@@ -3,6 +3,23 @@
 ## 2026-05-03
 
 Changed files:
+- `apps/sluvo-web/src/components/layout/CommandBar.vue`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the canvas topbar community publish entry from an icon-only share button to a visible `发布` action.
+- Added the missing publish dialog overlay/dialog styling so the community publish form appears above the canvas.
+- Excluded the publish overlay from canvas pan/selection/context interactions while it is open.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-03
+
+Changed files:
 - `backend/models.py`
 - `backend/database.py`
 - `backend/schemas.py`
