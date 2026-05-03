@@ -8,6 +8,7 @@ from services.video_model_registry import (
     PRICING_RULE_MULTIMODAL_MIN_BILL,
     PRICING_RULE_PER_SECOND,
     PRICING_RULE_PER_SECOND_WITH_ADDON,
+    build_video_catalog,
     estimate_video_price,
     normalize_video_request,
 )
@@ -104,7 +105,48 @@ def test_seedance_20_fast_per_second_estimate():
     )
     result = estimate_video_price(normalized["model_code"], normalized["generation_type"], normalized)
     assert result["pricing_rule_type"] == PRICING_RULE_PER_SECOND
-    assert result["sell_price_points"] == 65
+    assert result["sell_price_points"] == 60
+
+
+def test_per_second_estimate_uses_total_cost_so_resolution_changes_can_affect_points():
+    low = normalize_video_request(
+        {
+            "model_code": "vidu_q3_pro",
+            "generation_type": "text_to_video",
+            "prompt": "test",
+            "duration": 5,
+            "resolution": "720p",
+            "aspect_ratio": "16:9",
+            "audio_enabled": False,
+        }
+    )
+    high = normalize_video_request(
+        {
+            "model_code": "vidu_q3_pro",
+            "generation_type": "text_to_video",
+            "prompt": "test",
+            "duration": 5,
+            "resolution": "1080p",
+            "aspect_ratio": "16:9",
+            "audio_enabled": False,
+        }
+    )
+
+    low_result = estimate_video_price(low["model_code"], low["generation_type"], low)
+    high_result = estimate_video_price(high["model_code"], high["generation_type"], high)
+
+    assert low_result["sell_price_points"] == 40
+    assert high_result["sell_price_points"] == 43
+
+
+def test_vidu_q3_turbo_catalog_exposes_only_priced_resolutions():
+    catalog = build_video_catalog()
+    model = next(item for item in catalog["models"] if item["model_code"] == "vidu_q3_turbo")
+
+    for feature in model["features"]:
+        resolution_field = next(field for field in feature["fields"] if field["key"] == "resolution")
+        resolutions = [option["value"] for option in resolution_field["options"]]
+        assert resolutions == ["540p", "720p", "1080p"]
 
 
 def test_seedance_20_multimodal_min_bill_estimate():
@@ -140,7 +182,7 @@ def test_kling_o3_reference_addon_estimate():
     )
     result = estimate_video_price(normalized["model_code"], normalized["generation_type"], normalized)
     assert result["pricing_rule_type"] == PRICING_RULE_PER_SECOND_WITH_ADDON
-    assert result["sell_price_points"] == 95
+    assert result["sell_price_points"] == 78
 
 
 def test_seedance_20_image_payload_uses_frame_url_fields():

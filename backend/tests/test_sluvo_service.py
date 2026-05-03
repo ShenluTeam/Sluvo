@@ -248,6 +248,59 @@ def test_sluvo_canvas_revision_conflict_and_batch_snapshot_mutation():
         assert session.exec(select(SluvoCanvasMutation)).first().mutation_type in {"node.create", "canvas.batch"}
 
 
+def test_sluvo_canvas_batch_creates_client_id_edges_atomically():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Atomic"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+
+        result = apply_sluvo_canvas_batch(
+            session,
+            canvas,
+            SluvoCanvasBatchRequest(
+                expectedRevision=canvas.revision,
+                nodes=[
+                    {
+                        "nodeType": "note",
+                        "title": "A",
+                        "position": {"x": 0, "y": 0},
+                        "data": {"clientId": "client-a"},
+                    },
+                    {
+                        "nodeType": "note",
+                        "title": "B",
+                        "position": {"x": 300, "y": 0},
+                        "data": {"clientId": "client-b"},
+                    },
+                ],
+                edges=[
+                    {
+                        "sourceNodeId": "",
+                        "targetNodeId": "",
+                        "sourcePortId": "right",
+                        "targetPortId": "left",
+                        "edgeType": "reference",
+                        "data": {
+                            "clientId": "edge-ab",
+                            "sourceClientId": "client-a",
+                            "targetClientId": "client-b",
+                        },
+                    }
+                ],
+            ),
+            user=owner,
+        )
+
+        nodes_by_client_id = {node["data"]["clientId"]: node for node in result["nodes"]}
+        assert set(nodes_by_client_id) == {"client-a", "client-b"}
+        assert len(result["edges"]) == 1
+        edge = result["edges"][0]
+        assert edge["sourceNodeId"] == nodes_by_client_id["client-a"]["id"]
+        assert edge["targetNodeId"] == nodes_by_client_id["client-b"]["id"]
+        assert edge["data"]["clientId"] == "edge-ab"
+
+
 def test_sluvo_canvas_asset_upload_persists_asset(monkeypatch):
     with _make_session() as session:
         team, owner, _editor, _viewer, _admin, _links = _seed_team(session)

@@ -158,6 +158,30 @@ def _assert_same_canvas(item_canvas_id: int, canvas_id: int, label: str) -> None
         raise HTTPException(status_code=400, detail=f"{label} 不属于当前画布")
 
 
+def _item_client_id(item: Dict[str, Any]) -> str:
+    data = item.get("data") if isinstance(item.get("data"), dict) else {}
+    return str(data.get("clientId") or item.get("clientId") or "").strip()
+
+
+def _resolve_batch_node_id(
+    session: Session,
+    canvas: SluvoCanvas,
+    value: Optional[str],
+    client_id: Optional[str],
+    client_node_ids: Dict[str, int],
+    label: str,
+) -> int:
+    node_id = _decode_optional(value)
+    if node_id:
+        node = _require_node(session, node_id)
+        _assert_same_canvas(node.canvas_id, canvas.id, label)
+        return node.id
+    client_key = str(client_id or "").strip()
+    if client_key and client_key in client_node_ids:
+        return client_node_ids[client_key]
+    raise HTTPException(status_code=400, detail=f"{label} cannot be resolved")
+
+
 def get_sluvo_project_first_image_url(session: Session, project_id: int) -> Optional[str]:
     asset = session.exec(
         select(SluvoCanvasAsset)
@@ -1280,6 +1304,8 @@ def apply_sluvo_canvas_batch(
         node.updated_at = _utc_now()
         session.add(node)
 
+    client_node_ids: Dict[str, int] = {}
+
     for item in payload.nodes:
         node_id = _decode_optional(item.get("id"))
         if node_id:
@@ -1332,6 +1358,19 @@ def apply_sluvo_canvas_batch(
                 updated_at=_utc_now(),
             )
             session.add(node)
+            session.flush()
+
+        client_id = _item_client_id(item)
+        if client_id:
+            client_node_ids[client_id] = node.id
+
+    session.flush()
+    for existing_node in session.exec(
+        select(SluvoCanvasNode).where(SluvoCanvasNode.canvas_id == canvas.id, SluvoCanvasNode.deleted_at == None)
+    ).all():
+        existing_client_id = str(_json_load(existing_node.data_json, {}).get("clientId") or "").strip()
+        if existing_client_id:
+            client_node_ids.setdefault(existing_client_id, existing_node.id)
 
     for edge_id in payload.deletedEdgeIds:
         edge = _require_edge(session, decode_id(edge_id))
@@ -1343,11 +1382,41 @@ def apply_sluvo_canvas_batch(
 
     for item in payload.edges:
         edge_id = _decode_optional(item.get("id"))
+        data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        source_node_id = _resolve_batch_node_id(
+            session,
+            canvas,
+            item.get("sourceNodeId"),
+            data.get("sourceClientId"),
+            client_node_ids,
+            "source node",
+        )
+        target_node_id = _resolve_batch_node_id(
+            session,
+            canvas,
+            item.get("targetNodeId"),
+            data.get("targetClientId"),
+            client_node_ids,
+            "target node",
+        )
+        resolved_item = {
+            **item,
+            "sourceNodeId": encode_id(source_node_id),
+            "targetNodeId": encode_id(target_node_id),
+        }
         if edge_id:
             edge = _require_edge(session, edge_id)
-            update_payload = SluvoCanvasEdgeUpdateRequest(**{k: v for k, v in item.items() if k != "id"})
+            update_payload = SluvoCanvasEdgeUpdateRequest(**{k: v for k, v in resolved_item.items() if k != "id"})
             _assert_same_canvas(edge.canvas_id, canvas.id, "连线")
             _check_revision(edge.revision, update_payload.expectedRevision, "连线")
+            edge.source_node_id = source_node_id
+            edge.target_node_id = target_node_id
+            if update_payload.sourcePortId is not None:
+                edge.source_port_id = update_payload.sourcePortId
+            if update_payload.targetPortId is not None:
+                edge.target_port_id = update_payload.targetPortId
+            if update_payload.edgeType is not None:
+                edge.edge_type = normalize_sluvo_edge_type(update_payload.edgeType)
             if update_payload.label is not None:
                 edge.label = update_payload.label
             if update_payload.data is not None:
@@ -1360,15 +1429,11 @@ def apply_sluvo_canvas_batch(
             edge.updated_at = _utc_now()
             session.add(edge)
         else:
-            create_payload = SluvoCanvasEdgeCreateRequest(**item)
-            source = _require_node(session, decode_id(create_payload.sourceNodeId))
-            target = _require_node(session, decode_id(create_payload.targetNodeId))
-            _assert_same_canvas(source.canvas_id, canvas.id, "源节点")
-            _assert_same_canvas(target.canvas_id, canvas.id, "目标节点")
+            create_payload = SluvoCanvasEdgeCreateRequest(**resolved_item)
             edge = SluvoCanvasEdge(
                 canvas_id=canvas.id,
-                source_node_id=source.id,
-                target_node_id=target.id,
+                source_node_id=source_node_id,
+                target_node_id=target_node_id,
                 source_port_id=create_payload.sourcePortId,
                 target_port_id=create_payload.targetPortId,
                 edge_type=normalize_sluvo_edge_type(create_payload.edgeType),

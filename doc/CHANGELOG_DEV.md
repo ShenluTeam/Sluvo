@@ -51,6 +51,29 @@ Verification:
 ## 2026-05-03
 
 Changed files:
+- `apps/sluvo-web/src/api/creativeApi.js`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Completed the canvas video generation node with backend video model catalog loading, dynamic model/type/parameter controls, inspiration point estimation, generation submission, polling, persistence, and video preview/download.
+- Reused image-node reference handling so connected/generated/uploaded images can drive video generation as first-frame or image references.
+- Added the Seedance 2.0 text-to-video web search toggle to the canvas video node, including persistence and estimate/generate payload support.
+- Consolidated the canvas video node controls into a compact model/type/settings/generate bar with a single popover for ratio, resolution, duration, quality, motion, audio, and web search.
+- Added generation-type-aware video references: text-to-video hides and ignores references, image-to-video requires an image, reference-to-video accepts image/video/audio, and start/end video sends ordered first/last frame images.
+- Reworked start/end video references into two explicit first-frame and last-frame slots that can be uploaded or replaced independently.
+- Added the same enlarged hover preview treatment to the start/end frame slots as regular image reference thumbnails.
+- Hid node connection ports while reference hover previews are open so plus handles do not appear through the enlarged preview.
+- Removed the approximate inspiration point prefix from the canvas video button and raised the settings popover above node ports while it is open.
+- Tightened video result URL parsing so thumbnail OSS/CDN images are not treated as playable video sources, and kept completed video nodes in the upper preview player instead of switching to a failed control state on transient playback load errors.
+
+Verification:
+- `npm run build`
+
+## 2026-05-03
+
+Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
 - `doc/CHANGELOG_DEV.md`
 

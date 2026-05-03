@@ -4,8 +4,26 @@ export function fetchCreativeImageCatalog() {
   return apiFetch('/api/creative/images/catalog')
 }
 
+export function fetchCreativeVideoCatalog() {
+  return apiFetch('/api/creative/videos/catalog')
+}
+
 export function submitCreativeImage(payload) {
   return apiFetch('/api/creative/images', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function estimateCreativeVideo(payload) {
+  return apiFetch('/api/creative/videos/estimate', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function submitCreativeVideo(payload) {
+  return apiFetch('/api/creative/videos', {
     method: 'POST',
     body: JSON.stringify(payload)
   })

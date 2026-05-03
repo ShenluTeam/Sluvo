@@ -335,6 +335,8 @@ VIDU_Q2_FAST_START_FIELDS = _base_fields(_VIDU_Q2_START_DURATIONS, ["720p", "108
 VIDU_Q3_TEXT_FIELDS = _base_fields(_VIDU_Q3_DURATIONS, ["360p", "540p", "720p", "1080p"], audio_enabled=True)
 VIDU_Q3_IMAGE_FIELDS = _base_fields(_VIDU_Q3_DURATIONS, ["360p", "540p", "720p", "1080p", "2k"], image_list={"required": True, "min_count": 1, "max_count": 1, "max_file_size_mb": 50}, audio_enabled=True)
 VIDU_Q3_START_FIELDS = _base_fields(_VIDU_Q3_DURATIONS, ["540p", "720p", "1080p"], first_frame={"required": True, "max_file_size_mb": 50}, last_frame={"required": True, "max_file_size_mb": 50}, audio_enabled=True)
+VIDU_Q3_TURBO_TEXT_FIELDS = _base_fields(_VIDU_Q3_DURATIONS, ["540p", "720p", "1080p"])
+VIDU_Q3_TURBO_IMAGE_FIELDS = _base_fields(_VIDU_Q3_DURATIONS, ["540p", "720p", "1080p"], image_list={"required": True, "min_count": 1, "max_count": 1, "max_file_size_mb": 50})
 SEEDANCE_V15_TEXT_FIELDS = _base_fields(_SEEDANCE_V15_DURATIONS, ["480p", "720p", "1080p"], audio_enabled=True, camera_fixed=True)
 SEEDANCE_V15_IMAGE_FIELDS = _base_fields(_SEEDANCE_V15_DURATIONS, ["480p", "720p", "1080p"], first_frame={"required": True, "max_file_size_mb": 10}, last_frame={"required": False, "max_file_size_mb": 10}, audio_enabled=True, camera_fixed=True)
 SEEDANCE_V15_FAST_TEXT_FIELDS = _base_fields(_SEEDANCE_V15_DURATIONS, ["720p", "1080p"], audio_enabled=True, camera_fixed=True)
@@ -579,11 +581,13 @@ def _estimate_per_second(feature: VideoFeatureConfig, normalized: Dict[str, Any]
     if not unit_rule:
         return None
     duration = int(normalized["duration"])
+    total_cost = round(float(unit_rule["cost_price"]) * duration, 2)
+    total_suggested, total_points = _sell_values(total_cost)
     return {
         "pricing_rule_type": PRICING_RULE_PER_SECOND,
-        "cost_price": round(float(unit_rule["cost_price"]) * duration, 2),
-        "suggested_price": round(float(unit_rule["suggested_price"]) * duration, 2),
-        "sell_price_points": int(unit_rule["sell_price_points"]) * duration,
+        "cost_price": total_cost,
+        "suggested_price": total_suggested,
+        "sell_price_points": total_points,
         "pricing_note": f"{unit_rule['pricing_note']} · {duration}秒",
         "pricing_details": {
             "rule_type": PRICING_RULE_PER_SECOND,
@@ -591,6 +595,7 @@ def _estimate_per_second(feature: VideoFeatureConfig, normalized: Dict[str, Any]
             "unit_cost_price": float(unit_rule["cost_price"]),
             "unit_suggested_price": float(unit_rule["suggested_price"]),
             "unit_sell_price_points": int(unit_rule["sell_price_points"]),
+            "total_cost_price": total_cost,
         },
     }
 
@@ -608,12 +613,9 @@ def _estimate_per_second_with_addon(feature: VideoFeatureConfig, normalized: Dic
         return None
     duration = int(normalized["duration"])
     total_cost = round(float(base_rule["cost_price"]) * duration, 2)
-    total_suggested = round(float(base_rule["suggested_price"]) * duration, 2)
-    total_points = int(base_rule["sell_price_points"]) * duration
     if addon_rule:
         total_cost = round(total_cost + float(addon_rule["cost_price"]) * duration, 2)
-        total_suggested = round(total_suggested + float(addon_rule["suggested_price"]) * duration, 2)
-        total_points += int(addon_rule["sell_price_points"]) * duration
+    total_suggested, total_points = _sell_values(total_cost)
     return {
         "pricing_rule_type": PRICING_RULE_PER_SECOND_WITH_ADDON,
         "cost_price": total_cost,
@@ -653,12 +655,9 @@ def _estimate_multimodal(feature: VideoFeatureConfig, normalized: Dict[str, Any]
             return None
         bill_seconds = max(input_video_duration + output_duration, min_bill)
     total_cost = round(float(base_rule["cost_price"]) * bill_seconds, 2)
-    total_suggested = round(float(base_rule["suggested_price"]) * bill_seconds, 2)
-    total_points = int(base_rule["sell_price_points"]) * bill_seconds
     if addon_rule:
         total_cost = round(total_cost + float(addon_rule["cost_price"]) * output_duration, 2)
-        total_suggested = round(total_suggested + float(addon_rule["suggested_price"]) * output_duration, 2)
-        total_points += int(addon_rule["sell_price_points"]) * output_duration
+    total_suggested, total_points = _sell_values(total_cost)
     return {
         "pricing_rule_type": PRICING_RULE_MULTIMODAL_MIN_BILL,
         "cost_price": total_cost,
@@ -818,8 +817,8 @@ VIDEO_MODEL_REGISTRY["vidu_q3_pro"]["features"] = {
 }
 
 VIDEO_MODEL_REGISTRY["vidu_q3_turbo"]["features"] = {
-    GEN_TEXT: {"generation_type": GEN_TEXT, "generation_type_label": GENERATION_TYPE_LABELS[GEN_TEXT], "endpoint": "/vidu/text-to-video-q3-turbo", "submit_type": "vidu_q3_turbo_text", "defaults": {"duration": 5, "resolution": "720p", "aspect_ratio": "16:9"}, "fields": VIDU_Q3_TEXT_FIELDS, "pricing_rule_type": PRICING_RULE_FIXED_TABLE, "pricing_rules": _build_fixed_rate_map(_VIDU_Q3_TURBO, _VIDU_Q3_DURATIONS, "Vidu Q3 Turbo 文生"), "note": "", "connection_status": "connected"},
-    GEN_IMAGE: {"generation_type": GEN_IMAGE, "generation_type_label": GENERATION_TYPE_LABELS[GEN_IMAGE], "endpoint": "/vidu/image-to-video-q3-turbo", "submit_type": "vidu_q3_turbo_image", "defaults": {"duration": 5, "resolution": "720p", "aspect_ratio": "16:9"}, "fields": VIDU_Q3_IMAGE_FIELDS, "pricing_rule_type": PRICING_RULE_FIXED_TABLE, "pricing_rules": _build_fixed_rate_map(_VIDU_Q3_TURBO, _VIDU_Q3_DURATIONS, "Vidu Q3 Turbo 图生"), "note": "", "connection_status": "connected"},
+    GEN_TEXT: {"generation_type": GEN_TEXT, "generation_type_label": GENERATION_TYPE_LABELS[GEN_TEXT], "endpoint": "/vidu/text-to-video-q3-turbo", "submit_type": "vidu_q3_turbo_text", "defaults": {"duration": 5, "resolution": "720p", "aspect_ratio": "16:9"}, "fields": VIDU_Q3_TURBO_TEXT_FIELDS, "pricing_rule_type": PRICING_RULE_FIXED_TABLE, "pricing_rules": _build_fixed_rate_map(_VIDU_Q3_TURBO, _VIDU_Q3_DURATIONS, "Vidu Q3 Turbo 文生"), "note": "", "connection_status": "connected"},
+    GEN_IMAGE: {"generation_type": GEN_IMAGE, "generation_type_label": GENERATION_TYPE_LABELS[GEN_IMAGE], "endpoint": "/vidu/image-to-video-q3-turbo", "submit_type": "vidu_q3_turbo_image", "defaults": {"duration": 5, "resolution": "720p", "aspect_ratio": "16:9"}, "fields": VIDU_Q3_TURBO_IMAGE_FIELDS, "pricing_rule_type": PRICING_RULE_FIXED_TABLE, "pricing_rules": _build_fixed_rate_map(_VIDU_Q3_TURBO, _VIDU_Q3_DURATIONS, "Vidu Q3 Turbo 图生"), "note": "", "connection_status": "connected"},
     GEN_START_END: {"generation_type": GEN_START_END, "generation_type_label": GENERATION_TYPE_LABELS[GEN_START_END], "endpoint": "/vidu/start-end-to-video-q3-turbo", "submit_type": "vidu_q3_turbo_start_end", "defaults": {"duration": 5, "resolution": "720p", "aspect_ratio": "16:9"}, "fields": VIDU_Q3_START_FIELDS, "pricing_rule_type": PRICING_RULE_FIXED_TABLE, "pricing_rules": _build_fixed_rate_map(_VIDU_Q3_TURBO, _VIDU_Q3_DURATIONS, "Vidu Q3 Turbo 首尾帧"), "note": "", "connection_status": "connected"},
 }
 

@@ -89,7 +89,7 @@
           :key="node.id"
           :ref="(element) => registerDirectNodeElement(node.id, element)"
           class="direct-workflow-node"
-          :class="[`direct-workflow-node--${node.type}`, { 'is-selected': selectedDirectNodeIds.includes(node.id) }]"
+          :class="[`direct-workflow-node--${node.type}`, { 'is-selected': selectedDirectNodeIds.includes(node.id), 'has-open-video-settings': activeVideoSettingsNodeId === node.id }]"
           :style="{ left: `${node.x}px`, top: `${node.y}px`, zIndex: getDirectNodeZIndex(node, index) }"
           :data-direct-node-id="node.id"
           draggable="false"
@@ -197,11 +197,51 @@
                 draggable="false"
                 @error="handleGeneratedImageError(node.id)"
               />
+              <div v-if="!node.generatedVideo?.isPlayable || node.generatedVideo?.loadError" class="generated-video__status">
+                <span v-if="node.generatedVideo?.loadError">{{ node.generatedVideo?.loadErrorMessage || '视频地址暂时无法播放' }}</span>
+                <span v-else>正在加载视频...</span>
+                <button v-if="getGeneratedVideoSrc(node)" type="button" @click.stop="openGeneratedVideo(node)">打开原视频</button>
+              </div>
               <div class="generated-image__actions" @click.stop @pointerdown.stop @contextmenu.prevent.stop>
+                <button type="button" title="打开原视频" @click.stop="openGeneratedVideo(node)">
+                  <Eye :size="16" />
+                </button>
                 <button type="button" title="预览图片" @click.stop="previewGeneratedImage(node)">
                   <Eye :size="16" />
                 </button>
                 <button type="button" title="下载图片" @click.stop="downloadGeneratedImage(node)">
+                  <Download :size="16" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              v-else-if="node.type === 'video_unit' && node.generationStatus === 'running'"
+              class="generated-image__state"
+            >
+              <span class="generated-image__spinner" />
+              <strong>视频生成中...</strong>
+              <small>{{ node.generationMessage || '正在同步任务结果' }}</small>
+            </div>
+
+            <div
+              v-else-if="node.type === 'video_unit' && node.generatedVideo?.url"
+              class="generated-video__preview"
+            >
+              <video
+                :src="getGeneratedVideoSrc(node)"
+                :poster="getGeneratedVideoPoster(node)"
+                controls
+                autoplay
+                muted
+                playsinline
+                preload="metadata"
+                @loadedmetadata="handleGeneratedVideoReady(node.id)"
+                @canplay="handleGeneratedVideoReady(node.id)"
+                @error="handleGeneratedVideoError(node.id, $event)"
+              />
+              <div class="generated-image__actions" @click.stop @pointerdown.stop @contextmenu.prevent.stop>
+                <button type="button" title="下载视频" @click.stop="downloadGeneratedVideo(node)">
                   <Download :size="16" />
                 </button>
               </div>
@@ -221,54 +261,118 @@
           <div
             v-if="node.type !== 'uploaded_asset' && selectedDirectNodeIds.includes(node.id)"
             class="direct-workflow-node__fixed-panel"
-          >
-            <div
-              v-if="node.type === 'image_unit'"
-              class="direct-workflow-node__references"
-              @click.stop
+            >
+              <div
+                v-if="shouldShowReferenceStrip(node)"
+                class="direct-workflow-node__references"
+                @click.stop
               @dblclick.stop
               @keydown.stop
               @keyup.stop
               @pointerdown.stop
               @mousedown.stop
               @dragover.prevent.stop
-            >
-              <button
-                class="direct-workflow-node__reference-upload"
-                type="button"
-                title="上传参考图"
-                @click.stop="openReferenceUploadDialog(node.id)"
               >
-                <Upload :size="17" />
-              </button>
-              <div
-                v-for="(reference, index) in getDirectImageReferenceItems(node.id)"
-                :key="reference.id"
-                class="direct-workflow-node__reference-thumb"
-                :class="{ 'is-uploading': reference.status === 'uploading', 'is-error': reference.status === 'error' }"
-                :style="{ '--reference-aspect': getReferenceAspectRatio(reference) }"
-                draggable="true"
-                @click.stop="insertReferenceToken(node.id, index)"
-                @dragstart.stop="startReferenceDrag(node.id, reference.id)"
-                @dragover.prevent.stop
-                @drop.stop.prevent="dropReference(node.id, reference.id)"
-              >
-                <img :src="reference.previewUrl || reference.url" :alt="reference.name || `参考图 ${index + 1}`" draggable="false" />
-                <div class="direct-workflow-node__reference-popout" aria-hidden="true">
-                  <img :src="reference.previewUrl || reference.url" alt="" draggable="false" />
+                <div v-if="isStartEndVideoNode(node)" class="direct-workflow-node__start-end-frames">
+                  <div
+                    v-for="slot in startEndFrameSlots"
+                    :key="slot.id"
+                    class="direct-workflow-node__start-end-frame"
+                    :class="{ 'has-media': Boolean(getStartEndFrameReference(node, slot.id)), 'is-uploading': getStartEndFrameReference(node, slot.id)?.status === 'uploading', 'is-error': getStartEndFrameReference(node, slot.id)?.status === 'error' }"
+                    role="button"
+                    tabindex="0"
+                    :title="`上传${slot.label}`"
+                    @click.stop="openReferenceUploadDialog(node.id, slot.id)"
+                    @keydown.enter.stop.prevent="openReferenceUploadDialog(node.id, slot.id)"
+                    @keydown.space.stop.prevent="openReferenceUploadDialog(node.id, slot.id)"
+                  >
+                    <img
+                      v-if="getStartEndFrameReference(node, slot.id)"
+                      :src="getStartEndFrameReference(node, slot.id).previewUrl || getStartEndFrameReference(node, slot.id).url"
+                      :alt="slot.label"
+                      draggable="false"
+                    />
+                    <div v-if="getStartEndFrameReference(node, slot.id)" class="direct-workflow-node__start-end-popout" aria-hidden="true">
+                      <img
+                        :src="getStartEndFrameReference(node, slot.id).previewUrl || getStartEndFrameReference(node, slot.id).url"
+                        :alt="slot.label"
+                        draggable="false"
+                      />
+                    </div>
+                    <Plus v-else :size="18" />
+                    <span>{{ slot.label }}</span>
+                    <small v-if="getStartEndFrameReference(node, slot.id)?.status === 'uploading'">{{ getStartEndFrameReference(node, slot.id)?.progress || 0 }}%</small>
+                    <button
+                      v-if="getStartEndFrameReference(node, slot.id)?.source === 'manual'"
+                      type="button"
+                      title="移除参考图"
+                      @click.stop="removeManualReferenceImage(node.id, getStartEndFrameReference(node, slot.id).id)"
+                    >
+                      <X :size="12" />
+                    </button>
+                  </div>
                 </div>
-                <span>{{ index + 1 }}</span>
-                <button
-                  v-if="reference.source === 'manual'"
-                  type="button"
-                  title="移除参考图"
-                  @click.stop="removeManualReferenceImage(node.id, reference.id)"
-                >
-                  <X :size="12" />
-                </button>
-                <small v-if="reference.status === 'uploading'">{{ reference.progress || 0 }}%</small>
-                <small v-else-if="reference.status === 'error'">失败</small>
-              </div>
+                <template v-else>
+                  <button
+                    v-if="canUploadDirectReference(node)"
+                    class="direct-workflow-node__reference-upload"
+                    type="button"
+                    :title="getReferenceUploadTitle(node)"
+                    @click.stop="openReferenceUploadDialog(node.id)"
+                  >
+                    <Upload :size="17" />
+                  </button>
+                  <div
+                    v-for="(reference, index) in getDirectVisualReferenceItems(node.id)"
+                    :key="reference.id"
+                    class="direct-workflow-node__reference-thumb"
+                    :class="{ 'is-uploading': reference.status === 'uploading', 'is-error': reference.status === 'error' }"
+                    :style="{ '--reference-aspect': getReferenceAspectRatio(reference) }"
+                    draggable="true"
+                    @click.stop="insertReferenceToken(node.id, index)"
+                    @dragstart.stop="startReferenceDrag(node.id, reference.id)"
+                    @dragover.prevent.stop
+                    @drop.stop.prevent="dropReference(node.id, reference.id)"
+                  >
+                    <img
+                      v-if="getReferenceKind(reference) === 'image'"
+                      :src="reference.previewUrl || reference.url"
+                      :alt="reference.name || `参考图 ${index + 1}`"
+                      draggable="false"
+                    />
+                    <video
+                      v-else-if="getReferenceKind(reference) === 'video'"
+                      :src="reference.previewUrl || reference.url"
+                      muted
+                      playsinline
+                      preload="metadata"
+                      draggable="false"
+                    />
+                    <div v-else class="direct-workflow-node__reference-media">
+                      <Music2 :size="18" />
+                      <em>{{ getReferenceKindLabel(reference) }}</em>
+                    </div>
+                    <div class="direct-workflow-node__reference-popout" aria-hidden="true">
+                      <img v-if="getReferenceKind(reference) === 'image'" :src="reference.previewUrl || reference.url" alt="" draggable="false" />
+                      <video v-else-if="getReferenceKind(reference) === 'video'" :src="reference.previewUrl || reference.url" muted playsinline preload="metadata" />
+                      <div v-else class="direct-workflow-node__reference-media direct-workflow-node__reference-media--popout">
+                        <Music2 :size="26" />
+                        <em>{{ getReferenceKindLabel(reference) }}</em>
+                      </div>
+                    </div>
+                    <span>{{ index + 1 }}</span>
+                    <button
+                      v-if="reference.source === 'manual'"
+                      type="button"
+                      title="移除参考图"
+                      @click.stop="removeManualReferenceImage(node.id, reference.id)"
+                    >
+                      <X :size="12" />
+                    </button>
+                    <small v-if="reference.status === 'uploading'">{{ reference.progress || 0 }}%</small>
+                    <small v-else-if="reference.status === 'error'">失败</small>
+                  </div>
+                </template>
             </div>
             <div
               class="direct-workflow-node__prompt-field"
@@ -364,6 +468,167 @@
                 {{ node.generationMessage || '生成失败，请稍后重试' }}
               </p>
             </div>
+            <div
+              v-if="node.type === 'video_unit'"
+              class="direct-workflow-node__generation-controls direct-workflow-node__generation-controls--video"
+              @click.stop
+              @dblclick.stop
+              @keydown.stop
+              @keyup.stop
+              @pointerdown.stop
+              @mousedown.stop
+            >
+              <div class="video-composer-bar">
+                <label class="video-composer-select video-composer-select--model">
+                  <span>模型</span>
+                  <select v-model="node.videoModelId" :disabled="node.generationStatus === 'running'" @change="syncVideoNodeSettings(node)">
+                    <option v-for="model in videoModelOptions" :key="model.id" :value="model.id">
+                      {{ model.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="video-composer-select video-composer-select--type">
+                  <span>类型</span>
+                  <select v-model="node.videoGenerationType" :disabled="node.generationStatus === 'running'" @change="syncVideoNodeSettings(node)">
+                    <option v-for="feature in getVideoFeatureOptions(node)" :key="feature.id" :value="feature.id">
+                      {{ feature.label }}
+                    </option>
+                  </select>
+                </label>
+                <details class="video-settings-menu" @toggle.stop="handleVideoSettingsToggle(node.id, $event)">
+                  <summary class="video-settings-trigger">
+                    <SlidersHorizontal :size="16" />
+                    <span>{{ getVideoSettingsSummary(node) }}</span>
+                    <ChevronDown :size="15" />
+                  </summary>
+                  <div
+                    class="video-settings-popover"
+                    @click.stop
+                    @dblclick.stop
+                    @pointerdown.stop
+                    @mousedown.stop
+                  >
+                    <section v-if="hasVideoField(node, 'aspect_ratio')" class="video-settings-section">
+                      <strong>比例</strong>
+                      <div class="video-ratio-grid">
+                        <button
+                          v-for="ratio in getVideoFieldOptions(node, 'aspect_ratio', fallbackVideoAspectRatioOptions)"
+                          :key="ratio.id"
+                          class="video-ratio-option"
+                          :class="{ 'is-active': isVideoFieldOptionSelected(node, 'aspect_ratio', ratio.id) }"
+                          type="button"
+                          :disabled="node.generationStatus === 'running'"
+                          @click.stop="setVideoNodeSetting(node, 'aspect_ratio', ratio.id)"
+                        >
+                          <span class="video-ratio-icon" :data-ratio="ratio.id" />
+                          <span>{{ formatVideoAspectRatioLabel(ratio) }}</span>
+                        </button>
+                      </div>
+                    </section>
+                    <section v-if="hasVideoField(node, 'resolution')" class="video-settings-section">
+                      <strong>清晰度</strong>
+                      <div class="video-segmented-options">
+                        <button
+                          v-for="resolution in getVideoFieldOptions(node, 'resolution', fallbackVideoResolutionOptions)"
+                          :key="resolution.id"
+                          class="video-segmented-option"
+                          :class="{ 'is-active': isVideoFieldOptionSelected(node, 'resolution', resolution.id) }"
+                          type="button"
+                          :disabled="node.generationStatus === 'running'"
+                          @click.stop="setVideoNodeSetting(node, 'resolution', resolution.id)"
+                        >
+                          {{ resolution.label }}
+                        </button>
+                      </div>
+                    </section>
+                    <section v-if="hasVideoField(node, 'duration')" class="video-settings-section">
+                      <strong>视频时长</strong>
+                      <div class="video-duration-control">
+                        <input
+                          type="range"
+                          min="0"
+                          :max="Math.max(getVideoDurationOptions(node).length - 1, 0)"
+                          :value="getVideoDurationOptionIndex(node)"
+                          :disabled="node.generationStatus === 'running' || getVideoDurationOptions(node).length <= 1"
+                          @input.stop="setVideoDurationByIndex(node, $event)"
+                        />
+                        <span>{{ formatVideoDurationValue(node.videoDuration) }}</span>
+                      </div>
+                    </section>
+                    <section v-if="hasVideoField(node, 'quality_mode')" class="video-settings-section">
+                      <strong>画质</strong>
+                      <div class="video-segmented-options">
+                        <button
+                          v-for="quality in getVideoFieldOptions(node, 'quality_mode', fallbackVideoQualityModeOptions)"
+                          :key="quality.id"
+                          class="video-segmented-option"
+                          :class="{ 'is-active': isVideoFieldOptionSelected(node, 'quality_mode', quality.id) }"
+                          type="button"
+                          :disabled="node.generationStatus === 'running'"
+                          @click.stop="setVideoNodeSetting(node, 'quality_mode', quality.id)"
+                        >
+                          {{ quality.label }}
+                        </button>
+                      </div>
+                    </section>
+                    <section v-if="hasVideoField(node, 'motion_strength')" class="video-settings-section">
+                      <strong>运动</strong>
+                      <div class="video-segmented-options">
+                        <button
+                          v-for="motion in getVideoFieldOptions(node, 'motion_strength', fallbackVideoMotionStrengthOptions)"
+                          :key="motion.id"
+                          class="video-segmented-option"
+                          :class="{ 'is-active': isVideoFieldOptionSelected(node, 'motion_strength', motion.id) }"
+                          type="button"
+                          :disabled="node.generationStatus === 'running'"
+                          @click.stop="setVideoNodeSetting(node, 'motion_strength', motion.id)"
+                        >
+                          {{ motion.label }}
+                        </button>
+                      </div>
+                    </section>
+                    <div class="video-settings-toggles">
+                      <button
+                        v-if="hasVideoField(node, 'audio_enabled')"
+                        class="video-toggle-option"
+                        :class="{ 'is-active': node.videoAudioEnabled }"
+                        type="button"
+                        :disabled="node.generationStatus === 'running'"
+                        @click.stop="toggleVideoBooleanSetting(node, 'audio_enabled')"
+                      >
+                        原生声音
+                      </button>
+                      <button
+                        v-if="hasVideoField(node, 'web_search')"
+                        class="video-toggle-option"
+                        :class="{ 'is-active': node.videoWebSearch }"
+                        type="button"
+                        :disabled="node.generationStatus === 'running'"
+                        @click.stop="toggleVideoBooleanSetting(node, 'web_search')"
+                      >
+                        联网增强
+                      </button>
+                    </div>
+                  </div>
+                </details>
+                <button
+                  class="direct-workflow-node__generate direct-workflow-node__generate--video"
+                  type="button"
+                  :title="getVideoGenerationBlocker(node)"
+                  :disabled="node.generationStatus === 'running' || !node.prompt.trim() || hasPendingReferenceUploads(node.id) || isVideoEstimatePending(node) || Boolean(getVideoGenerationBlocker(node))"
+                  @click.stop="runDirectVideoNode(node)"
+                >
+                  <span class="direct-workflow-node__generate-cost">
+                    <Star :size="14" />
+                    {{ getVideoGenerationPointsButtonLabel(node) }}
+                  </span>
+                  <span>{{ node.generationStatus === 'running' ? '生成中' : '生成视频' }}</span>
+                </button>
+              </div>
+              <p v-if="node.generationStatus === 'error'" class="direct-workflow-node__generation-error">
+                {{ node.generationMessage || '视频生成失败，请稍后重试' }}
+              </p>
+            </div>
           </div>
         </article>
       </div>
@@ -392,7 +657,7 @@
         ref="referenceUploadInput"
         class="hidden-upload-input"
         type="file"
-        accept="image/*"
+        :accept="referenceUploadAccept"
         multiple
         @change="handleReferenceUploadInputChange"
       />
@@ -675,7 +940,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { ArrowUpDown, Download, Eye, ListChecks, Minus, Music2, Plus, Star, Upload, X } from 'lucide-vue-next'
+import { ArrowUpDown, ChevronDown, Download, Eye, ListChecks, Minus, Music2, Plus, SlidersHorizontal, Star, Upload, X } from 'lucide-vue-next'
 import CommandBar from '../components/layout/CommandBar.vue'
 import AddNodeMenu from '../components/canvas/AddNodeMenu.vue'
 import CanvasBottomControls from '../components/canvas/CanvasBottomControls.vue'
@@ -684,11 +949,14 @@ import StarterSkillStrip from '../components/canvas/StarterSkillStrip.vue'
 import WorkflowEdge from '../canvas/edges/WorkflowEdge.vue'
 import WorkflowNode from '../canvas/nodes/WorkflowNode.vue'
 import {
+  estimateCreativeVideo,
   fetchCreativeImageCatalog,
+  fetchCreativeVideoCatalog,
   fetchCreativeRecord,
   fetchCreativeRecords,
   fetchTask,
-  submitCreativeImage
+  submitCreativeImage,
+  submitCreativeVideo
 } from '../api/creativeApi'
 import {
   fetchSluvoProjectCanvas,
@@ -812,6 +1080,8 @@ const publishDialog = reactive({
   error: '',
   publicationId: ''
 })
+const referenceUploadAccept = ref('image/*')
+const referenceUploadTargetSlot = ref('')
 const directNodeElements = new Map()
 const directPromptEditorElements = new Map()
 const directPromptEditorSignatures = new Map()
@@ -822,6 +1092,8 @@ let uploadTimer = null
 let autoSaveTimer = null
 let suppressCanvasSaveScheduling = false
 const imageGenerationTimers = new Map()
+const videoGenerationTimers = new Map()
+const videoEstimateTimers = new Map()
 const uploadFileMap = new Map()
 const localUploadPreviewUrls = new Map()
 const activeUploadSignatures = new Map()
@@ -853,6 +1125,7 @@ const directPortLayoutRevision = ref(0)
 const selectedDirectNodeIds = ref([])
 const focusedDirectNodeId = ref('')
 const activeDirectNodeId = ref('')
+const activeVideoSettingsNodeId = ref('')
 const lastTouchedDirectNodeId = ref('')
 const gridVisible = ref(true)
 const snapEnabled = ref(true)
@@ -980,6 +1253,38 @@ const fallbackImageModelOptions = [
 const imageModelOptions = ref([...fallbackImageModelOptions])
 const imageAspectRatioOptions = ref([...fallbackImageAspectRatioOptions])
 const imageResolutionOptions = ref([...fallbackImageResolutionOptions])
+const fallbackVideoAspectRatioOptions = ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'].map((ratio) => ({ id: ratio, label: ratio }))
+const fallbackVideoResolutionOptions = ['480p', '720p', '1080p', '4k'].map((resolution) => ({ id: resolution, label: resolution.toUpperCase() }))
+const fallbackVideoDurationOptions = [4, 5, 8, 10].map((duration) => ({ id: String(duration), label: `${duration}s` }))
+const fallbackVideoQualityModeOptions = [
+  { id: 'std', label: 'Std' },
+  { id: 'pro', label: 'Pro' }
+]
+const fallbackVideoMotionStrengthOptions = [
+  { id: 'auto', label: 'Auto' },
+  { id: 'low', label: 'Low' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'high', label: 'High' }
+]
+const startEndFrameSlots = [
+  { id: 'first', label: '首帧' },
+  { id: 'last', label: '尾帧' }
+]
+const fallbackVideoModelOptions = [
+  { id: 'seedance_20_fast', label: 'Seedance 2.0 Fast', startPoints: 65 },
+  { id: 'seedance_20', label: 'Seedance 2.0', startPoints: 90 },
+  { id: 'vidu_q3_turbo', label: 'Vidu Q3 Turbo', startPoints: 20 },
+  { id: 'vidu_q3_pro', label: 'Vidu Q3 Pro', startPoints: 10 },
+  { id: 'kling_o3_std', label: 'Kling O3 Std', startPoints: 26 },
+  { id: 'kling_o3_pro', label: 'Kling O3 Pro', startPoints: 35 },
+  { id: 'veo_31_fast_official', label: 'Veo 3.1 Fast Official', startPoints: 30 },
+  { id: 'veo_31_pro_official', label: 'Veo 3.1 Pro Official', startPoints: 80 }
+].map((model) => ({
+  ...model,
+  defaultGenerationType: 'text_to_video',
+  features: buildFallbackVideoFeatures(model.id)
+}))
+const videoModelOptions = ref([...fallbackVideoModelOptions])
 const librarySourceTabs = ['Sluvo', 'Sluvo生成器', 'WebUI', 'ComfyUI', 'AI应用']
 const libraryTypeTabs = ['图片', '视频', '音频']
 const libraryPicker = reactive({
@@ -1197,6 +1502,7 @@ onMounted(() => {
   window.addEventListener('mouseleave', resetHoverEffects)
   updateFrameSize()
   loadImageGenerationCatalog()
+  loadVideoGenerationCatalog()
   loadProjectCanvas()
   if (typeof ResizeObserver !== 'undefined' && canvasFrame.value) {
     frameResizeObserver = new ResizeObserver(updateFrameSize)
@@ -1229,6 +1535,8 @@ onBeforeUnmount(() => {
   window.cancelAnimationFrame(directPortLayoutRaf)
   clearLocalPreviewUrls()
   clearImageGenerationTimers()
+  clearVideoGenerationTimers()
+  clearVideoEstimateTimers()
   resetHoverEffects()
 })
 
@@ -1495,6 +1803,16 @@ function mapBackendNodeToDirectNode(node) {
     imageModelId: data.imageModelId || fallbackImageModelOptions[0].id,
     imageResolution: normalizeImageResolutionValue(data.imageResolution || data.resolution),
     imageQuality: normalizeImageQualityValue(data.imageQuality || data.quality),
+    videoModelId: data.videoModelId || data.modelCode || fallbackVideoModelOptions[0].id,
+    videoGenerationType: data.videoGenerationType || data.generationType || getDefaultVideoGenerationType(data.videoModelId || data.modelCode || fallbackVideoModelOptions[0].id),
+    videoResolution: normalizeVideoResolutionValue(data.videoResolution || data.resolution),
+    videoDuration: normalizeVideoDurationValue(data.videoDuration || data.duration),
+    videoQualityMode: data.videoQualityMode || data.qualityMode || '',
+    videoMotionStrength: data.videoMotionStrength || data.motionStrength || '',
+    videoAudioEnabled: Boolean(data.videoAudioEnabled || data.audioEnabled),
+    videoWebSearch: Boolean(data.videoWebSearch || data.webSearch || data.web_search),
+    videoEstimatePoints: Number.isFinite(Number(data.videoEstimatePoints)) ? Number(data.videoEstimatePoints) : null,
+    videoEstimateStatus: data.videoEstimateStatus || 'idle',
     aspectRatio: data.aspectRatio || fallbackImageAspectRatioOptions[0],
     referenceImages: normalizeManualReferenceImages(data.referenceImages),
     referenceOrder: Array.isArray(data.referenceOrder) ? data.referenceOrder : [],
@@ -1504,6 +1822,7 @@ function mapBackendNodeToDirectNode(node) {
     generationTaskId: data.generationTaskId || '',
     generationRecordId: data.generationRecordId || '',
     generatedImage: data.generatedImage || null,
+    generatedVideo: data.generatedVideo || null,
     clientId: data.clientId || node.id
   }
 }
@@ -2067,7 +2386,7 @@ function buildCanvasSavePlan() {
   const omittedEdges = []
 
   for (const edge of [...directEdges.value.map(serializeDirectEdgeForSave), ...edges.value.map(serializeVueEdgeForSave)]) {
-    if (edge.sourceNodeId && edge.targetNodeId) {
+    if (canPersistSerializedEdge(edge)) {
       serializedEdges.push(edge)
     } else {
       omittedEdges.push(edge)
@@ -2090,6 +2409,12 @@ function buildCanvasSavePlan() {
       deletedEdgeIds
     }
   }
+}
+
+function canPersistSerializedEdge(edge) {
+  const sourceRef = edge.sourceNodeId || edge.data?.sourceClientId
+  const targetRef = edge.targetNodeId || edge.data?.targetClientId
+  return Boolean(sourceRef && targetRef)
 }
 
 function serializeDirectNodeForSave(node, index = 0) {
@@ -2118,6 +2443,16 @@ function serializeDirectNodeForSave(node, index = 0) {
       imageModelId: node.imageModelId || '',
       imageResolution: normalizeImageResolutionValue(node.imageResolution),
       imageQuality: normalizeImageQualityValue(node.imageQuality),
+      videoModelId: node.videoModelId || '',
+      videoGenerationType: node.videoGenerationType || '',
+      videoResolution: normalizeVideoResolutionValue(node.videoResolution),
+      videoDuration: normalizeVideoDurationValue(node.videoDuration),
+      videoQualityMode: node.videoQualityMode || '',
+      videoMotionStrength: node.videoMotionStrength || '',
+      videoAudioEnabled: Boolean(node.videoAudioEnabled),
+      videoWebSearch: Boolean(node.videoWebSearch),
+      videoEstimatePoints: node.videoEstimatePoints ?? null,
+      videoEstimateStatus: node.videoEstimateStatus || 'idle',
       aspectRatio: node.aspectRatio || '',
       referenceImages: normalizeManualReferenceImages(node.referenceImages)
         .filter((item) => item.status !== 'uploading')
@@ -2131,7 +2466,8 @@ function serializeDirectNodeForSave(node, index = 0) {
       generationMessage: node.generationMessage || '',
       generationTaskId: node.generationTaskId || '',
       generationRecordId: node.generationRecordId || '',
-      generatedImage: node.generatedImage || null
+      generatedImage: node.generatedImage || null,
+      generatedVideo: node.generatedVideo || null
     },
     ports: { left: true, right: true },
     style: {}
@@ -3352,7 +3688,11 @@ function openUploadDialog() {
   }, 500)
 }
 
-function openReferenceUploadDialog(nodeId) {
+function openReferenceUploadDialog(nodeId, slot = '') {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!canUploadDirectReference(node)) return
+  referenceUploadTargetSlot.value = isStartEndVideoNode(node) ? slot : ''
+  referenceUploadAccept.value = getReferenceUploadAccept(node)
   referenceUploadTargetNodeId.value = nodeId
   if (referenceUploadInput.value) {
     referenceUploadInput.value.value = ''
@@ -3513,16 +3853,22 @@ function handleUploadInputChange(event) {
 
 function handleReferenceUploadInputChange(event) {
   const nodeId = referenceUploadTargetNodeId.value
-  const files = Array.from(event.target?.files || []).filter((file) => file.type?.startsWith('image/'))
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const allowedKinds = getAllowedReferenceUploadKinds(node)
+  const selectedFiles = Array.from(event.target?.files || [])
+  const files = selectedFiles.filter((file) => allowedKinds.includes(getUploadKind(file)))
   if (!nodeId || files.length === 0) {
     if (event.target) event.target.value = ''
+    if (nodeId) showToast(getReferenceUploadRejectMessage(node))
+    referenceUploadTargetSlot.value = ''
     return
   }
-  uploadReferenceImages(nodeId, files)
+  uploadReferenceFiles(nodeId, referenceUploadTargetSlot.value ? files.slice(0, 1) : files)
+  referenceUploadTargetSlot.value = ''
   if (event.target) event.target.value = ''
 }
 
-function uploadReferenceImages(nodeId, files) {
+function uploadReferenceFiles(nodeId, files) {
   const node = directNodes.value.find((item) => item.id === nodeId)
   if (!node) return
   if (!activeCanvas.value?.id) {
@@ -3531,9 +3877,11 @@ function uploadReferenceImages(nodeId, files) {
   }
 
   const validFiles = files.filter((file) => {
-    if (!file.type?.startsWith('image/')) return false
-    if (file.size > 20 * 1024 * 1024) {
-      showToast('参考图不能超过 20MB')
+    const kind = getUploadKind(file)
+    if (!getAllowedReferenceUploadKinds(node).includes(kind)) return false
+    const limit = kind === 'image' ? 20 * 1024 * 1024 : 50 * 1024 * 1024
+    if (file.size > limit) {
+      showToast(kind === 'image' ? '参考图不能超过 20MB' : '参考素材不能超过 50MB')
       return false
     }
     return true
@@ -3541,17 +3889,28 @@ function uploadReferenceImages(nodeId, files) {
   if (!validFiles.length) return
 
   rememberHistory()
-  const nextReferences = normalizeManualReferenceImages(node.referenceImages)
-  const nextOrder = Array.isArray(node.referenceOrder) ? [...node.referenceOrder] : getDirectImageReferenceItems(nodeId).map((item) => item.id)
+  const targetSlot = isStartEndVideoNode(node) ? referenceUploadTargetSlot.value : ''
+  const targetSlotIndex = targetSlot === 'first' ? 0 : targetSlot === 'last' ? 1 : -1
+  const existingSlotReference = targetSlotIndex >= 0 ? getStartEndFrameReference(node, targetSlot) : null
+  let nextReferences = normalizeManualReferenceImages(node.referenceImages)
+  const nextOrder = Array.isArray(node.referenceOrder) ? [...node.referenceOrder] : getDirectVisualReferenceItems(nodeId).map((item) => item.id)
+  if (existingSlotReference?.source === 'manual') {
+    if (existingSlotReference.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(existingSlotReference.previewUrl)
+    nextReferences = nextReferences.filter((reference) => reference.id !== existingSlotReference.id)
+    const existingOrderIndex = nextOrder.indexOf(existingSlotReference.id)
+    if (existingOrderIndex >= 0) nextOrder.splice(existingOrderIndex, 1)
+  }
   const refsToUpload = validFiles.map((file, index) => {
     const id = `manual-ref-${Date.now()}-${index}-${Math.round(Math.random() * 10000)}`
+    const kind = getUploadKind(file)
     const previewUrl = URL.createObjectURL(file)
     const reference = {
       id,
       source: 'manual',
+      kind,
       url: '',
       previewUrl,
-      name: file.name || '参考图',
+      name: file.name || getReferenceKindLabel({ kind }),
       status: 'uploading',
       progress: 8,
       width: 0,
@@ -3560,26 +3919,33 @@ function uploadReferenceImages(nodeId, files) {
       storageObjectId: ''
     }
     nextReferences.push(reference)
-    nextOrder.push(id)
+    if (targetSlotIndex >= 0) {
+      nextOrder.splice(targetSlotIndex, 1, id)
+    } else {
+      nextOrder.push(id)
+    }
     return { file, reference, previewUrl }
   })
   updateDirectNode(nodeId, { referenceImages: nextReferences, referenceOrder: nextOrder })
 
-  refsToUpload.forEach(({ file, reference, previewUrl }) => uploadReferenceImage(nodeId, reference.id, file, previewUrl))
-  showToast(validFiles.length > 1 ? `正在上传 ${validFiles.length} 张参考图` : '正在上传参考图')
+  refsToUpload.forEach(({ file, reference, previewUrl }) => uploadReferenceFile(nodeId, reference.id, file, previewUrl))
+  showToast(validFiles.length > 1 ? `正在上传 ${validFiles.length} 个参考素材` : '正在上传参考素材')
 }
 
-async function uploadReferenceImage(nodeId, referenceId, file, previewUrl) {
+async function uploadReferenceFile(nodeId, referenceId, file, previewUrl) {
+  const kind = getUploadKind(file) || 'image'
   try {
-    const metadata = await readUploadMetadata('image', previewUrl)
+    const metadata = await readUploadMetadata(kind, previewUrl)
     patchManualReferenceImage(nodeId, referenceId, {
       width: metadata?.width || 0,
-      height: metadata?.height || 0
+      height: metadata?.height || 0,
+      durationSeconds: metadata?.durationSeconds || 0
     })
     const response = await uploadSluvoCanvasAsset(activeCanvas.value.id, file, {
-      mediaType: 'image',
+      mediaType: kind,
       width: metadata?.width,
       height: metadata?.height,
+      durationSeconds: metadata?.durationSeconds,
       metadata: {
         localNodeId: nodeId,
         referenceId
@@ -3594,10 +3960,12 @@ async function uploadReferenceImage(nodeId, referenceId, file, previewUrl) {
     patchManualReferenceImage(nodeId, referenceId, {
       url: nextUrl,
       previewUrl,
+      kind,
       status: 'success',
       progress: 100,
       width: asset.width || metadata?.width || 0,
       height: asset.height || metadata?.height || 0,
+      durationSeconds: asset.durationSeconds || metadata?.durationSeconds || 0,
       assetId: asset.id || '',
       storageObjectId: response?.storageObjectId || asset.storageObjectId || ''
     })
@@ -3608,7 +3976,7 @@ async function uploadReferenceImage(nodeId, referenceId, file, previewUrl) {
       progress: 0,
       message: error instanceof Error ? error.message : '上传失败'
     })
-    showToast(error instanceof Error ? error.message : '参考图上传失败')
+    showToast(error instanceof Error ? error.message : '参考素材上传失败')
     flushDeferredCanvasSave(220)
   }
 }
@@ -4089,11 +4457,30 @@ function getGeneratedImageSrc(node) {
   return normalizeDisplayImageSrc(image.url || image.previewUrl || image.thumbnailUrl || '')
 }
 
+function getGeneratedVideoSrc(node) {
+  const video = node?.generatedVideo || {}
+  return normalizeDisplayVideoSrc(video.url || video.previewUrl || '')
+}
+
+function getGeneratedVideoPoster(node) {
+  const video = node?.generatedVideo || {}
+  return normalizeDisplayImageSrc(video.posterUrl || video.thumbnailUrl || '')
+}
+
 function normalizeDisplayImageSrc(value) {
   const source = String(value || '').trim()
   if (!source) return ''
   if (source.startsWith('//')) return `${window.location.protocol}${source}`
   if (/^(https?:|data:image\/|blob:)/i.test(source)) return source
+  if (source.startsWith('/')) return buildApiUrl(source)
+  return source
+}
+
+function normalizeDisplayVideoSrc(value) {
+  const source = String(value || '').trim()
+  if (!source) return ''
+  if (source.startsWith('//')) return `${window.location.protocol}${source}`
+  if (/^(https?:|blob:)/i.test(source)) return source
   if (source.startsWith('/')) return buildApiUrl(source)
   return source
 }
@@ -4181,11 +4568,92 @@ function downloadGeneratedImage(node) {
   link.remove()
 }
 
+async function handleGeneratedVideoError(nodeId, event = null) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const video = node?.generatedVideo || {}
+  const recordVideo = video.recordId ? await fetchRecordVideoResult(video.recordId) : null
+  const nextUrl = normalizeDisplayVideoSrc(recordVideo?.url)
+  if (nextUrl && nextUrl !== normalizeDisplayVideoSrc(video.url)) {
+    updateDirectNode(nodeId, {
+      generationStatus: 'success',
+      generationMessage: '视频生成完成',
+      generatedVideo: {
+        ...video,
+        ...recordVideo,
+        url: nextUrl
+      }
+    })
+    return
+  }
+
+  updateDirectNode(nodeId, {
+    generationStatus: 'success',
+    generationMessage: '视频已生成，正在刷新播放地址',
+    generatedVideo: {
+      ...video,
+      isPlayable: false,
+      loadError: true,
+      loadErrorMessage: getVideoElementErrorMessage(event)
+    }
+  })
+}
+
+function handleGeneratedVideoReady(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const video = node?.generatedVideo || {}
+  updateDirectNode(nodeId, {
+    generationStatus: 'success',
+    generationMessage: '视频生成完成',
+    generatedVideo: {
+      ...video,
+      isPlayable: true,
+      loadError: false,
+      loadErrorMessage: ''
+    }
+  })
+}
+
+function getVideoElementErrorMessage(event) {
+  const code = event?.target?.error?.code
+  const messages = {
+    1: '视频加载被中止，可以打开原视频检查地址',
+    2: '网络加载失败，可能是本地网络或 OSS 地址暂不可访问',
+    3: '浏览器无法解码这个视频格式',
+    4: '当前地址不是浏览器可播放的视频文件'
+  }
+  return messages[code] || '视频地址暂时无法播放'
+}
+
+function openGeneratedVideo(node) {
+  const url = getGeneratedVideoSrc(node)
+  if (!url) return
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+function downloadGeneratedVideo(node) {
+  const url = getGeneratedVideoSrc(node)
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = buildGeneratedVideoFilename(node)
+  link.rel = 'noopener noreferrer'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
 function buildGeneratedImageFilename(node) {
   const image = node?.generatedImage || {}
   const base = String(node?.title || 'sluvo-image').trim().replace(/[\\/:*?"<>|\s]+/g, '-')
   const extension = inferImageExtension(image.url || image.thumbnailUrl || '')
   return `${base || 'sluvo-image'}${extension}`
+}
+
+function buildGeneratedVideoFilename(node) {
+  const video = node?.generatedVideo || {}
+  const base = String(node?.title || 'sluvo-video').trim().replace(/[\\/:*?"<>|\s]+/g, '-')
+  const extension = inferVideoExtension(video.url || '')
+  return `${base || 'sluvo-video'}${extension}`
 }
 
 function inferImageExtension(url) {
@@ -4194,6 +4662,14 @@ function inferImageExtension(url) {
   if (source.includes('image/webp') || source.endsWith('.webp')) return '.webp'
   if (source.includes('image/gif') || source.endsWith('.gif')) return '.gif'
   return '.jpg'
+}
+
+function inferVideoExtension(url) {
+  const source = String(url || '').split('?')[0].toLowerCase()
+  if (source.endsWith('.webm')) return '.webm'
+  if (source.endsWith('.mov')) return '.mov'
+  if (source.endsWith('.m3u8')) return '.m3u8'
+  return '.mp4'
 }
 
 function rememberLocalUploadPreview(nodeId, previewUrl) {
@@ -4282,6 +4758,103 @@ async function loadImageGenerationCatalog() {
   }
 }
 
+async function loadVideoGenerationCatalog() {
+  try {
+    const catalog = await fetchCreativeVideoCatalog()
+    if (catalog?.success === false) return
+    const models = normalizeVideoCatalogModels(catalog)
+    if (models.length > 0) videoModelOptions.value = models
+  } catch {
+    videoModelOptions.value = [...fallbackVideoModelOptions]
+  }
+}
+
+function normalizeVideoCatalogModels(catalog) {
+  const modelItems =
+    (Array.isArray(catalog?.data?.models) && catalog.data.models) ||
+    (Array.isArray(catalog?.models) && catalog.models) ||
+    findArrayByKey(catalog, ['models', 'video_models', 'videoModels', 'model_options', 'modelOptions'])
+  if (!modelItems) return []
+
+  return modelItems
+    .map((item) => {
+      if (typeof item === 'string') return { id: item, label: item, features: buildFallbackVideoFeatures(item), startPoints: null }
+      const id = item?.model_code || item?.code || item?.id || item?.value || item?.model || item?.name
+      if (!id || item?.hidden) return null
+      return {
+        id,
+        label: item?.display_name || item?.label || item?.title || item?.model_name || item?.name || id,
+        startPoints: Number.isFinite(Number(item?.start_points ?? item?.startPoints)) ? Number(item?.start_points ?? item?.startPoints) : null,
+        defaultGenerationType: item?.default_generation_type || item?.defaultGenerationType || '',
+        features: normalizeVideoFeatures(item)
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeVideoFeatures(modelItem) {
+  const features = Array.isArray(modelItem?.features) ? modelItem.features : []
+  if (!features.length) return buildFallbackVideoFeatures(modelItem?.model_code || modelItem?.id || modelItem?.value)
+
+  return features
+    .map((feature) => {
+      const generationType = feature?.generation_type || feature?.generationType || feature?.id || ''
+      if (!generationType) return null
+      return {
+        generationType,
+        label: feature?.generation_type_label || feature?.generationTypeLabel || feature?.label || generationType,
+        defaults: feature?.defaults || {},
+        fields: normalizeVideoFeatureFields(feature?.fields)
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeVideoFeatureFields(fields) {
+  return (Array.isArray(fields) ? fields : [])
+    .map((field) => {
+      const key = field?.key || field?.name || field?.id
+      if (!key) return null
+      return {
+        key,
+        label: field?.label || key,
+        required: Boolean(field?.required),
+        options: normalizeImageFieldOptions(field?.options)
+      }
+    })
+    .filter(Boolean)
+}
+
+function buildFallbackVideoFeatures(modelId) {
+  const baseFields = [
+    { key: 'duration', label: 'Duration', options: fallbackVideoDurationOptions },
+    { key: 'resolution', label: 'Resolution', options: fallbackVideoResolutionOptions.filter((item) => item.id !== '4k') },
+    { key: 'aspect_ratio', label: 'Aspect Ratio', options: fallbackVideoAspectRatioOptions.filter((item) => item.id !== 'adaptive') }
+  ]
+  const seedance20Fields = [
+    baseFields[0],
+    { key: 'resolution', label: 'Resolution', options: fallbackVideoResolutionOptions },
+    { key: 'aspect_ratio', label: 'Aspect Ratio', options: fallbackVideoAspectRatioOptions },
+    { key: 'audio_enabled', label: 'Audio', options: [] }
+  ]
+  const seedance20TextFields = [
+    ...seedance20Fields,
+    { key: 'web_search', label: 'Web Search', options: [] }
+  ]
+  const isSeedance20 = String(modelId || '').startsWith('seedance_20')
+  return ['text_to_video', 'image_to_video'].map((generationType) => ({
+    generationType,
+    label: generationType === 'image_to_video' ? '图生视频' : '文生视频',
+    defaults: {
+      duration: 5,
+      resolution: '720p',
+      aspect_ratio: String(modelId || '').startsWith('seedance_20') && generationType === 'text_to_video' ? 'adaptive' : '16:9',
+      audio_enabled: false
+    },
+    fields: isSeedance20 ? (generationType === 'text_to_video' ? seedance20TextFields : seedance20Fields) : baseFields
+  }))
+}
+
 function normalizeImageCatalogModels(catalog) {
   const modelItems = findArrayByKey(catalog, ['models', 'image_models', 'imageModels', 'model_options', 'modelOptions'])
   if (!modelItems) return []
@@ -4331,6 +4904,7 @@ function normalizeImageFieldOptions(options) {
   return (Array.isArray(options) ? options : [])
     .map((option) => {
       if (typeof option === 'string') return { id: option, label: option.toUpperCase?.() || option }
+      if (typeof option === 'number') return { id: String(option), label: String(option) }
       const id = option?.value || option?.id || option?.key
       if (!id) return null
       return { id: String(id), label: option?.label || option?.name || String(id).toUpperCase() }
@@ -4493,7 +5067,7 @@ function getImageGenerationType(node) {
 }
 
 function hasPendingReferenceUploads(nodeId) {
-  return getDirectImageReferenceItems(nodeId).some((reference) => reference.status === 'uploading')
+  return getDirectVisualReferenceItems(nodeId).some((reference) => reference.status === 'uploading')
 }
 
 function normalizeManualReferenceImages(value) {
@@ -4503,16 +5077,19 @@ function normalizeManualReferenceImages(value) {
       const url = item?.url || ''
       const previewUrl = item?.previewUrl || item?.thumbnailUrl || url
       if (!url && !previewUrl) return null
+      const kind = normalizeReferenceKind(item?.kind || item?.mediaKind || item?.media_type || item?.type, url || previewUrl, item?.name)
       return {
         id,
         source: 'manual',
+        kind,
         url,
         previewUrl,
-        name: item?.name || '参考图',
+        name: item?.name || getReferenceKindLabel({ kind }),
         status: item?.status || (url ? 'success' : 'uploading'),
         progress: Number(item?.progress || 0),
         width: Number(item?.width || 0),
         height: Number(item?.height || 0),
+        durationSeconds: Number(item?.durationSeconds || item?.duration_seconds || 0),
         assetId: item?.assetId || '',
         storageObjectId: item?.storageObjectId || ''
       }
@@ -4590,13 +5167,14 @@ function getDirectImageReferenceItems(nodeId) {
         previewUrl,
         name: source?.title || source?.media?.name || '连线参考图',
         status: 'success',
+        kind: 'image',
         progress: 100,
         width: Number(source?.generatedImage?.width || source?.media?.width || 0),
         height: Number(source?.generatedImage?.height || source?.media?.height || 0)
       }
     })
     .filter(Boolean)
-  const manual = normalizeManualReferenceImages(node?.referenceImages)
+  const manual = normalizeManualReferenceImages(node?.referenceImages).filter((reference) => getReferenceKind(reference) === 'image')
   const items = [...connected, ...manual]
   const order = Array.isArray(node?.referenceOrder) ? node.referenceOrder : []
   if (!order.length) return items
@@ -4605,6 +5183,82 @@ function getDirectImageReferenceItems(nodeId) {
   const ordered = order.map((id) => itemMap.get(id)).filter(Boolean)
   const orderedIds = new Set(ordered.map((item) => item.id))
   return [...ordered, ...items.filter((item) => !orderedIds.has(item.id))]
+}
+
+function getDirectVisualReferenceItems(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (node?.type !== 'video_unit') return getDirectImageReferenceItems(nodeId)
+  return getDirectVideoReferenceItems(nodeId)
+}
+
+function getDirectVideoReferenceItems(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const allowedKinds = getAllowedReferenceUploadKinds(node)
+  if (!allowedKinds.length) return []
+
+  const imageItems = allowedKinds.includes('image') ? getDirectImageReferenceItems(nodeId) : []
+  const mediaItems = directEdges.value
+    .filter((edge) => edge.targetId === nodeId)
+    .map((edge) => {
+      const source = directNodes.value.find((item) => item.id === edge.sourceId)
+      const generatedVideoUrl = source?.generatedVideo?.url || ''
+      const mediaUrl = source?.media?.url || ''
+      const kind = source?.type === 'video_unit' && generatedVideoUrl ? 'video' : source?.media?.kind || ''
+      const url = source?.type === 'video_unit' ? generatedVideoUrl : mediaUrl
+      if (!allowedKinds.includes(kind) || !url) return null
+      return {
+        id: `edge:${edge.sourceId}:${kind}`,
+        source: 'edge',
+        kind,
+        url,
+        previewUrl: source?.media?.previewUrl || source?.media?.thumbnailUrl || url,
+        name: source?.title || source?.media?.name || getReferenceKindLabel({ kind }),
+        status: 'success',
+        progress: 100,
+        width: Number(source?.media?.width || 0),
+        height: Number(source?.media?.height || 0),
+        durationSeconds: Number(source?.media?.durationSeconds || 0)
+      }
+    })
+    .filter(Boolean)
+  const manualMedia = normalizeManualReferenceImages(node?.referenceImages).filter((reference) => {
+    const kind = getReferenceKind(reference)
+    return kind !== 'image' && allowedKinds.includes(kind)
+  })
+  const items = [...imageItems, ...mediaItems, ...manualMedia]
+  const order = Array.isArray(node?.referenceOrder) ? node.referenceOrder : []
+  if (!order.length) return items
+
+  const itemMap = new Map(items.map((item) => [item.id, item]))
+  const ordered = order.map((id) => itemMap.get(id)).filter(Boolean)
+  const orderedIds = new Set(ordered.map((item) => item.id))
+  return [...ordered, ...items.filter((item) => !orderedIds.has(item.id))]
+}
+
+function getDirectVideoReferencePayload(nodeId, generationType = '') {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const mode = getVideoReferenceMode(node, generationType)
+  if (mode === 'none') return { imageRefs: [], videoRefs: [], audioRefs: [], firstFrame: '', lastFrame: '' }
+
+  const references = getDirectVideoReferenceItems(nodeId).filter((reference) => reference.status !== 'error')
+  const imageRefs = references.filter((reference) => getReferenceKind(reference) === 'image').map((reference) => reference.url).filter(Boolean)
+  const videoRefs = []
+  const audioRefs = []
+  if (mode === 'mixed') {
+    references.forEach((reference) => {
+      const kind = getReferenceKind(reference)
+      if (kind === 'video' && reference.url) videoRefs.push(reference.url)
+      if (kind === 'audio' && reference.url) audioRefs.push(reference.url)
+    })
+  }
+
+  return {
+    imageRefs: [...new Set(imageRefs)],
+    videoRefs: [...new Set(videoRefs)],
+    audioRefs: [...new Set(audioRefs)],
+    firstFrame: imageRefs[0] || '',
+    lastFrame: mode === 'start_end' ? imageRefs[1] || imageRefs.at(-1) || '' : ''
+  }
 }
 
 function getReferenceMentionItems(node) {
@@ -4753,8 +5407,297 @@ function syncImageNodeSettings(node) {
   updateDirectNode(node.id, patch)
 }
 
+function findVideoModelOption(modelId) {
+  return (
+    videoModelOptions.value.find((model) => model.id === modelId) ||
+    fallbackVideoModelOptions.find((model) => model.id === modelId) ||
+    fallbackVideoModelOptions[0] ||
+    null
+  )
+}
+
+function getDefaultVideoGenerationType(modelId) {
+  const model = findVideoModelOption(modelId)
+  return model?.defaultGenerationType || model?.features?.[0]?.generationType || 'text_to_video'
+}
+
+function getVideoFeatureOptions(node) {
+  const model = findVideoModelOption(node?.videoModelId || fallbackVideoModelOptions[0].id)
+  const features = model?.features?.length ? model.features : buildFallbackVideoFeatures(model?.id || node?.videoModelId)
+  return features.map((feature) => ({
+    id: feature.generationType,
+    label: feature.label || feature.generationType
+  }))
+}
+
+function getSelectedVideoFeature(node) {
+  const model = findVideoModelOption(node?.videoModelId || fallbackVideoModelOptions[0].id)
+  const features = model?.features?.length ? model.features : buildFallbackVideoFeatures(model?.id || node?.videoModelId)
+  const generationType = getVideoGenerationType(node)
+  return features.find((feature) => feature.generationType === generationType) || features[0] || null
+}
+
+function getVideoGenerationType(node) {
+  const model = findVideoModelOption(node?.videoModelId || fallbackVideoModelOptions[0].id)
+  const features = model?.features?.length ? model.features : buildFallbackVideoFeatures(model?.id || node?.videoModelId)
+  const requested = String(node?.videoGenerationType || '').trim()
+  if (requested && features.some((feature) => feature.generationType === requested)) return requested
+  const imageRefs = node?.id ? getDirectImageReferenceUrls(node.id) : []
+  if (imageRefs.length > 0 && features.some((feature) => feature.generationType === 'image_to_video')) return 'image_to_video'
+  return model?.defaultGenerationType || features[0]?.generationType || 'text_to_video'
+}
+
+function getVideoReferenceMode(node, generationType = '') {
+  const type = String(generationType || node?.videoGenerationType || '').trim().toLowerCase()
+  if (type === 'text_to_video') return 'none'
+  if (type === 'image_to_video') return 'image'
+  if (type === 'start_end_to_video') return 'start_end'
+  if (type === 'reference_to_video') return 'mixed'
+  return 'none'
+}
+
+function getAllowedReferenceUploadKinds(node) {
+  if (node?.type === 'image_unit') return ['image']
+  if (node?.type !== 'video_unit') return []
+  const mode = getVideoReferenceMode(node)
+  if (mode === 'image' || mode === 'start_end') return ['image']
+  if (mode === 'mixed') return ['image', 'video', 'audio']
+  return []
+}
+
+function isStartEndVideoNode(node) {
+  return node?.type === 'video_unit' && getVideoReferenceMode(node) === 'start_end'
+}
+
+function getStartEndFrameReference(node, slot) {
+  if (!node?.id) return null
+  const index = slot === 'last' ? 1 : 0
+  return getDirectImageReferenceItems(node.id)[index] || null
+}
+
+function canUploadDirectReference(node) {
+  return getAllowedReferenceUploadKinds(node).length > 0
+}
+
+function shouldShowReferenceStrip(node) {
+  return node?.type === 'image_unit' || canUploadDirectReference(node)
+}
+
+function getReferenceUploadAccept(node) {
+  const kinds = getAllowedReferenceUploadKinds(node)
+  return kinds.map((kind) => `${kind}/*`).join(',') || 'image/*'
+}
+
+function getReferenceUploadTitle(node) {
+  const kinds = getAllowedReferenceUploadKinds(node)
+  if (kinds.includes('video') || kinds.includes('audio')) return '上传参考素材'
+  return '上传参考图'
+}
+
+function getReferenceUploadRejectMessage(node) {
+  const kinds = getAllowedReferenceUploadKinds(node)
+  if (!kinds.length) return '当前视频类型不支持参考素材'
+  return kinds.includes('video') || kinds.includes('audio') ? '请选择图片、视频或音频文件' : '请选择图片文件'
+}
+
+function normalizeReferenceKind(kind, url = '', name = '') {
+  const value = String(kind || '').trim().toLowerCase()
+  if (['image', 'video', 'audio'].includes(value)) return value
+  const source = `${url || ''} ${name || ''}`.toLowerCase()
+  if (/\.(mp4|webm|mov|m3u8)(\?|$|\s)/i.test(source)) return 'video'
+  if (/\.(mp3|wav|m4a|aac|ogg|flac)(\?|$|\s)/i.test(source)) return 'audio'
+  return 'image'
+}
+
+function getReferenceKind(reference) {
+  return normalizeReferenceKind(reference?.kind || reference?.mediaKind || reference?.media_type, reference?.url || reference?.previewUrl, reference?.name)
+}
+
+function getReferenceKindLabel(reference) {
+  const labels = {
+    image: '参考图',
+    video: '参考视频',
+    audio: '参考音频'
+  }
+  return labels[getReferenceKind(reference)] || '参考素材'
+}
+
+function getVideoGenerationBlocker(node) {
+  if (!node || node.type !== 'video_unit') return ''
+  const mode = getVideoReferenceMode(node, getVideoGenerationType(node))
+  const refs = getDirectVideoReferencePayload(node.id, getVideoGenerationType(node))
+  if (mode === 'image' && refs.imageRefs.length < 1) return '图生视频需要先上传或连接一张参考图'
+  if (mode === 'start_end' && refs.imageRefs.length < 2) return '首尾帧视频需要按顺序提供首帧和尾帧两张图'
+  return ''
+}
+
+function getVideoFieldConfig(node, key) {
+  return getSelectedVideoFeature(node)?.fields?.find((field) => field.key === key) || null
+}
+
+function hasVideoField(node, key) {
+  return Boolean(getVideoFieldConfig(node, key))
+}
+
+function getVideoFieldOptions(node, key, fallback) {
+  const options = getVideoFieldConfig(node, key)?.options || []
+  if (options.length > 0) return options
+  return Array.isArray(fallback) ? fallback.map((item) => (typeof item === 'string' ? { id: item, label: item } : item)) : []
+}
+
+function getVideoDurationOptions(node) {
+  return getVideoFieldOptions(node, 'duration', fallbackVideoDurationOptions)
+}
+
+function formatVideoAspectRatioLabel(option) {
+  const value = String(option?.id || option || '')
+  if (value === 'adaptive') return 'Auto'
+  return option?.label || value
+}
+
+function formatVideoDurationValue(duration) {
+  return `${normalizeVideoDurationValue(duration)}秒`
+}
+
+function getVideoDurationOptionIndex(node) {
+  const options = getVideoDurationOptions(node)
+  const current = normalizeVideoDurationValue(node?.videoDuration)
+  const index = options.findIndex((option) => Number(option.id) === current)
+  return index >= 0 ? index : 0
+}
+
+function setVideoDurationByIndex(node, event) {
+  const options = getVideoDurationOptions(node)
+  const index = Number(event?.target?.value ?? 0)
+  const option = options[Math.max(0, Math.min(options.length - 1, index))]
+  if (option) setVideoNodeSetting(node, 'duration', Number(option.id))
+}
+
+function getVideoSettingsSummary(node) {
+  const parts = []
+  if (hasVideoField(node, 'aspect_ratio')) parts.push(formatVideoAspectRatioLabel({ id: node?.aspectRatio || getVideoDefaultValue(node, 'aspect_ratio', '16:9') }))
+  if (hasVideoField(node, 'resolution')) parts.push(String(node?.videoResolution || getVideoDefaultValue(node, 'resolution', '720p')).toUpperCase())
+  if (hasVideoField(node, 'duration')) parts.push(formatVideoDurationValue(node?.videoDuration))
+  if (hasVideoField(node, 'audio_enabled') && node?.videoAudioEnabled) parts.push('原声')
+  if (hasVideoField(node, 'web_search') && node?.videoWebSearch) parts.push('联网')
+  return parts.join(' · ') || '参数'
+}
+
+function isVideoFieldOptionSelected(node, key, value) {
+  const current =
+    key === 'duration'
+      ? normalizeVideoDurationValue(node?.videoDuration)
+      : key === 'resolution'
+        ? normalizeVideoResolutionValue(node?.videoResolution)
+        : key === 'aspect_ratio'
+          ? node?.aspectRatio
+          : key === 'quality_mode'
+            ? String(node?.videoQualityMode || '').trim().toLowerCase()
+            : key === 'motion_strength'
+              ? String(node?.videoMotionStrength || '').trim().toLowerCase()
+              : ''
+  const next = key === 'duration' ? Number(value) : String(value || '').trim().toLowerCase()
+  return current === next
+}
+
+function setVideoNodeSetting(node, key, value) {
+  if (!node || node.generationStatus === 'running') return
+  const patch = {}
+  if (key === 'duration') patch.videoDuration = normalizeVideoDurationValue(value)
+  if (key === 'resolution') patch.videoResolution = normalizeVideoResolutionValue(value)
+  if (key === 'aspect_ratio') patch.aspectRatio = value
+  if (key === 'quality_mode') patch.videoQualityMode = String(value || '').trim().toLowerCase()
+  if (key === 'motion_strength') patch.videoMotionStrength = String(value || '').trim().toLowerCase()
+  if (Object.keys(patch).length === 0) return
+  updateDirectNode(node.id, patch)
+  refreshVideoEstimate({ ...node, ...patch })
+}
+
+function toggleVideoBooleanSetting(node, key) {
+  if (!node || node.generationStatus === 'running') return
+  const patch =
+    key === 'audio_enabled'
+      ? { videoAudioEnabled: !node.videoAudioEnabled }
+      : key === 'web_search'
+        ? { videoWebSearch: !node.videoWebSearch }
+        : {}
+  if (Object.keys(patch).length === 0) return
+  updateDirectNode(node.id, patch)
+  refreshVideoEstimate({ ...node, ...patch })
+}
+
+function handleVideoSettingsToggle(nodeId, event) {
+  activeVideoSettingsNodeId.value = event?.target?.open ? nodeId : activeVideoSettingsNodeId.value === nodeId ? '' : activeVideoSettingsNodeId.value
+}
+
+function getVideoDefaultValue(node, key, fallback) {
+  const defaults = getSelectedVideoFeature(node)?.defaults || {}
+  return defaults[key] ?? defaults[snakeToCamel(key)] ?? fallback
+}
+
+function syncVideoNodeSettings(node) {
+  if (!node) return
+  const features = getVideoFeatureOptions(node)
+  const generationType = features.some((feature) => feature.id === node.videoGenerationType)
+    ? node.videoGenerationType
+    : getDefaultVideoGenerationType(node.videoModelId)
+  const patch = { videoGenerationType: generationType }
+
+  const nextNode = { ...node, ...patch }
+  const durationOptions = getVideoFieldOptions(nextNode, 'duration', fallbackVideoDurationOptions)
+  const resolutionOptions = getVideoFieldOptions(nextNode, 'resolution', fallbackVideoResolutionOptions)
+  const ratioOptions = getVideoFieldOptions(nextNode, 'aspect_ratio', fallbackVideoAspectRatioOptions)
+  const qualityOptions = getVideoFieldOptions(nextNode, 'quality_mode', fallbackVideoQualityModeOptions)
+  const motionOptions = getVideoFieldOptions(nextNode, 'motion_strength', fallbackVideoMotionStrengthOptions)
+
+  if (hasVideoField(nextNode, 'duration')) {
+    const current = normalizeVideoDurationValue(node.videoDuration)
+    const fallback = normalizeVideoDurationValue(getVideoDefaultValue(nextNode, 'duration', fallbackVideoDurationOptions[1].id))
+    patch.videoDuration = durationOptions.some((option) => Number(option.id) === current) ? current : fallback
+  }
+  if (hasVideoField(nextNode, 'resolution')) {
+    const current = normalizeVideoResolutionValue(node.videoResolution)
+    const fallback = normalizeVideoResolutionValue(getVideoDefaultValue(nextNode, 'resolution', '720p'))
+    patch.videoResolution = resolutionOptions.some((option) => option.id === current) ? current : fallback
+  }
+  if (hasVideoField(nextNode, 'aspect_ratio')) {
+    const current = node.aspectRatio || '16:9'
+    const fallback = getVideoDefaultValue(nextNode, 'aspect_ratio', '16:9')
+    patch.aspectRatio = ratioOptions.some((option) => option.id === current) ? current : fallback
+  }
+  if (hasVideoField(nextNode, 'quality_mode')) {
+    const current = String(node.videoQualityMode || '').trim().toLowerCase()
+    const fallback = String(getVideoDefaultValue(nextNode, 'quality_mode', qualityOptions[0]?.id || '') || '').trim().toLowerCase()
+    patch.videoQualityMode = qualityOptions.some((option) => option.id === current) ? current : fallback
+  }
+  if (hasVideoField(nextNode, 'motion_strength')) {
+    const current = String(node.videoMotionStrength || '').trim().toLowerCase()
+    const fallback = String(getVideoDefaultValue(nextNode, 'motion_strength', motionOptions[0]?.id || '') || '').trim().toLowerCase()
+    patch.videoMotionStrength = motionOptions.some((option) => option.id === current) ? current : fallback
+  }
+  if (hasVideoField(nextNode, 'audio_enabled')) {
+    patch.videoAudioEnabled = Boolean(node.videoAudioEnabled ?? getVideoDefaultValue(nextNode, 'audio_enabled', false))
+  }
+  patch.videoWebSearch = hasVideoField(nextNode, 'web_search')
+    ? Boolean(node.videoWebSearch ?? getVideoDefaultValue(nextNode, 'web_search', false))
+    : false
+
+  updateDirectNode(node.id, patch)
+  refreshVideoEstimate({ ...node, ...patch })
+}
+
+function normalizeVideoResolutionValue(resolution) {
+  return String(resolution || '720p').trim().toLowerCase()
+}
+
+function normalizeVideoDurationValue(duration) {
+  const value = Number(duration || 5)
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : 5
+}
+
 function getDirectNodeZIndex(node, index = 0) {
   const base = index + 1
+  if (node?.id && node.id === activeVideoSettingsNodeId.value) return 260
   if (node?.id && node.id === activeDirectNodeId.value) return 160
   if (node?.id && selectedDirectNodeIds.value.includes(node.id)) return 150
   if (node?.id && node.id === focusedDirectNodeId.value) return 140
@@ -4795,6 +5738,92 @@ function normalizeImageQualityValue(quality) {
   return String(quality || 'medium').trim().toLowerCase()
 }
 
+function buildDirectVideoPayload(node, options = {}) {
+  const generationType = getVideoGenerationType(node)
+  const refs = getDirectVideoReferencePayload(node?.id || '', generationType)
+  const payload = {
+    ownership_mode: 'standalone',
+    model_code: node?.videoModelId || fallbackVideoModelOptions[0].id,
+    generation_type: generationType,
+    resolution: normalizeVideoResolutionValue(node?.videoResolution),
+    duration: normalizeVideoDurationValue(node?.videoDuration),
+    aspect_ratio: node?.aspectRatio || getVideoDefaultValue(node, 'aspect_ratio', '16:9'),
+    image_refs: refs.imageRefs,
+    reference_images: refs.imageRefs,
+    video_refs: refs.videoRefs,
+    reference_videos: refs.videoRefs,
+    audio_refs: refs.audioRefs,
+    audio_enabled: Boolean(node?.videoAudioEnabled),
+    web_search: Boolean(node?.videoWebSearch),
+    first_frame: refs.firstFrame || refs.imageRefs[0] || '',
+    last_frame: refs.lastFrame || '',
+    motion_strength: node?.videoMotionStrength || undefined,
+    quality_mode: node?.videoQualityMode || undefined,
+    prompt: options.prompt ?? node?.prompt ?? ''
+  }
+  Object.keys(payload).forEach((key) => {
+    if (payload[key] === undefined || payload[key] === '') delete payload[key]
+  })
+  return payload
+}
+
+function isVideoEstimatePending(node) {
+  return node?.videoEstimateStatus === 'pending'
+}
+
+function getVideoGenerationPoints(node) {
+  const exact = Number(node?.videoEstimatePoints)
+  if (Number.isFinite(exact) && exact > 0) return exact
+  const model = findVideoModelOption(node?.videoModelId || fallbackVideoModelOptions[0].id)
+  return Number.isFinite(Number(model?.startPoints)) ? Number(model.startPoints) : null
+}
+
+function getVideoGenerationPointsButtonLabel(node) {
+  const points = getVideoGenerationPoints(node)
+  if (!Number.isFinite(points)) return '--'
+  return points
+}
+
+function refreshVideoEstimate(node) {
+  if (!node?.id) return
+  const existing = videoEstimateTimers.get(node.id)
+  if (existing) window.clearTimeout(existing)
+  updateDirectNode(node.id, { videoEstimateStatus: 'pending' })
+  const timer = window.setTimeout(() => estimateDirectVideoNode(node.id), 360)
+  videoEstimateTimers.set(node.id, timer)
+}
+
+async function estimateDirectVideoNode(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!node) return
+  videoEstimateTimers.delete(nodeId)
+  if (getVideoGenerationBlocker(node)) {
+    updateDirectNode(nodeId, {
+      videoEstimateStatus: 'idle',
+      videoEstimatePoints: null
+    })
+    return
+  }
+
+  try {
+    const payload = buildDirectVideoPayload(node)
+    delete payload.prompt
+    const response = await estimateCreativeVideo(payload)
+    if (response?.success === false) throw new Error(response.message || response.error || '视频估算失败')
+    const points = Number(response?.estimate_points ?? response?.data?.estimate_points ?? response?.resolved?.sell_price_points)
+    updateDirectNode(nodeId, {
+      videoEstimatePoints: Number.isFinite(points) ? points : null,
+      videoEstimateStatus: Number.isFinite(points) ? 'success' : 'idle'
+    })
+  } catch (error) {
+    updateDirectNode(nodeId, {
+      videoEstimateStatus: 'error',
+      videoEstimatePoints: null,
+      generationMessage: error?.message || node.generationMessage || ''
+    })
+  }
+}
+
 async function runDirectImageNode(node) {
   const prompt = node.prompt.trim()
   if (!prompt) {
@@ -4802,7 +5831,12 @@ async function runDirectImageNode(node) {
     return
   }
   if (hasPendingReferenceUploads(node.id)) {
-    showToast('参考图还在上传中')
+    showToast('参考素材还在上传中')
+    return
+  }
+  const blocker = getVideoGenerationBlocker(node)
+  if (blocker) {
+    showToast(blocker)
     return
   }
 
@@ -4978,6 +6012,181 @@ async function fetchLatestMatchingImageRecord(prompt, taskId = '', recordId = ''
   }
 }
 
+async function runDirectVideoNode(node) {
+  const prompt = node.prompt.trim()
+  if (!prompt) {
+    showToast('请先输入视频提示词')
+    return
+  }
+  if (hasPendingReferenceUploads(node.id)) {
+    showToast('参考图还在上传中')
+    return
+  }
+
+  rememberHistory()
+  clearVideoGenerationTimer(node.id)
+  const settings = buildDirectVideoPayload(node, { prompt })
+  updateDirectNode(node.id, {
+    videoModelId: settings.model_code,
+    videoGenerationType: settings.generation_type,
+    videoResolution: settings.resolution,
+    videoDuration: settings.duration,
+    aspectRatio: settings.aspect_ratio,
+    videoAudioEnabled: Boolean(settings.audio_enabled),
+    videoWebSearch: Boolean(settings.web_search),
+    generationStatus: 'running',
+    generationMessage: '视频生成中...',
+    generationTaskId: '',
+    generationRecordId: '',
+    generatedVideo: null
+  })
+
+  try {
+    const response = await submitCreativeVideo(settings)
+    if (response?.success === false) {
+      throw new Error(response.message || response.error || '视频生成提交失败')
+    }
+
+    const result = extractVideoGenerationResult(response)
+    const recordVideo = !result.url && result.recordId ? await fetchRecordVideoResult(result.recordId) : null
+    const directUrl = result.url || recordVideo?.url
+
+    if (directUrl) {
+      completeDirectVideoGeneration(node.id, {
+        url: directUrl,
+        thumbnailUrl: result.thumbnailUrl || recordVideo?.thumbnailUrl || '',
+        prompt,
+        modelCode: settings.model_code,
+        generationType: settings.generation_type,
+        resolution: settings.resolution,
+        duration: settings.duration,
+        aspectRatio: settings.aspect_ratio,
+        taskId: result.taskId,
+        recordId: result.recordId || recordVideo?.recordId
+      })
+      return
+    }
+
+    if (!result.taskId) {
+      throw new Error('接口未返回任务 ID')
+    }
+
+    updateDirectNode(node.id, {
+      generationTaskId: result.taskId,
+      generationRecordId: result.recordId || '',
+      generationMessage: '视频生成中...'
+    })
+    scheduleVideoTaskPoll(node.id, result.taskId, result.recordId || '', 0)
+    showToast('视频生成任务已提交')
+  } catch (error) {
+    failDirectVideoGeneration(node.id, error?.message || '视频生成提交失败')
+  }
+}
+
+function scheduleVideoTaskPoll(nodeId, taskId, recordId = '', attempt = 0) {
+  clearVideoGenerationTimer(nodeId)
+  const delay = attempt === 0 ? 1600 : 3200
+  const timer = window.setTimeout(() => pollVideoTask(nodeId, taskId, recordId, attempt), delay)
+  videoGenerationTimers.set(nodeId, timer)
+}
+
+async function pollVideoTask(nodeId, taskId, recordId = '', attempt = 0) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!node || node.generationStatus !== 'running') {
+    clearVideoGenerationTimer(nodeId)
+    return
+  }
+
+  try {
+    const task = await fetchTask(taskId)
+    if (task?.success === false) throw new Error(task.message || task.error || '视频生成失败')
+
+    const result = extractVideoGenerationResult(task)
+    const nextRecordId = result.recordId || recordId
+    const recordVideo = !result.url && nextRecordId ? await fetchRecordVideoResult(nextRecordId) : null
+    const historyVideo =
+      !result.url && !recordVideo?.url && (isFinishedTaskStatus(result.status) || (attempt + 1) % 4 === 0)
+        ? await fetchLatestMatchingVideoRecord(node.prompt, taskId, nextRecordId)
+        : null
+    const videoUrl = result.url || recordVideo?.url || historyVideo?.url
+
+    if (videoUrl) {
+      completeDirectVideoGeneration(nodeId, {
+        url: videoUrl,
+        thumbnailUrl: result.thumbnailUrl || recordVideo?.thumbnailUrl || historyVideo?.thumbnailUrl || '',
+        prompt: node.prompt,
+        modelCode: node.videoModelId,
+        generationType: node.videoGenerationType,
+        resolution: normalizeVideoResolutionValue(node.videoResolution),
+        duration: normalizeVideoDurationValue(node.videoDuration),
+        aspectRatio: node.aspectRatio,
+        taskId,
+        recordId: nextRecordId || recordVideo?.recordId || historyVideo?.recordId
+      })
+      return
+    }
+
+    if (isFailedTaskStatus(result.status)) {
+      throw new Error(result.message || '视频生成失败')
+    }
+
+    if (attempt >= 120) {
+      updateDirectNode(nodeId, {
+        generationStatus: 'idle',
+        generationMessage: '视频生成时间较长，可稍后在历史记录中查看'
+      })
+      clearVideoGenerationTimer(nodeId)
+      return
+    }
+
+    updateDirectNode(nodeId, {
+      generationRecordId: nextRecordId || '',
+      generationMessage: getPollingMessage('视频生成中...', attempt + 1)
+    })
+    scheduleVideoTaskPoll(nodeId, taskId, nextRecordId, isFinishedTaskStatus(result.status) ? attempt + 2 : attempt + 1)
+  } catch (error) {
+    failDirectVideoGeneration(nodeId, error?.message || '视频生成失败')
+  }
+}
+
+async function fetchRecordVideoResult(recordId) {
+  try {
+    const record = await fetchCreativeRecord(recordId)
+    const result = extractVideoGenerationResult(record)
+    return result.url ? { ...result, recordId } : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchLatestMatchingVideoRecord(prompt, taskId = '', recordId = '') {
+  try {
+    const records = await fetchCreativeRecords({
+      record_type: 'video',
+      ownership_mode: 'standalone',
+      sort_by: 'created_at',
+      sort_order: 'desc',
+      page: 1,
+      page_size: 8
+    })
+    const items = collectRecordItems(records)
+    const matched = items.find((item) => {
+      const itemResult = extractVideoGenerationResult(item)
+      if (!itemResult.url) return false
+      if (recordId && itemResult.recordId === recordId) return true
+      if (taskId && itemResult.taskId === taskId) return true
+      const itemPrompt = String(findFirstValueByKeys(item, ['prompt', 'input_prompt', 'raw_prompt']) || '')
+      return prompt && itemPrompt && itemPrompt.trim() === prompt.trim()
+    })
+    if (!matched) return null
+
+    const result = extractVideoGenerationResult(matched)
+    return result.url ? result : null
+  } catch {
+    return null
+  }
+}
+
 function collectRecordItems(payload) {
   if (Array.isArray(payload)) return payload
   const candidates = [
@@ -5017,8 +6226,36 @@ function completeDirectImageGeneration(nodeId, image) {
   showToast('图片生成完成')
 }
 
+function completeDirectVideoGeneration(nodeId, video) {
+  clearVideoGenerationTimer(nodeId)
+  updateDirectNode(nodeId, {
+    generationStatus: 'success',
+    generationMessage: '视频生成完成',
+    generationTaskId: video.taskId || '',
+    generationRecordId: video.recordId || '',
+    generatedVideo: {
+      ...video,
+      url: normalizeDisplayVideoSrc(video.url),
+      thumbnailUrl: normalizeDisplayImageSrc(video.thumbnailUrl),
+      isPlayable: false,
+      loadError: false,
+      loadErrorMessage: ''
+    }
+  })
+  showToast('视频生成完成')
+}
+
 function failDirectImageGeneration(nodeId, message) {
   clearImageGenerationTimer(nodeId)
+  updateDirectNode(nodeId, {
+    generationStatus: 'error',
+    generationMessage: message
+  })
+  showToast(message)
+}
+
+function failDirectVideoGeneration(nodeId, message) {
+  clearVideoGenerationTimer(nodeId)
   updateDirectNode(nodeId, {
     generationStatus: 'error',
     generationMessage: message
@@ -5041,6 +6278,22 @@ function clearImageGenerationTimers() {
   imageGenerationTimers.clear()
 }
 
+function clearVideoGenerationTimer(nodeId) {
+  const timer = videoGenerationTimers.get(nodeId)
+  if (timer) window.clearTimeout(timer)
+  videoGenerationTimers.delete(nodeId)
+}
+
+function clearVideoGenerationTimers() {
+  videoGenerationTimers.forEach((timer) => window.clearTimeout(timer))
+  videoGenerationTimers.clear()
+}
+
+function clearVideoEstimateTimers() {
+  videoEstimateTimers.forEach((timer) => window.clearTimeout(timer))
+  videoEstimateTimers.clear()
+}
+
 function getDirectImageReferenceUrls(nodeId) {
   return getDirectImageReferenceItems(nodeId)
     .map((reference) => reference.url || '')
@@ -5056,6 +6309,17 @@ function extractImageGenerationResult(payload) {
     message: findFirstValueByKeys(payload, ['message', 'error', 'detail']),
     url: output.url,
     thumbnailUrl: output.thumbnailUrl
+  }
+}
+
+function extractVideoGenerationResult(payload) {
+  return {
+    taskId: findFirstValueByKeys(payload, ['taskId', 'task_id', 'id']),
+    recordId: findFirstExternalRecordId(payload),
+    status: String(findFirstValueByKeys(payload, ['status', 'state', 'task_status']) || '').toLowerCase(),
+    message: findFirstValueByKeys(payload, ['message', 'error', 'detail']),
+    url: findFirstVideoOutputUrl(payload),
+    thumbnailUrl: findFirstImageUrl(payload, { thumbnail: true }) || findFirstImageUrl(payload, { thumbnail: false })
   }
 }
 
@@ -5178,6 +6442,77 @@ function isLikelyImageUrl(value) {
   return /^(data:image\/|blob:)/i.test(source) || /^\/.+(\.png|\.jpe?g|\.webp|\.gif|image|oss|cos|cdn)/i.test(source) || /^https?:\/\/.+(\.png|\.jpe?g|\.webp|\.gif|image|oss|cos|cdn)/i.test(source)
 }
 
+function findFirstVideoOutputUrl(value, depth = 0) {
+  if (!value || depth > 7) return ''
+  if (typeof value === 'string') return isLikelyVideoUrl(value) ? normalizeDisplayVideoSrc(value) : ''
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstVideoOutputUrl(item, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  if (typeof value !== 'object') return ''
+
+  const priorityKeys = [
+    'preview_url',
+    'previewUrl',
+    'video_url',
+    'videoUrl',
+    'play_url',
+    'playUrl',
+    'output_url',
+    'outputUrl',
+    'result_url',
+    'resultUrl',
+    'media_url',
+    'mediaUrl',
+    'file_url',
+    'fileUrl',
+    'url'
+  ]
+  for (const key of priorityKeys) {
+    const candidate = value[key]
+    if (typeof candidate === 'string' && isPotentialVideoOutputUrl(candidate)) return normalizeDisplayVideoSrc(candidate)
+  }
+  const skippedKeys = new Set([
+    'thumbnail_url',
+    'thumbnailUrl',
+    'cover_url',
+    'coverUrl',
+    'poster_url',
+    'posterUrl',
+    'image_url',
+    'imageUrl',
+    'first_frame',
+    'firstFrame',
+    'last_frame',
+    'lastFrame',
+    'reference_images',
+    'referenceImages',
+    'image_refs',
+    'imageRefs'
+  ])
+  for (const [key, item] of Object.entries(value)) {
+    if (skippedKeys.has(key)) continue
+    const found = findFirstVideoOutputUrl(item, depth + 1)
+    if (found) return found
+  }
+  return ''
+}
+
+function isLikelyVideoUrl(value) {
+  const source = String(value || '').trim()
+  if (!source || /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(source)) return false
+  return /^(blob:)/i.test(source) || /^\/.+(\.mp4|\.webm|\.mov|\.m3u8)(\?|$)/i.test(source) || /^https?:\/\/.+(\.mp4|\.webm|\.mov|\.m3u8)(\?|$)/i.test(source)
+}
+
+function isPotentialVideoOutputUrl(value) {
+  const source = String(value || '').trim()
+  if (!source || /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(source)) return false
+  return /^(https?:\/\/|\/|blob:)/i.test(source)
+}
+
 function isFinishedTaskStatus(status) {
   return ['success', 'succeeded', 'completed', 'complete', 'done', 'finished'].includes(status)
 }
@@ -5224,6 +6559,16 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     imageModelId: patch.imageModelId || fallbackImageModelOptions[0].id,
     imageResolution: normalizeImageResolutionValue(patch.imageResolution),
     imageQuality: normalizeImageQualityValue(patch.imageQuality),
+    videoModelId: patch.videoModelId || fallbackVideoModelOptions[0].id,
+    videoGenerationType: patch.videoGenerationType || getDefaultVideoGenerationType(patch.videoModelId || fallbackVideoModelOptions[0].id),
+    videoResolution: normalizeVideoResolutionValue(patch.videoResolution),
+    videoDuration: normalizeVideoDurationValue(patch.videoDuration),
+    videoQualityMode: patch.videoQualityMode || '',
+    videoMotionStrength: patch.videoMotionStrength || '',
+    videoAudioEnabled: Boolean(patch.videoAudioEnabled),
+    videoWebSearch: Boolean(patch.videoWebSearch),
+    videoEstimatePoints: Number.isFinite(Number(patch.videoEstimatePoints)) ? Number(patch.videoEstimatePoints) : null,
+    videoEstimateStatus: patch.videoEstimateStatus || 'idle',
     aspectRatio: patch.aspectRatio || fallbackImageAspectRatioOptions[0],
     referenceImages: normalizeManualReferenceImages(patch.referenceImages),
     referenceOrder: Array.isArray(patch.referenceOrder) ? patch.referenceOrder : [],
@@ -5232,7 +6577,8 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     generationMessage: patch.generationMessage || '',
     generationTaskId: patch.generationTaskId || '',
     generationRecordId: patch.generationRecordId || '',
-    generatedImage: patch.generatedImage || null
+    generatedImage: patch.generatedImage || null,
+    generatedVideo: patch.generatedVideo || null
   }
 
   directNodes.value = [...directNodes.value, node]
