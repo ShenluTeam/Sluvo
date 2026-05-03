@@ -117,9 +117,9 @@
               <Crown :size="16" />
               加入创作者计划
             </button>
-            <button class="top-chip" type="button">
+            <button class="top-chip" type="button" title="灵感值余额">
               <Coins :size="16" />
-              116
+              {{ pointsLabel }}
             </button>
             <button class="avatar-pill" type="button" :title="userName">{{ userInitial }}</button>
             <button class="top-chip top-chip--logout" type="button" @click="logout">
@@ -443,6 +443,7 @@ import {
 import logoUrl from '../../LOGO.png'
 import { useAuthStore } from '../stores/authStore'
 import { useProjectStore } from '../stores/projectStore'
+import { fetchUserDashboard } from '../api/authApi'
 import { saveSluvoCanvasBatch } from '../api/sluvoApi'
 
 const router = useRouter()
@@ -454,6 +455,7 @@ const projectFeedback = ref('')
 const deletingProjectIds = ref(new Set())
 const activeShowcaseIndex = ref(0)
 let showcaseRotationTimer = null
+const accountPoints = ref(0)
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const isCreatingProject = computed(() => projectStore.creatingProject)
@@ -591,6 +593,7 @@ const showcaseItems = [
     accent: '#ffcf8a'
   }
 ]
+const pointsLabel = computed(() => formatPointValue(accountPoints.value))
 
 const previewNodes = [
   {
@@ -706,8 +709,10 @@ function readAuthState() {
     projectStore.loadProjects().catch((error) => {
       if (error?.status === 401) authStore.logout()
     })
-    authStore.refreshUser()
+    authStore.refreshUser().then((user) => mergePointFields(user)).catch(() => {})
+    refreshAccountPoints()
   } else {
+    accountPoints.value = 0
     projectStore.clearWorkspace()
   }
 }
@@ -724,9 +729,50 @@ function openLogin() {
 
 function logout() {
   authStore.logout()
+  accountPoints.value = 0
   readAuthState()
   router.push('/')
   scrollToTop()
+}
+
+async function refreshAccountPoints() {
+  if (!authStore.isAuthenticated) return
+  try {
+    const dashboard = await fetchUserDashboard()
+    mergeDashboardPayload(dashboard)
+  } catch (error) {
+    if (error?.status === 401) authStore.logout()
+  }
+}
+
+function mergeDashboardPayload(payload) {
+  const data = payload?.dashboard || payload?.data || payload || {}
+  mergePointFields(data.points_summary || data.pointsSummary || data)
+}
+
+function mergePointFields(source = {}) {
+  const directTotal = pickNumber(source, ['total_points', 'totalPoints', 'points', 'point_balance', 'pointBalance', 'balance', 'credits'], null)
+  if (directTotal !== null) {
+    accountPoints.value = directTotal
+    return
+  }
+  const permanent = pickNumber(source, ['permanent_points', 'permanentPoints', 'general_points', 'generalPoints'], 0)
+  const temporary = pickNumber(source, ['temporary_points', 'temporaryPoints', 'libtv_points', 'libtvPoints'], 0)
+  accountPoints.value = permanent + temporary
+}
+
+function pickNumber(source, keys, fallback = 0) {
+  for (const key of keys) {
+    const value = source?.[key]
+    const numeric = Number(value)
+    if (value !== undefined && value !== null && Number.isFinite(numeric)) return numeric
+  }
+  return fallback
+}
+
+function formatPointValue(value) {
+  const numeric = Number(value || 0)
+  return new Intl.NumberFormat('zh-CN').format(Number.isFinite(numeric) ? numeric : 0)
 }
 
 function openCanvas(projectId = '') {
@@ -937,6 +983,9 @@ watch(
   (authenticated) => {
     if (authenticated) {
       projectStore.loadProjects().catch(() => {})
+      refreshAccountPoints()
+    } else {
+      accountPoints.value = 0
     }
   }
 )

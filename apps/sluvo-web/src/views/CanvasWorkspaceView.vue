@@ -1,5 +1,5 @@
 <template>
-  <div class="libtv-canvas-shell" :class="{ 'is-space-panning': spacePanning }" @click="closeFloatingPanels">
+  <div class="libtv-canvas-shell" :class="{ 'is-space-panning': spacePanning }" @click="closeFloatingPanels" @contextmenu.capture="handleCanvasContextMenu">
     <section
       ref="canvasFrame"
       class="libtv-canvas-frame"
@@ -85,18 +85,18 @@
         </svg>
 
         <article
-          v-for="node in directNodes"
+          v-for="(node, index) in directNodes"
           :key="node.id"
           :ref="(element) => registerDirectNodeElement(node.id, element)"
           class="direct-workflow-node"
           :class="[`direct-workflow-node--${node.type}`, { 'is-selected': selectedDirectNodeIds.includes(node.id) }]"
-          :style="{ left: `${node.x}px`, top: `${node.y}px` }"
+          :style="{ left: `${node.x}px`, top: `${node.y}px`, zIndex: getDirectNodeZIndex(node, index) }"
           :data-direct-node-id="node.id"
           draggable="false"
           tabindex="0"
           @click.stop
           @dragstart.prevent
-          @selectstart.prevent
+          @selectstart="handleDirectNodeSelectStart"
           @keydown.delete.stop.prevent="deleteDirectNode(node.id)"
           @keydown.backspace.stop.prevent="deleteDirectNode(node.id)"
           @keyup.delete.stop.prevent="deleteDirectNode(node.id)"
@@ -184,15 +184,27 @@
               class="generated-image__state"
             >
               <span class="generated-image__spinner" />
-              <strong>{{ node.generationMessage || '图片生成中' }}</strong>
-              <small>{{ getImageModelLabel(node.imageModelId) }} · {{ getImageResolutionLabel(node.imageResolution) }} · {{ node.aspectRatio || '16:9' }}</small>
+              <strong>生成中...</strong>
             </div>
 
             <div
               v-else-if="node.type === 'image_unit' && node.generatedImage?.url"
               class="generated-image__preview"
             >
-              <img :src="node.generatedImage.url" :alt="node.generatedImage.prompt || node.title" draggable="false" />
+              <img
+                :src="getGeneratedImageSrc(node)"
+                :alt="node.generatedImage.prompt || node.title"
+                draggable="false"
+                @error="handleGeneratedImageError(node.id)"
+              />
+              <div class="generated-image__actions" @click.stop @pointerdown.stop @contextmenu.prevent.stop>
+                <button type="button" title="预览图片" @click.stop="previewGeneratedImage(node)">
+                  <Eye :size="16" />
+                </button>
+                <button type="button" title="下载图片" @click.stop="downloadGeneratedImage(node)">
+                  <Download :size="16" />
+                </button>
+              </div>
             </div>
 
             <template v-else>
@@ -210,23 +222,6 @@
             v-if="node.type !== 'uploaded_asset' && selectedDirectNodeIds.includes(node.id)"
             class="direct-workflow-node__fixed-panel"
           >
-            <textarea
-              v-model="node.prompt"
-              class="direct-workflow-node__prompt"
-              :placeholder="getDirectNodeTextareaPlaceholder(node)"
-              aria-label="节点提示词"
-              @focus="startDirectTextEdit(node.id)"
-              @input="markDirectTextEditDirty"
-              @blur="finishDirectTextEdit"
-              @keydown.ctrl.enter.stop.prevent="finishDirectTextEdit"
-              @keydown.meta.enter.stop.prevent="finishDirectTextEdit"
-              @click.stop
-              @dblclick.stop
-              @keydown.stop
-              @keyup.stop
-              @pointerdown.stop
-              @mousedown.stop
-            />
             <div
               v-if="node.type === 'image_unit'"
               class="direct-workflow-node__references"
@@ -274,6 +269,42 @@
                 <small v-if="reference.status === 'uploading'">{{ reference.progress || 0 }}%</small>
                 <small v-else-if="reference.status === 'error'">失败</small>
               </div>
+            </div>
+            <div
+              class="direct-workflow-node__prompt-field"
+              @click.stop="focusDirectPromptEditor(node.id)"
+              @pointerdown.stop="handlePromptFieldPointerDown(node.id, $event)"
+              @mousedown.stop
+              @selectstart.stop
+            >
+              <div
+                :ref="(element) => registerDirectPromptEditor(node.id, element, node)"
+                class="direct-workflow-node__prompt"
+                :class="{ 'is-empty': isDirectPromptEditorEmpty(node) }"
+                contenteditable="true"
+                role="textbox"
+                aria-multiline="true"
+                aria-label="节点提示词"
+                tabindex="0"
+                spellcheck="false"
+                @focus="startDirectTextEdit(node.id)"
+                @input="handleDirectPromptInput(node.id, $event)"
+                @paste.stop="handleDirectPromptPaste(node.id, $event)"
+                @blur="finishDirectTextEdit"
+                @pointerdown.stop
+                @mousedown.stop
+                @selectstart.stop
+                @keydown="handleDirectPromptKeydown(node.id, $event)"
+                @click.stop="saveDirectPromptSelection(node.id, $event)"
+                @dblclick.stop
+                @keyup.stop="saveDirectPromptSelection(node.id, $event)"
+              ></div>
+              <span
+                v-if="isDirectPromptEditorEmpty(node)"
+                class="direct-workflow-node__prompt-placeholder"
+              >
+                {{ getDirectNodeTextareaPlaceholder(node) }}
+              </span>
             </div>
             <div
               v-if="node.type === 'image_unit'"
@@ -559,9 +590,15 @@
       />
 
       <div v-if="contextMenu.visible" class="canvas-context-menu" :style="contextMenuStyle" @click.stop>
-        <button type="button" @click="duplicateSelection">{{ copy.duplicate }}</button>
-        <button type="button" @click="groupSelection">{{ copy.group }}</button>
-        <button type="button" @click="deleteSelection">{{ copy.delete }}</button>
+        <button type="button" @click="handleContextUpload">上传</button>
+        <button type="button" :disabled="!canUndo" @click="handleContextUndo">
+          <span>撤销</span>
+          <kbd>Ctrl Z</kbd>
+        </button>
+        <button type="button" :disabled="!canRedo" @click="handleContextRedo">
+          <span>重做</span>
+          <kbd>Ctrl Shift Z</kbd>
+        </button>
       </div>
 
       <div v-if="helpVisible" class="canvas-help-panel" @click.stop>
@@ -571,6 +608,22 @@
         <span>{{ copy.helpSelect }}</span>
         <span>{{ copy.helpCopy }}</span>
         <span>{{ copy.helpZoom }}</span>
+      </div>
+
+      <div
+        v-if="imagePreview.visible"
+        class="image-preview-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="图片预览"
+        @click="closeImagePreview"
+        @pointerdown.stop
+        @contextmenu.prevent.stop
+      >
+        <button class="image-preview-overlay__close" type="button" aria-label="关闭预览" @click.stop="closeImagePreview">
+          <X :size="32" />
+        </button>
+        <img :src="imagePreview.url" :alt="imagePreview.alt" draggable="false" @click.stop />
       </div>
 
       <div v-if="toastMessage" class="canvas-toast">{{ toastMessage }}</div>
@@ -583,7 +636,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { ArrowUpDown, ListChecks, Minus, Music2, Plus, Star, Upload, X } from 'lucide-vue-next'
+import { ArrowUpDown, Download, Eye, ListChecks, Minus, Music2, Plus, Star, Upload, X } from 'lucide-vue-next'
 import CommandBar from '../components/layout/CommandBar.vue'
 import AddNodeMenu from '../components/canvas/AddNodeMenu.vue'
 import CanvasBottomControls from '../components/canvas/CanvasBottomControls.vue'
@@ -599,6 +652,7 @@ import {
   submitCreativeImage
 } from '../api/creativeApi'
 import { fetchSluvoProjectCanvas, saveSluvoCanvasBatch, SluvoRevisionConflictError, uploadSluvoCanvasAsset } from '../api/sluvoApi'
+import { buildApiUrl } from '../api/client'
 import { useCanvasStore } from '../stores/canvasStore'
 import { useProjectStore } from '../stores/projectStore'
 
@@ -701,11 +755,14 @@ const deleteKeySink = ref(null)
 const uploadInput = ref(null)
 const referenceUploadInput = ref(null)
 const directNodeElements = new Map()
+const directPromptEditorElements = new Map()
+const directPromptEditorSignatures = new Map()
 let previousDocumentKeydown = null
 let previousWindowKeydown = null
 let frameResizeObserver = null
 let uploadTimer = null
 let autoSaveTimer = null
+let suppressCanvasSaveScheduling = false
 const imageGenerationTimers = new Map()
 const uploadFileMap = new Map()
 const localUploadPreviewUrls = new Map()
@@ -717,6 +774,8 @@ let lastClipboardImagePasteAt = 0
 let clipboardPasteFallbackTimer = null
 let undoShortcutLocked = false
 let lastUndoShortcutAt = 0
+let directPortLayoutRaf = 0
+const promptEditorSelection = { nodeId: '', range: null }
 const nodes = ref([])
 const edges = ref([])
 const directNodes = ref([])
@@ -729,6 +788,10 @@ const saveAfterHydration = ref(false)
 const saveAfterUploads = ref(false)
 const activeTextEditNodeId = ref('')
 const saveAfterTextEdit = ref(false)
+const isSavingCanvas = ref(false)
+const saveAfterCurrentSave = ref(false)
+const saveAfterActiveInteraction = ref(false)
+const directPortLayoutRevision = ref(0)
 const selectedDirectNodeIds = ref([])
 const focusedDirectNodeId = ref('')
 const activeDirectNodeId = ref('')
@@ -748,6 +811,7 @@ const replacingUploadNodeId = ref('')
 const referenceUploadTargetNodeId = ref('')
 const toastMessage = ref('')
 const historyStack = ref([])
+const redoStack = ref([])
 const clipboardNodes = ref([])
 const clipboardEdges = ref([])
 const suppressHistory = ref(false)
@@ -788,6 +852,11 @@ const directDrag = reactive({
   active: false,
   startScreen: { x: 0, y: 0 },
   originals: []
+})
+const imagePreview = reactive({
+  visible: false,
+  url: '',
+  alt: ''
 })
 const referenceDrag = reactive({
   nodeId: '',
@@ -894,6 +963,7 @@ const {
 } = useVueFlow()
 
 const canUndo = computed(() => historyStack.value.length > 0)
+const canRedo = computed(() => redoStack.value.length > 0)
 const zoomLabel = computed(() => `${Math.round((viewport.value?.zoom || 1) * 100)}%`)
 const isCompactCanvas = computed(() => frameSize.width <= 900)
 const showStarterStrip = computed(
@@ -910,7 +980,7 @@ const directLayerStyle = computed(() => {
   return {
     '--direct-viewport-zoom': safeZoom,
     '--direct-fixed-panel-scale': 1 / safeZoom,
-    transform: `translate(${viewport.value?.x || 0}px, ${viewport.value?.y || 0}px) scale(${safeZoom})`
+    transform: `translate3d(${viewport.value?.x || 0}px, ${viewport.value?.y || 0}px, 0) scale(${safeZoom})`
   }
 })
 const selectionBoxStyle = computed(() => {
@@ -1005,6 +1075,7 @@ watch(
     if (nodes.value.length === 0 && directNodes.value.length === 0) {
       canvasActivated.value = false
     }
+    scheduleDirectPortLayoutRefresh()
     scheduleCanvasSave()
   },
   { deep: true }
@@ -1097,6 +1168,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(autoSaveTimer)
   window.clearInterval(uploadTimer)
   window.clearTimeout(clipboardPasteFallbackTimer)
+  window.cancelAnimationFrame(directPortLayoutRaf)
   clearLocalPreviewUrls()
   clearImageGenerationTimers()
   resetHoverEffects()
@@ -1128,7 +1200,7 @@ async function loadProjectCanvas() {
   }
 }
 
-function hydrateCanvasWorkspace(workspace) {
+function hydrateCanvasWorkspace(workspace, options = {}) {
   activeCanvas.value = workspace?.canvas || null
   projectTitle.value = getWorkspaceTitle(workspace)
   nodeRevisionMap.value = Object.fromEntries((workspace?.nodes || []).map((node) => [node.id, node.revision || 1]))
@@ -1147,7 +1219,10 @@ function hydrateCanvasWorkspace(workspace) {
   canvasStore.clearSelection()
   saveAfterUploads.value = false
   canvasActivated.value = directNodes.value.length > 0 || directEdges.value.length > 0
-  historyStack.value = []
+  if (!options.preserveHistory) {
+    historyStack.value = []
+    redoStack.value = []
+  }
   const nextViewport = workspace?.canvas?.viewport
   if (nextViewport && Number.isFinite(Number(nextViewport.zoom))) {
     setViewport(
@@ -1173,6 +1248,106 @@ function syncCanvasRevisionState(workspace) {
   edgeRevisionMap.value = Object.fromEntries((workspace?.edges || []).map((edge) => [edge.id, edge.revision || 1]))
 }
 
+function syncCanvasSaveResultToLocal(workspace) {
+  if (workspace?.canvas) activeCanvas.value = workspace.canvas
+  if (workspace?.project) projectStore.setWorkspace({ ...workspace, canvas: activeCanvas.value })
+
+  const serverNodes = Array.isArray(workspace?.nodes) ? workspace.nodes : []
+  const serverEdges = Array.isArray(workspace?.edges) ? workspace.edges : []
+  const nodeIdMap = buildServerIdMap(serverNodes)
+  const edgeIdMap = buildServerIdMap(serverEdges)
+  const remapNodeId = (id) => nodeIdMap.get(id) || id
+  const remapEdgeId = (id) => edgeIdMap.get(id) || id
+
+  suppressCanvasSaveScheduling = true
+  try {
+    directNodes.value = directNodes.value.map((node) => {
+      const nextId = remapNodeId(node.id)
+      if (nextId === node.id) return node
+      remapPromptEditorMaps(node.id, nextId)
+      return {
+        ...node,
+        id: nextId,
+        clientId: node.clientId || node.id
+      }
+    })
+    nodes.value = nodes.value.map((node) => {
+      const nextId = remapNodeId(node.id)
+      if (nextId === node.id) return node
+      return {
+        ...node,
+        id: nextId,
+        data: {
+          ...(node.data || {}),
+          clientId: node.data?.clientId || node.id
+        }
+      }
+    })
+    directEdges.value = directEdges.value.map((edge) => {
+      const nextId = remapEdgeId(edge.id)
+      return {
+        ...edge,
+        id: nextId,
+        clientId: edge.clientId || edge.id,
+        sourceId: remapNodeId(edge.sourceId),
+        targetId: remapNodeId(edge.targetId)
+      }
+    })
+    edges.value = edges.value.map((edge) => {
+      const nextId = remapEdgeId(edge.id)
+      return {
+        ...edge,
+        id: nextId,
+        source: remapNodeId(edge.source),
+        target: remapNodeId(edge.target),
+        data: {
+          ...(edge.data || {}),
+          clientId: edge.data?.clientId || edge.id
+        }
+      }
+    })
+    selectedDirectNodeIds.value = selectedDirectNodeIds.value.map(remapNodeId)
+    focusedDirectNodeId.value = remapNodeId(focusedDirectNodeId.value)
+    activeDirectNodeId.value = remapNodeId(activeDirectNodeId.value)
+    lastTouchedDirectNodeId.value = remapNodeId(lastTouchedDirectNodeId.value)
+    activeTextEditNodeId.value = remapNodeId(activeTextEditNodeId.value)
+    if (promptEditorSelection.nodeId) promptEditorSelection.nodeId = remapNodeId(promptEditorSelection.nodeId)
+    selectedEdgeIds.value = selectedEdgeIds.value.map(remapEdgeId)
+    if (canvasStore.selectedNodeIds.length > 0) {
+      canvasStore.setSelection(canvasStore.selectedNodeIds.map(remapNodeId))
+    }
+    nodeRevisionMap.value = Object.fromEntries(serverNodes.map((node) => [node.id, node.revision || 1]))
+    edgeRevisionMap.value = Object.fromEntries(serverEdges.map((edge) => [edge.id, edge.revision || 1]))
+  } finally {
+    nextTick(() => {
+      suppressCanvasSaveScheduling = false
+    })
+  }
+}
+
+function buildServerIdMap(items) {
+  const idMap = new Map()
+  items.forEach((item) => {
+    const id = String(item?.id || '')
+    const clientId = String(item?.data?.clientId || '')
+    if (id && clientId && id !== clientId) idMap.set(clientId, id)
+  })
+  return idMap
+}
+
+function remapPromptEditorMaps(previousId, nextId) {
+  if (!previousId || !nextId || previousId === nextId) return
+  remapMapKey(directPromptEditorElements, previousId, nextId)
+  remapMapKey(directPromptEditorSignatures, previousId, nextId)
+}
+
+function remapMapKey(map, previousId, nextId) {
+  if (!map.has(previousId) || map.has(nextId)) return
+  const value = map.get(previousId)
+  map.delete(previousId)
+  map.set(nextId, value)
+}
+
 function mapBackendNodeToDirectNode(node) {
   const data = node?.data || {}
   const directType = normalizeBackendDirectType(node.nodeType, data.directType)
@@ -1188,6 +1363,7 @@ function mapBackendNodeToDirectNode(node) {
     height: Number(node.size?.height || size.height),
     actions: Array.isArray(data.actions) ? data.actions : getDirectNodeActions(directType),
     prompt: data.prompt || data.body || '',
+    promptSegments: normalizePromptSegments(data.promptSegments, data),
     promptPlaceholder: data.promptPlaceholder || getDirectNodePrompt(directType),
     media: data.media || null,
     upload: data.upload || null,
@@ -1197,6 +1373,7 @@ function mapBackendNodeToDirectNode(node) {
     aspectRatio: data.aspectRatio || fallbackImageAspectRatioOptions[0],
     referenceImages: normalizeManualReferenceImages(data.referenceImages),
     referenceOrder: Array.isArray(data.referenceOrder) ? data.referenceOrder : [],
+    referenceMentions: normalizeReferenceMentions(data.referenceMentions),
     generationStatus: data.generationStatus || node.status || 'idle',
     generationMessage: data.generationMessage || '',
     generationTaskId: data.generationTaskId || '',
@@ -1245,6 +1422,25 @@ function flushDeferredCanvasSave(delay = 180) {
   scheduleCanvasSave(delay)
 }
 
+function hasActiveCanvasInteraction() {
+  return (
+    directDrag.active ||
+    directConnection.active ||
+    selectionBox.active ||
+    addMenu.visible ||
+    referenceMenu.visible ||
+    contextMenu.visible ||
+    uploadDialogOpening ||
+    Boolean(activeRailPanel.value)
+  )
+}
+
+function flushDeferredInteractionSave(delay = 650) {
+  if (!saveAfterActiveInteraction.value || hasActiveCanvasInteraction()) return
+  saveAfterActiveInteraction.value = false
+  scheduleCanvasSave(delay)
+}
+
 function isDirectTextEditing() {
   return Boolean(activeTextEditNodeId.value)
 }
@@ -1254,6 +1450,20 @@ function startDirectTextEdit(nodeId) {
   window.clearTimeout(autoSaveTimer)
 }
 
+function registerDirectPromptEditor(nodeId, element, node = null) {
+  if (element instanceof HTMLElement) {
+    directPromptEditorElements.set(nodeId, element)
+    const signature = getPromptEditorSignature(node)
+    if (activeTextEditNodeId.value !== nodeId && directPromptEditorSignatures.get(nodeId) !== signature) {
+      hydrateDirectPromptEditor(element, node)
+      directPromptEditorSignatures.set(nodeId, signature)
+    }
+  } else {
+    directPromptEditorElements.delete(nodeId)
+    directPromptEditorSignatures.delete(nodeId)
+  }
+}
+
 function markDirectTextEditDirty() {
   if (!isDirectTextEditing()) return
   saveAfterTextEdit.value = true
@@ -1261,18 +1471,342 @@ function markDirectTextEditDirty() {
   window.clearTimeout(autoSaveTimer)
 }
 
+function handleDirectPromptInput(nodeId, event) {
+  const editor = event.currentTarget
+  const segments = extractPromptEditorSegments(editor)
+  updateDirectNode(nodeId, {
+    prompt: getPromptTextFromSegments(segments),
+    promptSegments: segments,
+    referenceMentions: getReferenceMentionsFromSegments(segments)
+  })
+  directPromptEditorSignatures.set(nodeId, getPromptEditorSignature({ promptSegments: segments, prompt: getPromptTextFromSegments(segments) }))
+  saveDirectPromptSelection(nodeId, event)
+  markDirectTextEditDirty()
+}
+
+function handleDirectPromptPaste(nodeId, event) {
+  event.preventDefault()
+  const text = event.clipboardData?.getData('text/plain') || ''
+  insertPlainTextAtSelection(text)
+  handleDirectPromptInput(nodeId, event)
+}
+
+function insertPlainTextAtSelection(text) {
+  const selection = window.getSelection?.()
+  if (!selection || selection.rangeCount === 0) return
+  selection.deleteFromDocument()
+  const range = selection.getRangeAt(0)
+  const textNode = document.createTextNode(text)
+  range.insertNode(textNode)
+  range.setStartAfter(textNode)
+  range.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
+function focusDirectPromptEditor(nodeId) {
+  const editor = directPromptEditorElements.get(nodeId)
+  if (!editor) return
+  editor.focus({ preventScroll: true })
+  if (!restoreDirectPromptSelection(nodeId)) {
+    const range = placeCaretAtEnd(editor)
+    if (range) {
+      promptEditorSelection.nodeId = nodeId
+      promptEditorSelection.range = range.cloneRange()
+    }
+  }
+}
+
+function handlePromptFieldPointerDown(nodeId, event) {
+  const target = event?.target instanceof HTMLElement ? event.target : null
+  if (target?.closest?.('.direct-workflow-node__prompt')) return
+  focusDirectPromptEditor(nodeId)
+}
+
+function isDirectPromptEditTarget(target) {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(target.closest('.direct-workflow-node__prompt-field, .direct-workflow-node__references, .direct-workflow-node__generation-controls'))
+  )
+}
+
+function handleDirectNodeSelectStart(event) {
+  if (isDirectPromptEditTarget(event.target)) return
+  event.preventDefault()
+}
+
+function hydrateDirectPromptEditor(element, node = null) {
+  element.replaceChildren()
+  normalizePromptSegments(node?.promptSegments, node).forEach((segment) => {
+    if (segment.type === 'reference') {
+      element.appendChild(createPromptReferenceToken(segment, node?.id))
+      return
+    }
+    element.appendChild(document.createTextNode(segment.text || ''))
+  })
+}
+
+function createPromptReferenceToken(mention, nodeId = '') {
+  const token = document.createElement('span')
+  token.className = 'direct-workflow-node__mention-chip'
+  token.contentEditable = 'false'
+  token.draggable = false
+  token.dataset.promptToken = 'reference'
+  token.dataset.mentionId = mention.id || `reference-mention-${Date.now()}-${Math.round(Math.random() * 10000)}`
+  token.dataset.referenceId = mention.referenceId || ''
+  token.dataset.label = mention.label || '图片'
+
+  const reference = getDirectImageReferenceItems(nodeId).find((item) => item.id === token.dataset.referenceId)
+  const previewUrl = mention.previewUrl || reference?.previewUrl || reference?.url || ''
+  if (previewUrl) {
+    const image = document.createElement('img')
+    image.src = previewUrl
+    image.alt = ''
+    image.draggable = false
+    token.appendChild(image)
+  }
+  const label = document.createElement('span')
+  label.textContent = token.dataset.label
+  token.appendChild(label)
+  return token
+}
+
+function extractPromptEditorSegments(element) {
+  if (!(element instanceof HTMLElement)) return []
+  const segments = []
+  const appendText = (text) => {
+    const normalized = String(text || '').replace(/\u00a0/g, ' ')
+    if (!normalized) return
+    const previous = segments.at(-1)
+    if (previous?.type === 'text') {
+      previous.text += normalized
+    } else {
+      segments.push({ type: 'text', text: normalized })
+    }
+  }
+  element.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) {
+      appendText(child.textContent)
+      return
+    }
+    if (!(child instanceof HTMLElement)) return
+    if (child.dataset.promptToken === 'reference' || child.classList.contains('direct-workflow-node__mention-chip')) {
+      segments.push({
+        type: 'reference',
+        id: child.dataset.mentionId || `reference-mention-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+        referenceId: child.dataset.referenceId || '',
+        label: child.dataset.label || child.innerText || '图片'
+      })
+      return
+    }
+    appendText(child.innerText || child.textContent)
+  })
+  return normalizePromptSegments(segments)
+}
+
+function getPromptTextFromSegments(segments) {
+  return normalizePromptSegments(segments)
+    .filter((segment) => segment.type === 'text')
+    .map((segment) => segment.text)
+    .join('')
+}
+
+function getReferenceMentionsFromSegments(segments) {
+  return normalizePromptSegments(segments)
+    .filter((segment) => segment.type === 'reference')
+    .map((segment) => ({
+      id: segment.id,
+      referenceId: segment.referenceId,
+      label: segment.label
+    }))
+}
+
+function getPromptEditorSignature(node = null) {
+  return JSON.stringify(normalizePromptSegments(node?.promptSegments, node))
+}
+
+function isDirectPromptEditorEmpty(node) {
+  return normalizePromptSegments(node?.promptSegments, node).length === 0
+}
+
+function findPreviousPromptToken(editor, range) {
+  let node = range.startContainer
+  let offset = range.startOffset
+  if (node.nodeType === Node.TEXT_NODE && offset > 0) return null
+  if (node.nodeType === Node.ELEMENT_NODE && offset > 0) {
+    const child = node.childNodes[offset - 1]
+    const token = findLastTokenInside(child)
+    if (token) return token
+  }
+  while (node && node !== editor) {
+    let previous = node.previousSibling
+    while (previous) {
+      const token = findLastTokenInside(previous)
+      if (token) return token
+      if (getNodeTextLength(previous) > 0) return null
+      previous = previous.previousSibling
+    }
+    node = node.parentNode
+  }
+  return null
+}
+
+function findNextPromptToken(editor, range) {
+  let node = range.startContainer
+  let offset = range.startOffset
+  if (node.nodeType === Node.TEXT_NODE && offset < String(node.textContent || '').length) return null
+  if (node.nodeType === Node.ELEMENT_NODE && offset < node.childNodes.length) {
+    const child = node.childNodes[offset]
+    const token = findFirstTokenInside(child)
+    if (token) return token
+  }
+  while (node && node !== editor) {
+    let next = node.nextSibling
+    while (next) {
+      const token = findFirstTokenInside(next)
+      if (token) return token
+      if (getNodeTextLength(next) > 0) return null
+      next = next.nextSibling
+    }
+    node = node.parentNode
+  }
+  return null
+}
+
+function findLastTokenInside(node) {
+  if (!(node instanceof HTMLElement) && node?.nodeType !== Node.TEXT_NODE) return null
+  if (node instanceof HTMLElement && node.classList.contains('direct-workflow-node__mention-chip')) return node
+  if (!(node instanceof HTMLElement)) return null
+  for (let index = node.childNodes.length - 1; index >= 0; index -= 1) {
+    const token = findLastTokenInside(node.childNodes[index])
+    if (token) return token
+  }
+  return null
+}
+
+function findFirstTokenInside(node) {
+  if (!(node instanceof HTMLElement) && node?.nodeType !== Node.TEXT_NODE) return null
+  if (node instanceof HTMLElement && node.classList.contains('direct-workflow-node__mention-chip')) return node
+  if (!(node instanceof HTMLElement)) return null
+  for (const child of node.childNodes) {
+    const token = findFirstTokenInside(child)
+    if (token) return token
+  }
+  return null
+}
+
+function getNodeTextLength(node) {
+  return String(node?.textContent || '').length
+}
+
+function saveDirectPromptSelection(nodeId, event = null) {
+  const editor = directPromptEditorElements.get(nodeId)
+  const selection = window.getSelection?.()
+  if (!editor || !selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return
+  promptEditorSelection.nodeId = nodeId
+  promptEditorSelection.range = range.cloneRange()
+}
+
+function restoreDirectPromptSelection(nodeId) {
+  const editor = directPromptEditorElements.get(nodeId)
+  const selection = window.getSelection?.()
+  if (!editor || !selection) return false
+  const savedRange = promptEditorSelection.nodeId === nodeId ? promptEditorSelection.range : null
+  if (!savedRange || !editor.contains(savedRange.startContainer) || !editor.contains(savedRange.endContainer)) return false
+  selection.removeAllRanges()
+  selection.addRange(savedRange)
+  return true
+}
+
+function placeCaretAtEnd(element) {
+  const selection = window.getSelection?.()
+  const range = document.createRange?.()
+  if (!selection || !range) return null
+  range.selectNodeContents(element)
+  range.collapse(false)
+  selection.removeAllRanges()
+  selection.addRange(range)
+  return range
+}
+
+function handleDirectPromptKeydown(nodeId, event) {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault()
+    event.stopPropagation()
+    finishDirectTextEdit()
+    return
+  }
+  if (event.key !== 'Backspace' && event.key !== 'Delete') {
+    event.stopPropagation()
+    return
+  }
+  const editor = directPromptEditorElements.get(nodeId)
+  if (!editor || removeAdjacentPromptToken(editor, event.key === 'Backspace' ? 'backward' : 'forward') === false) {
+    event.stopPropagation()
+    return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  handleDirectPromptInput(nodeId, { currentTarget: editor })
+}
+
+function removeAdjacentPromptToken(editor, direction) {
+  const selection = window.getSelection?.()
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return false
+  const range = selection.getRangeAt(0)
+  if (!editor.contains(range.startContainer)) return false
+  const token = direction === 'backward' ? findPreviousPromptToken(editor, range) : findNextPromptToken(editor, range)
+  if (!token) return false
+  const nextRange = document.createRange()
+  if (direction === 'backward') {
+    nextRange.setStartBefore(token)
+  } else {
+    nextRange.setStartAfter(token)
+  }
+  token.remove()
+  nextRange.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(nextRange)
+  return true
+}
+
 function finishDirectTextEdit() {
   if (!isDirectTextEditing()) return
+  const nodeId = activeTextEditNodeId.value
+  const editor = directPromptEditorElements.get(nodeId)
+  if (editor) {
+    const segments = extractPromptEditorSegments(editor)
+    updateDirectNode(nodeId, {
+      prompt: getPromptTextFromSegments(segments),
+      promptSegments: segments,
+      referenceMentions: getReferenceMentionsFromSegments(segments)
+    })
+  }
   activeTextEditNodeId.value = ''
   if (!saveAfterTextEdit.value) return
   saveAfterTextEdit.value = false
-  scheduleCanvasSave(220)
+  scheduleCanvasSave(700)
 }
 
 function scheduleCanvasSave(delay = 1200) {
+  if (suppressCanvasSaveScheduling) return
   if (isHydratingCanvas.value || !activeCanvas.value?.id) return
+  if (isSavingCanvas.value) {
+    saveAfterCurrentSave.value = true
+    saveStatus.value = 'dirty'
+    window.clearTimeout(autoSaveTimer)
+    return
+  }
   if (isDirectTextEditing()) {
     saveAfterTextEdit.value = true
+    saveStatus.value = 'dirty'
+    window.clearTimeout(autoSaveTimer)
+    return
+  }
+  if (hasActiveCanvasInteraction()) {
+    saveAfterActiveInteraction.value = true
     saveStatus.value = 'dirty'
     window.clearTimeout(autoSaveTimer)
     return
@@ -1291,9 +1825,22 @@ function scheduleCanvasSave(delay = 1200) {
 }
 
 async function saveCanvasNow() {
+  if (suppressCanvasSaveScheduling) return
   if (isHydratingCanvas.value || !activeCanvas.value?.id) return
+  if (isSavingCanvas.value) {
+    saveAfterCurrentSave.value = true
+    saveStatus.value = 'dirty'
+    window.clearTimeout(autoSaveTimer)
+    return
+  }
   if (isDirectTextEditing()) {
     saveAfterTextEdit.value = true
+    saveStatus.value = 'dirty'
+    window.clearTimeout(autoSaveTimer)
+    return
+  }
+  if (hasActiveCanvasInteraction()) {
+    saveAfterActiveInteraction.value = true
     saveStatus.value = 'dirty'
     window.clearTimeout(autoSaveTimer)
     return
@@ -1307,39 +1854,29 @@ async function saveCanvasNow() {
   }
   window.clearTimeout(autoSaveTimer)
   const savePlan = buildCanvasSavePlan()
-  const selectionSnapshot = captureDirectSelection()
+  isSavingCanvas.value = true
   saveStatus.value = 'saving'
   try {
     const response = await saveSluvoCanvasBatch(activeCanvas.value.id, savePlan.payload)
     const omittedEdges = savePlan.omittedEdges
     const renamedProject = await syncActiveProjectTitle(savePlan.payload.title)
-    if (isDirectTextEditing()) {
-      syncCanvasRevisionState(response)
-      saveAfterTextEdit.value = true
-      saveStatus.value = 'dirty'
-      return
-    }
-    isHydratingCanvas.value = true
-    hydrateCanvasWorkspace({
+    syncCanvasSaveResultToLocal({
       ...response,
       project: renamedProject || response?.project || projectStore.activeProject
     })
-    restoreDirectSelection(selectionSnapshot)
-    if (omittedEdges.length > 0) {
-      directEdges.value = [...directEdges.value, ...mapOmittedEdgesAfterHydration(omittedEdges)]
-      saveAfterHydration.value = true
-    }
-    saveStatus.value = 'saved'
-    if (saveAfterHydration.value) {
-      saveAfterHydration.value = false
-      nextTick(() => {
-        isHydratingCanvas.value = false
-        scheduleCanvasSave(180)
-      })
+    if (omittedEdges.length > 0) saveAfterCurrentSave.value = true
+    if (
+      saveAfterCurrentSave.value ||
+      saveAfterActiveInteraction.value ||
+      saveAfterTextEdit.value ||
+      saveAfterUploads.value ||
+      hasActiveCanvasInteraction() ||
+      isDirectTextEditing() ||
+      hasActiveCanvasUploads()
+    ) {
+      saveStatus.value = 'dirty'
     } else {
-      nextTick(() => {
-        isHydratingCanvas.value = false
-      })
+      saveStatus.value = 'saved'
     }
   } catch (error) {
     if (error instanceof SluvoRevisionConflictError) {
@@ -1350,6 +1887,17 @@ async function saveCanvasNow() {
     }
     saveStatus.value = 'error'
     showToast(error instanceof Error ? error.message : '画布保存失败')
+  } finally {
+    isSavingCanvas.value = false
+    if (saveStatus.value === 'dirty') {
+      const shouldWaitForInteraction = saveAfterActiveInteraction.value || hasActiveCanvasInteraction()
+      const shouldWaitForText = saveAfterTextEdit.value || isDirectTextEditing()
+      const shouldWaitForUpload = saveAfterUploads.value || hasActiveCanvasUploads()
+      saveAfterCurrentSave.value = false
+      if (!shouldWaitForInteraction && !shouldWaitForText && !shouldWaitForUpload) {
+        nextTick(() => scheduleCanvasSave(900))
+      }
+    }
   }
 }
 
@@ -1438,6 +1986,7 @@ function serializeDirectNodeForSave(node, index = 0) {
       actions: node.actions || [],
       prompt: node.prompt || '',
       body: node.prompt || '',
+      promptSegments: normalizePromptSegments(node.promptSegments, node),
       promptPlaceholder: node.promptPlaceholder || '',
       media,
       upload: node.upload || null,
@@ -1452,6 +2001,7 @@ function serializeDirectNodeForSave(node, index = 0) {
           previewUrl: item.previewUrl?.startsWith('blob:') ? '' : item.previewUrl
         })),
       referenceOrder: Array.isArray(node.referenceOrder) ? node.referenceOrder : [],
+      referenceMentions: normalizeReferenceMentions(node.referenceMentions),
       generationStatus: node.generationStatus || 'idle',
       generationMessage: node.generationMessage || '',
       generationTaskId: node.generationTaskId || '',
@@ -1679,7 +2229,6 @@ function handleGlobalUndoShortcut(event) {
     event?.__sluvoUndoHandled ||
     !command ||
     event?.key?.toLowerCase?.() !== 'z' ||
-    event.shiftKey ||
     shouldIgnoreDeleteEventTarget(event.target)
   ) {
     return false
@@ -1692,7 +2241,11 @@ function handleGlobalUndoShortcut(event) {
   if (!undoShortcutLocked && !event.repeat && window.performance.now() - lastUndoShortcutAt > 180) {
     undoShortcutLocked = true
     lastUndoShortcutAt = window.performance.now()
-    undoLastChange()
+    if (event.shiftKey) {
+      redoLastChange()
+    } else {
+      undoLastChange()
+    }
   }
   return true
 }
@@ -1707,6 +2260,15 @@ function updateFrameSize() {
   const rect = canvasFrame.value?.getBoundingClientRect?.()
   frameSize.width = Math.max(rect?.width || window.innerWidth || 1, 1)
   frameSize.height = Math.max(rect?.height || window.innerHeight || 1, 1)
+  scheduleDirectPortLayoutRefresh()
+}
+
+function scheduleDirectPortLayoutRefresh() {
+  window.cancelAnimationFrame(directPortLayoutRaf)
+  directPortLayoutRaf = window.requestAnimationFrame(() => {
+    directPortLayoutRaf = 0
+    directPortLayoutRevision.value += 1
+  })
 }
 
 function updateCanvasSpotlight(event) {
@@ -1961,6 +2523,10 @@ function handleKeydown(event) {
   }
 
   if (event.key === 'Escape') {
+    if (imagePreview.visible) {
+      closeImagePreview()
+      return
+    }
     closeFloatingPanels()
   }
 
@@ -1987,7 +2553,10 @@ function handleKeyup(event) {
 }
 
 function isTypingTarget(target) {
-  return target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+  return (
+    target instanceof HTMLElement &&
+    (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || Boolean(target.closest('[contenteditable="true"]')))
+  )
 }
 
 function handleFramePointerDown(event) {
@@ -2092,6 +2661,7 @@ function handleWindowPointerUp(event) {
   if (directDrag.active) {
     directDrag.active = false
     directDrag.originals = []
+    flushDeferredInteractionSave()
     return
   }
 
@@ -2108,6 +2678,7 @@ function handleWindowPointerUp(event) {
   if (activeDirectNodeId.value) focusDeleteKeySink()
   suppressNextPaneClick.value = wasDraggingSelection
   selectionBox.active = false
+  flushDeferredInteractionSave()
 }
 
 function startDirectConnection(event, nodeId, side = 'right') {
@@ -2156,6 +2727,7 @@ function finishDirectConnection(event) {
     focusedDirectNodeId.value = targetId
     lastTouchedDirectNodeId.value = targetId
     showToast('\u5df2\u8fde\u63a5\u8282\u70b9')
+    flushDeferredInteractionSave()
     return
   }
 
@@ -2208,6 +2780,7 @@ function upsertDirectEdge(sourceId, targetId) {
 }
 
 function getDirectEdgePath(edge) {
+  directPortLayoutRevision.value
   const sourceNode = directNodes.value.find((node) => node.id === edge.sourceId)
   const targetNode = directNodes.value.find((node) => node.id === edge.targetId)
   if (!sourceNode || !targetNode) return ''
@@ -2250,25 +2823,40 @@ function buildDirectCurvePath(source, target, sourceSide = 'right', targetSide =
 }
 
 function getDirectNodePortPosition(node, side) {
-  const domPosition = getDirectNodePortDomPosition(node.id, side)
+  const domPosition = getDirectNodePortLocalDomPosition(node.id, side)
   if (domPosition) return domPosition
 
+  return getDirectNodePortFlowPosition(node, side)
+}
+
+function getDirectNodePortFlowPosition(node, side) {
   return {
     x: side === 'right' ? node.x + getDirectNodeSize(node.type).width : node.x,
     y: node.y + getDirectNodePortOffsetY(node.type)
   }
 }
 
-function getDirectNodePortDomPosition(nodeId, side) {
+function getDirectNodePortLocalDomPosition(nodeId, side) {
   const nodeElement = directNodeElements.get(nodeId)
   const portElement = nodeElement?.querySelector?.(`.direct-workflow-node__port--${side}`)
-  const rect = portElement?.getBoundingClientRect?.()
-  if (!rect) return null
+  if (!nodeElement || !portElement) return null
 
-  return screenToFlowCoordinate({
-    x: rect.left + rect.width / 2,
-    y: rect.top + rect.height / 2
-  })
+  let left = 0
+  let top = 0
+  let current = portElement
+  while (current && current !== nodeElement) {
+    left += current.offsetLeft || 0
+    top += current.offsetTop || 0
+    current = current.offsetParent
+  }
+  if (current !== nodeElement) return null
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!node) return null
+
+  return {
+    x: node.x + left + portElement.offsetWidth / 2,
+    y: node.y + top
+  }
 }
 
 function getDirectNodePortOffsetY(type) {
@@ -2291,6 +2879,16 @@ function flowToScreenCoordinate(point) {
 function handleDirectNodePointerDown(event, nodeId) {
   if (event.button !== 0) return
   closeFloatingPanels()
+  if (isDirectPromptEditTarget(event.target)) {
+    focusedDirectNodeId.value = nodeId
+    activeDirectNodeId.value = nodeId
+    lastTouchedDirectNodeId.value = nodeId
+    if (!selectedDirectNodeIds.value.includes(nodeId)) {
+      selectedDirectNodeIds.value = [nodeId]
+    }
+    canvasStore.clearSelection()
+    return
+  }
   event.preventDefault()
   canvasFrame.value?.focus?.({ preventScroll: true })
   focusedDirectNodeId.value = nodeId
@@ -2399,18 +2997,60 @@ function handlePaneClick() {
   selectedDirectNodeIds.value = []
 }
 
-function handlePaneContextMenu(event) {
+function handleCanvasContextMenu(event) {
   event.preventDefault()
-  openAddMenuAtEvent(event)
+  event.stopPropagation()
+  const target = event.target instanceof Element ? event.target : null
+  if (!isCanvasContextMenuTarget(target)) {
+    contextMenu.visible = false
+    return
+  }
+  openCanvasContextMenu(event)
+}
+
+function isCanvasContextMenuTarget(target) {
+  if (!target || !canvasFrame.value?.contains?.(target)) return false
+  return !target.closest(
+    [
+      '.direct-workflow-node',
+      '.vue-flow__node',
+      '.direct-workflow-node__fixed-panel',
+      '.generated-image__preview',
+      '.uploaded-asset',
+      '.add-node-menu',
+      '.libtv-topbar',
+      '.canvas-tool-rail',
+      '.canvas-bottom-controls',
+      '.canvas-minimap',
+      '.rail-panel',
+      '.history-overlay',
+      '.library-picker-overlay',
+      '.starter-strip',
+      '.canvas-help-panel',
+      '.canvas-context-menu',
+      '.image-preview-overlay'
+    ].join(', ')
+  )
+}
+
+function openCanvasContextMenu(event) {
+  if (!event || typeof event.clientX !== 'number') return
+  closeFloatingPanels()
+  contextMenu.visible = true
+  contextMenu.screen = clampMenuPosition({ x: event.clientX, y: event.clientY }, 246, 176)
+  contextMenu.flow = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
+}
+
+function handlePaneContextMenu(event) {
+  event.preventDefault?.()
+  const sourceEvent = event?.event || event
+  openCanvasContextMenu(sourceEvent)
 }
 
 function handleNodeContextMenu({ event, node }) {
   event.preventDefault()
-  closeAddMenu()
-  selectOnly(node.id)
-  contextMenu.visible = true
-  contextMenu.screen = clampMenuPosition({ x: event.clientX, y: event.clientY }, 180, 132)
-  contextMenu.flow = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
+  contextMenu.visible = false
+  if (node?.id) selectOnly(node.id)
 }
 
 function handleNodeDoubleClick({ node }) {
@@ -2472,10 +3112,12 @@ function closeFloatingPanels(clearPendingConnection = true) {
     pendingDirectConnection.start = { x: 0, y: 0 }
     pendingDirectConnection.point = { x: 0, y: 0 }
   }
+  nextTick(() => flushDeferredInteractionSave())
 }
 
 function closeAddMenu() {
   addMenu.visible = false
+  nextTick(() => flushDeferredInteractionSave())
 }
 
 function toggleRailPanel(panel) {
@@ -2488,6 +3130,7 @@ function toggleRailPanel(panel) {
 
 function closeRailPanel() {
   activeRailPanel.value = ''
+  nextTick(() => flushDeferredInteractionSave())
 }
 
 function handleStarterSelect(type) {
@@ -3073,7 +3716,9 @@ function removeManualReferenceImage(nodeId, referenceId) {
   if (reference?.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(reference.previewUrl)
   updateDirectNode(nodeId, {
     referenceImages: normalizeManualReferenceImages(node?.referenceImages).filter((item) => item.id !== referenceId),
-    referenceOrder: (node?.referenceOrder || []).filter((id) => id !== referenceId)
+    referenceOrder: (node?.referenceOrder || []).filter((id) => id !== referenceId),
+    referenceMentions: normalizeReferenceMentions(node?.referenceMentions).filter((item) => item.referenceId !== referenceId),
+    promptSegments: normalizePromptSegments(node?.promptSegments, node).filter((item) => item.type !== 'reference' || item.referenceId !== referenceId)
   })
   scheduleCanvasSave(180)
 }
@@ -3313,6 +3958,20 @@ function getUploadedImageSrc(node) {
   return getLocalUploadPreviewUrl(node) || media.previewUrl || media.thumbnailUrl || media.url || ''
 }
 
+function getGeneratedImageSrc(node) {
+  const image = node?.generatedImage || {}
+  return normalizeDisplayImageSrc(image.url || image.previewUrl || image.thumbnailUrl || '')
+}
+
+function normalizeDisplayImageSrc(value) {
+  const source = String(value || '').trim()
+  if (!source) return ''
+  if (source.startsWith('//')) return `${window.location.protocol}${source}`
+  if (/^(https?:|data:image\/|blob:)/i.test(source)) return source
+  if (source.startsWith('/')) return buildApiUrl(source)
+  return source
+}
+
 function handleUploadedImageError(nodeId) {
   const node = directNodes.value.find((item) => item.id === nodeId)
   const localPreviewUrl = getLocalUploadPreviewUrl(node)
@@ -3331,6 +3990,84 @@ function handleUploadedImageError(nodeId) {
         }
       : item
   )
+}
+
+async function handleGeneratedImageError(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const image = node?.generatedImage || {}
+  const currentUrl = normalizeDisplayImageSrc(image.url)
+  const fallbackUrl = normalizeDisplayImageSrc(image.previewUrl || image.thumbnailUrl)
+
+  if (fallbackUrl && fallbackUrl !== currentUrl) {
+    updateDirectNode(nodeId, {
+      generatedImage: {
+        ...image,
+        url: fallbackUrl
+      }
+    })
+    return
+  }
+
+  const recordImage = image.recordId ? await fetchRecordImageResult(image.recordId) : null
+  const nextUrl = normalizeDisplayImageSrc(recordImage?.url)
+  if (nextUrl && nextUrl !== currentUrl) {
+    updateDirectNode(nodeId, {
+      generationStatus: 'success',
+      generationMessage: '图片生成完成',
+      generatedImage: {
+        ...image,
+        ...recordImage,
+        url: nextUrl
+      }
+    })
+    return
+  }
+
+  updateDirectNode(nodeId, {
+    generationStatus: 'error',
+    generationMessage: '图片已生成，但当前地址无法加载，请稍后在历史记录中查看'
+  })
+}
+
+function previewGeneratedImage(node) {
+  const url = getGeneratedImageSrc(node)
+  if (!url) return
+  imagePreview.url = url
+  imagePreview.alt = node?.generatedImage?.prompt || node?.title || '图片预览'
+  imagePreview.visible = true
+}
+
+function closeImagePreview() {
+  imagePreview.visible = false
+  imagePreview.url = ''
+  imagePreview.alt = ''
+}
+
+function downloadGeneratedImage(node) {
+  const url = getGeneratedImageSrc(node)
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = buildGeneratedImageFilename(node)
+  link.rel = 'noopener noreferrer'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+function buildGeneratedImageFilename(node) {
+  const image = node?.generatedImage || {}
+  const base = String(node?.title || 'sluvo-image').trim().replace(/[\\/:*?"<>|\s]+/g, '-')
+  const extension = inferImageExtension(image.url || image.thumbnailUrl || '')
+  return `${base || 'sluvo-image'}${extension}`
+}
+
+function inferImageExtension(url) {
+  const source = String(url || '').split('?')[0].toLowerCase()
+  if (source.includes('image/png') || source.endsWith('.png')) return '.png'
+  if (source.includes('image/webp') || source.endsWith('.webp')) return '.webp'
+  if (source.includes('image/gif') || source.endsWith('.gif')) return '.gif'
+  return '.jpg'
 }
 
 function rememberLocalUploadPreview(nodeId, previewUrl) {
@@ -3657,6 +4394,55 @@ function normalizeManualReferenceImages(value) {
     .filter(Boolean)
 }
 
+function normalizeReferenceMentions(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((item, index) => {
+      const referenceId = String(item?.referenceId || item?.reference_id || '')
+      const label = String(item?.label || item?.name || `图片${index + 1}`)
+      return {
+        id: String(item?.id || `${referenceId || label || 'reference'}-${index}`),
+        referenceId,
+        label
+      }
+    })
+    .filter((item) => item.referenceId || item.label)
+}
+
+function normalizePromptSegments(value, fallback = null) {
+  const segments = Array.isArray(value)
+    ? value
+    : [
+        ...normalizeReferenceMentions(fallback?.referenceMentions).map((mention) => ({ type: 'reference', ...mention })),
+        ...(String(fallback?.prompt || fallback?.body || '') ? [{ type: 'text', text: String(fallback?.prompt || fallback?.body || '') }] : [])
+      ]
+  const normalized = []
+  segments.forEach((segment, index) => {
+    const type = segment?.type === 'reference' ? 'reference' : 'text'
+    if (type === 'reference') {
+      const referenceId = String(segment.referenceId || segment.reference_id || '')
+      const label = String(segment.label || segment.name || `图片${index + 1}`)
+      if (!referenceId && !label) return
+      normalized.push({
+        type: 'reference',
+        id: String(segment.id || `${referenceId || label || 'reference'}-${index}`),
+        referenceId,
+        label,
+        previewUrl: segment.previewUrl || segment.url || ''
+      })
+      return
+    }
+    const text = String(segment?.text ?? segment?.value ?? '')
+    if (!text) return
+    const previous = normalized.at(-1)
+    if (previous?.type === 'text') {
+      previous.text += text
+    } else {
+      normalized.push({ type: 'text', text })
+    }
+  })
+  return normalized
+}
+
 function getDirectImageReferenceItems(nodeId) {
   const node = directNodes.value.find((item) => item.id === nodeId)
   const connected = directEdges.value
@@ -3695,6 +4481,19 @@ function getDirectImageReferenceItems(nodeId) {
   return [...ordered, ...items.filter((item) => !orderedIds.has(item.id))]
 }
 
+function getReferenceMentionItems(node) {
+  const references = getDirectImageReferenceItems(node?.id)
+  const referenceMap = new Map(references.map((reference, index) => [reference.id, { ...reference, label: `图片${index + 1}` }]))
+  return normalizeReferenceMentions(node?.referenceMentions).map((mention, index) => {
+    const reference = referenceMap.get(mention.referenceId)
+    return {
+      ...mention,
+      label: mention.label || reference?.label || `图片${index + 1}`,
+      previewUrl: reference?.previewUrl || reference?.url || ''
+    }
+  })
+}
+
 function getReferenceAspectRatio(reference) {
   const width = Number(reference?.width || 0)
   const height = Number(reference?.height || 0)
@@ -3705,12 +4504,52 @@ function getReferenceAspectRatio(reference) {
 function insertReferenceToken(nodeId, index) {
   const node = directNodes.value.find((item) => item.id === nodeId)
   if (!node) return
-  const token = `@参考图${index + 1}`
-  const prompt = String(node.prompt || '').trim()
-  updateDirectNode(nodeId, {
-    prompt: prompt ? `${prompt} ${token}` : token
-  })
-  showToast(`已引用${token}`)
+  const reference = getDirectImageReferenceItems(nodeId)[index]
+  if (!reference) return
+  const label = `图片${index + 1}`
+  const mention = {
+    type: 'reference',
+    id: `reference-mention-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+    referenceId: reference.id,
+    label,
+    previewUrl: reference.previewUrl || reference.url || ''
+  }
+  rememberHistory()
+  insertPromptReferenceAtCaret(nodeId, mention)
+  scheduleCanvasSave(180)
+  showToast(`已引用${label}`)
+}
+
+function insertPromptReferenceAtCaret(nodeId, mention) {
+  const editor = directPromptEditorElements.get(nodeId)
+  if (!editor) {
+    const node = directNodes.value.find((item) => item.id === nodeId)
+    const segments = [...normalizePromptSegments(node?.promptSegments, node), mention]
+    updateDirectNode(nodeId, {
+      promptSegments: segments,
+      prompt: getPromptTextFromSegments(segments),
+      referenceMentions: getReferenceMentionsFromSegments(segments)
+    })
+    return
+  }
+
+  editor.focus({ preventScroll: true })
+  if (!restoreDirectPromptSelection(nodeId)) {
+    placeCaretAtEnd(editor)
+  }
+  const selection = window.getSelection?.()
+  if (!selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  range.deleteContents()
+  const token = createPromptReferenceToken(mention, nodeId)
+  range.insertNode(token)
+  const afterRange = document.createRange()
+  afterRange.setStartAfter(token)
+  afterRange.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(afterRange)
+  saveDirectPromptSelection(nodeId)
+  handleDirectPromptInput(nodeId, { currentTarget: editor })
 }
 
 function getImageModelLabel(modelId) {
@@ -3788,6 +4627,14 @@ function syncImageNodeSettings(node) {
   updateDirectNode(node.id, patch)
 }
 
+function getDirectNodeZIndex(node, index = 0) {
+  const base = index + 1
+  if (node?.id && node.id === activeDirectNodeId.value) return 160
+  if (node?.id && selectedDirectNodeIds.value.includes(node.id)) return 150
+  if (node?.id && node.id === focusedDirectNodeId.value) return 140
+  return base
+}
+
 function getImageGenerationPoints(node) {
   const modelId = node?.imageModelId || fallbackImageModelOptions[0].id
   const model = findImageModelOption(modelId)
@@ -3845,7 +4692,7 @@ async function runDirectImageNode(node) {
     imageQuality: quality,
     aspectRatio,
     generationStatus: 'running',
-    generationMessage: '正在提交图片生成任务',
+    generationMessage: '生成中...',
     generationTaskId: '',
     generationRecordId: '',
     generatedImage: null
@@ -3854,7 +4701,7 @@ async function runDirectImageNode(node) {
   try {
     const response = await submitCreativeImage({
       ownership_mode: 'standalone',
-      mode: 'text_to_image',
+      mode: getImageGenerationType(node),
       model_code: modelCode,
       resolution,
       quality: hasImageField(node, 'quality') ? quality : undefined,
@@ -3869,11 +4716,12 @@ async function runDirectImageNode(node) {
 
     const result = extractImageGenerationResult(response)
     const recordImage = !result.url && result.recordId ? await fetchRecordImageResult(result.recordId) : null
-    const directUrl = result.url || recordImage?.url
+    const directUrl = result.url || result.thumbnailUrl || recordImage?.url || recordImage?.thumbnailUrl
 
     if (directUrl) {
       completeDirectImageGeneration(node.id, {
         url: directUrl,
+        thumbnailUrl: result.thumbnailUrl || recordImage?.thumbnailUrl || '',
         prompt,
         modelCode,
         resolution,
@@ -3892,7 +4740,7 @@ async function runDirectImageNode(node) {
     updateDirectNode(node.id, {
       generationTaskId: result.taskId,
       generationRecordId: result.recordId || '',
-      generationMessage: '任务已提交，等待生成结果'
+      generationMessage: '生成中...'
     })
     scheduleImageTaskPoll(node.id, result.taskId, result.recordId || '', 0)
     showToast('图片生成任务已提交')
@@ -3923,14 +4771,15 @@ async function pollImageTask(nodeId, taskId, recordId = '', attempt = 0) {
     const nextRecordId = result.recordId || recordId
     const recordImage = !result.url && nextRecordId ? await fetchRecordImageResult(nextRecordId) : null
     const historyImage =
-      !result.url && !recordImage?.url && (attempt + 1) % 4 === 0
+      !result.url && !recordImage?.url && (isFinishedTaskStatus(result.status) || (attempt + 1) % 4 === 0)
         ? await fetchLatestMatchingImageRecord(node.prompt, taskId, nextRecordId)
         : null
-    const imageUrl = result.url || recordImage?.url || historyImage?.url
+    const imageUrl = result.url || result.thumbnailUrl || recordImage?.url || recordImage?.thumbnailUrl || historyImage?.url || historyImage?.thumbnailUrl
 
     if (imageUrl) {
       completeDirectImageGeneration(nodeId, {
         url: imageUrl,
+        thumbnailUrl: result.thumbnailUrl || recordImage?.thumbnailUrl || historyImage?.thumbnailUrl || '',
         prompt: node.prompt,
         modelCode: node.imageModelId,
         resolution: normalizeImageResolutionValue(node.imageResolution),
@@ -3957,9 +4806,9 @@ async function pollImageTask(nodeId, taskId, recordId = '', attempt = 0) {
 
     updateDirectNode(nodeId, {
       generationRecordId: nextRecordId || '',
-      generationMessage: getPollingMessage(result.message, attempt + 1)
+      generationMessage: '生成中...'
     })
-    scheduleImageTaskPoll(nodeId, taskId, nextRecordId, attempt + 1)
+    scheduleImageTaskPoll(nodeId, taskId, nextRecordId, isFinishedTaskStatus(result.status) ? attempt + 2 : attempt + 1)
   } catch (error) {
     failDirectImageGeneration(nodeId, error?.message || '图片生成失败')
   }
@@ -4026,12 +4875,18 @@ function getPollingMessage(message, attempts) {
 
 function completeDirectImageGeneration(nodeId, image) {
   clearImageGenerationTimer(nodeId)
+  const imageUrl = normalizeDisplayImageSrc(image.url)
+  const thumbnailUrl = normalizeDisplayImageSrc(image.thumbnailUrl)
   updateDirectNode(nodeId, {
     generationStatus: 'success',
     generationMessage: '图片生成完成',
     generationTaskId: image.taskId || '',
     generationRecordId: image.recordId || '',
-    generatedImage: image
+    generatedImage: {
+      ...image,
+      url: imageUrl || thumbnailUrl,
+      thumbnailUrl
+    }
   })
   showToast('图片生成完成')
 }
@@ -4067,12 +4922,14 @@ function getDirectImageReferenceUrls(nodeId) {
 }
 
 function extractImageGenerationResult(payload) {
+  const output = findFirstImageOutput(payload)
   return {
     taskId: findFirstValueByKeys(payload, ['taskId', 'task_id', 'id']),
     recordId: findFirstExternalRecordId(payload),
     status: String(findFirstValueByKeys(payload, ['status', 'state', 'task_status']) || '').toLowerCase(),
     message: findFirstValueByKeys(payload, ['message', 'error', 'detail']),
-    url: findFirstImageUrl(payload)
+    url: output.url,
+    thumbnailUrl: output.thumbnailUrl
   }
 }
 
@@ -4124,48 +4981,75 @@ function findFirstValueByKeys(value, keys, depth = 0) {
   return ''
 }
 
-function findFirstImageUrl(value, depth = 0) {
+function findFirstImageOutput(value) {
+  return {
+    url: findFirstImageUrl(value, { thumbnail: false }),
+    thumbnailUrl: findFirstImageUrl(value, { thumbnail: true })
+  }
+}
+
+function findFirstImageUrl(value, options = {}, depth = 0) {
   if (!value || depth > 7) return ''
-  if (typeof value === 'string') return isLikelyImageUrl(value) ? value : ''
+  if (typeof value === 'string') return isLikelyImageUrl(value) ? normalizeDisplayImageSrc(value) : ''
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = findFirstImageUrl(item, depth + 1)
+      const found = findFirstImageUrl(item, options, depth + 1)
       if (found) return found
     }
     return ''
   }
   if (typeof value !== 'object') return ''
 
-  const priorityKeys = [
-    'image_url',
-    'imageUrl',
-    'output_url',
-    'outputUrl',
-    'result_url',
-    'resultUrl',
-    'media_url',
-    'mediaUrl',
-    'preview_url',
-    'previewUrl',
-    'file_url',
-    'fileUrl',
-    'thumbnail_url',
-    'thumbnailUrl',
-    'url'
-  ]
+  const priorityKeys = options.thumbnail
+    ? ['thumbnail_url', 'thumbnailUrl', 'cover_url', 'coverUrl']
+    : [
+        'preview_url',
+        'previewUrl',
+        'image_url',
+        'imageUrl',
+        'output_url',
+        'outputUrl',
+        'result_url',
+        'resultUrl',
+        'media_url',
+        'mediaUrl',
+        'file_url',
+        'fileUrl',
+        'url'
+      ]
   for (const key of priorityKeys) {
     const candidate = value[key]
-    if (typeof candidate === 'string' && /^https?:\/\//.test(candidate)) return candidate
+    if (typeof candidate === 'string' && isLikelyImageUrl(candidate)) return normalizeDisplayImageSrc(candidate)
   }
-  for (const item of Object.values(value)) {
-    const found = findFirstImageUrl(item, depth + 1)
+
+  const skippedKeys = new Set([
+    'params',
+    'internal_request',
+    'request_payload',
+    'reference_images',
+    'referenceImages',
+    'image_refs',
+    'imageRefs',
+    'image_ref_entries',
+    'imageRefEntries',
+    'first_frame',
+    'firstFrame',
+    'last_frame',
+    'lastFrame',
+    'input_image',
+    'inputImage'
+  ])
+  for (const [key, item] of Object.entries(value)) {
+    if (skippedKeys.has(key)) continue
+    const found = findFirstImageUrl(item, options, depth + 1)
     if (found) return found
   }
   return ''
 }
 
 function isLikelyImageUrl(value) {
-  return /^https?:\/\/.+(\.png|\.jpe?g|\.webp|\.gif|image|oss|cos|cdn)/i.test(value)
+  const source = String(value || '').trim()
+  return /^(data:image\/|blob:)/i.test(source) || /^\/.+(\.png|\.jpe?g|\.webp|\.gif|image|oss|cos|cdn)/i.test(source) || /^https?:\/\/.+(\.png|\.jpe?g|\.webp|\.gif|image|oss|cos|cdn)/i.test(source)
 }
 
 function isFinishedTaskStatus(status) {
@@ -4207,6 +5091,7 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     y: flowPosition.y,
     actions: getDirectNodeActions(type),
     prompt: patch.prompt || '',
+    promptSegments: normalizePromptSegments(patch.promptSegments, patch),
     promptPlaceholder: patch.promptPlaceholder || getDirectNodePrompt(type),
     media: patch.media || null,
     upload: patch.upload || null,
@@ -4216,6 +5101,7 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     aspectRatio: patch.aspectRatio || fallbackImageAspectRatioOptions[0],
     referenceImages: normalizeManualReferenceImages(patch.referenceImages),
     referenceOrder: Array.isArray(patch.referenceOrder) ? patch.referenceOrder : [],
+    referenceMentions: normalizeReferenceMentions(patch.referenceMentions),
     generationStatus: patch.generationStatus || 'idle',
     generationMessage: patch.generationMessage || '',
     generationTaskId: patch.generationTaskId || '',
@@ -4320,14 +5206,14 @@ function getDirectNodeActions(type) {
 }
 
 function getDirectNodeTextareaPlaceholder(node) {
-  if (node?.type === 'image_unit') return '描述你想要生成的画面内容~'
+  if (node?.type === 'image_unit') return '描述你想要生成的画面内容~ 单击可以引用参考图'
   return node?.promptPlaceholder || getDirectNodePrompt(node?.type)
 }
 
 function getDirectNodePrompt(type) {
   const prompts = {
     prompt_note: '写下你想讲的故事、场景或角色设定。例如：一个来自未来的机器人，在城市屋顶看星星。',
-    image_unit: '描述你想要生成的画面内容~',
+    image_unit: '描述你想要生成的画面内容~ 单击可以引用参考图',
     video_unit: '描述镜头运动、角色动作和画面节奏，也可以引用图片或文本节点。',
     media_board: '选择历史素材或多个视频片段，合成为一个可预览的结果。',
     uploaded_asset: '',
@@ -4641,6 +5527,23 @@ function pasteSelection() {
   showToast('\u5df2\u64cd\u4f5c')
 }
 
+function handleContextUpload() {
+  pendingUploadFlowPosition.value = getAvailableDirectNodePosition(contextMenu.flow || getViewportCenter())
+  replacingUploadNodeId.value = ''
+  contextMenu.visible = false
+  openUploadDialog()
+}
+
+function handleContextUndo() {
+  contextMenu.visible = false
+  undoLastChange()
+}
+
+function handleContextRedo() {
+  contextMenu.visible = false
+  redoLastChange()
+}
+
 function duplicateSelection() {
   copySelection()
   pasteSelection()
@@ -4767,13 +5670,18 @@ function handleMoveEnd(event) {
 
 function rememberHistory() {
   if (suppressHistory.value) return
-  historyStack.value.push({
+  historyStack.value.push(captureCanvasHistorySnapshot())
+  redoStack.value = []
+  if (historyStack.value.length > 40) historyStack.value.shift()
+}
+
+function captureCanvasHistorySnapshot() {
+  return {
     nodes: cloneCanvasValue(nodes.value),
     edges: cloneCanvasValue(edges.value),
     directNodes: cloneCanvasValue(directNodes.value),
     directEdges: cloneCanvasValue(directEdges.value)
-  })
-  if (historyStack.value.length > 40) historyStack.value.shift()
+  }
 }
 
 function cloneCanvasValue(value) {
@@ -4786,12 +5694,30 @@ function undoLastChange() {
     showToast('\u6ca1\u6709\u53ef\u64a4\u9500\u7684\u64cd\u4f5c')
     return
   }
+  redoStack.value.push(captureCanvasHistorySnapshot())
+  if (redoStack.value.length > 40) redoStack.value.shift()
+  restoreCanvasHistorySnapshot(previous)
+  showToast('\u5df2\u64a4\u9500')
+}
 
+function redoLastChange() {
+  const next = redoStack.value.pop()
+  if (!next) {
+    showToast('没有可重做的操作')
+    return
+  }
+  historyStack.value.push(captureCanvasHistorySnapshot())
+  if (historyStack.value.length > 40) historyStack.value.shift()
+  restoreCanvasHistorySnapshot(next)
+  showToast('已重做')
+}
+
+function restoreCanvasHistorySnapshot(snapshot) {
   suppressHistory.value = true
-  nodes.value = previous.nodes
-  edges.value = previous.edges
-  directNodes.value = previous.directNodes || []
-  directEdges.value = previous.directEdges || []
+  nodes.value = snapshot.nodes || []
+  edges.value = snapshot.edges || []
+  directNodes.value = snapshot.directNodes || []
+  directEdges.value = snapshot.directEdges || []
   canvasStore.clearSelection()
   selectedEdgeIds.value = []
   selectedDirectNodeIds.value = []
@@ -4801,7 +5727,6 @@ function undoLastChange() {
   nextTick(() => {
     suppressHistory.value = false
   })
-  showToast('\u5df2\u64cd\u4f5c')
 }
 
 function getViewportCenter() {

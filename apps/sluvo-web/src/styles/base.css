@@ -1530,6 +1530,47 @@ button {
   transform: translateX(-50%);
 }
 
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: clamp(24px, 5vw, 72px);
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+.image-preview-overlay img {
+  display: block;
+  max-width: min(82vw, 1120px);
+  max-height: min(86vh, 900px);
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.56);
+}
+
+.image-preview-overlay__close {
+  position: fixed;
+  top: 44px;
+  right: 46px;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgba(229, 200, 137, 0.18);
+  border-radius: 14px;
+  background: rgba(12, 11, 8, 0.46);
+  color: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+}
+
+.image-preview-overlay__close:hover {
+  border-color: rgba(229, 200, 137, 0.42);
+  background: rgba(229, 200, 137, 0.1);
+  color: #fff2ce;
+}
+
 @media (max-width: 1180px) {
   .libtv-topbar {
     top: 14px;
@@ -1789,27 +1830,54 @@ button {
 
 .canvas-context-menu {
   position: fixed;
-  z-index: 31;
+  z-index: 55;
   display: grid;
-  width: 180px;
-  padding: 8px;
-  border: 1px solid #3a3a3a;
-  border-radius: 14px;
-  background: #262626;
-  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.48);
+  gap: 5px;
+  width: 246px;
+  padding: 12px;
+  border: 1px solid rgba(229, 200, 137, 0.24);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(229, 200, 137, 0.08), transparent 34%),
+    rgba(31, 30, 26, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 224, 158, 0.07),
+    0 22px 70px rgba(0, 0, 0, 0.54);
+  backdrop-filter: blur(16px);
 }
 
 .canvas-context-menu button {
-  height: 38px;
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 12px;
   background: transparent;
-  color: #f4f4f4;
+  color: #fff2d2;
+  font-size: 16px;
+  font-weight: 800;
   text-align: left;
-  padding: 0 12px;
 }
 
 .canvas-context-menu button:hover {
-  background: #343434;
+  background: rgba(229, 200, 137, 0.1);
+}
+
+.canvas-context-menu button:disabled {
+  color: rgba(255, 242, 210, 0.32);
+  cursor: not-allowed;
+}
+
+.canvas-context-menu button:disabled:hover {
+  background: transparent;
+}
+
+.canvas-context-menu kbd {
+  color: rgba(255, 234, 184, 0.48);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .workflow-node {
@@ -2280,6 +2348,8 @@ button {
   z-index: 14;
   pointer-events: none;
   transform-origin: 0 0;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 .direct-edge-layer {
@@ -2297,6 +2367,7 @@ button {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
+  shape-rendering: geometricPrecision;
 }
 
 .direct-edge__base {
@@ -2432,7 +2503,7 @@ button {
 }
 
 .direct-workflow-node.is-selected .direct-workflow-node__frame,
-.direct-workflow-node.is-selected .direct-workflow-node__prompt {
+.direct-workflow-node.is-selected .direct-workflow-node__prompt-field {
   border-color: #e5c889;
   box-shadow:
     0 0 0 1px rgba(225, 192, 117, 0.32),
@@ -2722,36 +2793,109 @@ button {
   width: 100%;
 }
 
-.direct-workflow-node__prompt {
-  display: block;
+.direct-workflow-node__prompt-field {
+  position: relative;
   width: 100%;
   min-height: 166px;
-  margin-top: 20px;
-  padding: 22px 20px;
+  margin-top: 8px;
+  padding: 18px 20px 20px;
   border: 1px solid rgba(166, 134, 74, 0.2);
   border-radius: 16px;
-  outline: none;
   background: rgba(33, 31, 26, 0.96);
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.direct-workflow-node__prompt-field:focus-within {
+  border-color: rgba(229, 200, 137, 0.62);
+  background: rgba(37, 35, 29, 0.98);
+  box-shadow:
+    0 0 0 1px rgba(225, 192, 117, 0.28),
+    0 0 0 5px rgba(188, 142, 59, 0.09);
+}
+
+.direct-workflow-node__mention-chip {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  max-width: min(220px, 100%);
+  height: 30px;
+  gap: 7px;
+  margin: 0 8px 8px 0;
+  padding: 3px 10px 3px 4px;
+  border: 1px solid rgba(229, 200, 137, 0.3);
+  border-radius: 8px;
+  background: rgba(13, 11, 7, 0.72);
+  color: #f2ead4;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: text;
+  user-select: all;
+  -webkit-user-select: all;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 236, 178, 0.05),
+    0 8px 20px rgba(0, 0, 0, 0.26);
+}
+
+.direct-workflow-node__mention-chip img {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.direct-workflow-node__mention-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.direct-workflow-node__prompt {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  min-height: 126px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
   color: #b7bec8;
   font-size: 18px;
   font-weight: 700;
   line-height: 1.65;
-  resize: vertical;
-  user-select: text;
-  -webkit-user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  caret-color: #f4d994;
+  cursor: text;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
-.direct-workflow-node__prompt::placeholder {
+.direct-workflow-node__prompt-placeholder {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  z-index: 1;
   color: rgba(218, 224, 234, 0.78);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.65;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.direct-workflow-node__prompt:focus {
-  border-color: rgba(229, 200, 137, 0.62);
-  background: rgba(37, 35, 29, 0.98);
+.direct-workflow-node__prompt:focus-within {
   color: #f4f1e8;
-  box-shadow:
-    0 0 0 1px rgba(225, 192, 117, 0.28),
-    0 0 0 5px rgba(188, 142, 59, 0.09);
 }
 
 .direct-workflow-node__references {
@@ -2761,9 +2905,9 @@ button {
   flex-wrap: wrap;
   gap: 10px;
   min-height: 88px;
-  margin-top: 6px;
+  margin-top: 14px;
   overflow: visible;
-  padding: 14px 2px 16px;
+  padding: 0 2px 14px;
   z-index: 3;
   isolation: isolate;
   perspective: 720px;
@@ -3058,6 +3202,7 @@ button {
 }
 
 .generated-image__preview {
+  position: relative;
   overflow: hidden;
   min-height: 350px;
   border-radius: 12px;
@@ -3067,6 +3212,46 @@ button {
 .generated-image__preview img {
   display: block;
   object-fit: cover;
+}
+
+.generated-image__actions {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 3;
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid rgba(229, 200, 137, 0.28);
+  border-radius: 12px;
+  background: rgba(10, 9, 6, 0.72);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 232, 176, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.generated-image__actions button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(229, 200, 137, 0.2);
+  border-radius: 9px;
+  background: rgba(31, 28, 20, 0.82);
+  color: #f4d994;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.generated-image__actions button:hover {
+  border-color: rgba(244, 217, 148, 0.66);
+  background: rgba(229, 200, 137, 0.18);
+  color: #fff1c8;
+  transform: translateY(-1px);
 }
 
 .generated-image__state {
@@ -3147,13 +3332,37 @@ button {
     font-size: 16px;
   }
 
-  .direct-workflow-node__prompt {
+  .direct-workflow-node__prompt-field {
     min-height: 128px;
-    margin-top: 14px;
+    margin-top: 8px;
     padding: 16px 14px;
     border-radius: 13px;
+  }
+
+  .direct-workflow-node__prompt-placeholder {
+    top: 16px;
+    left: 14px;
     font-size: 15px;
     line-height: 1.55;
+  }
+
+  .direct-workflow-node__prompt {
+    min-height: 96px;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .direct-workflow-node__mention-chip {
+    height: 28px;
+    max-width: min(180px, 100%);
+    margin-right: 6px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+
+  .direct-workflow-node__mention-chip img {
+    width: 20px;
+    height: 20px;
   }
 
   .direct-workflow-node__generation-controls {

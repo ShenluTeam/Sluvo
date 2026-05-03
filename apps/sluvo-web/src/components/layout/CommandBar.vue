@@ -191,11 +191,13 @@ watch(
 onMounted(() => {
   readLocalAccount()
   refreshRemoteAccount()
+  document.addEventListener('pointerdown', handleDocumentPointerDown, true)
   window.addEventListener('click', closeAccountPanel)
   window.addEventListener('storage', handleStorage)
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown, true)
   window.removeEventListener('click', closeAccountPanel)
   window.removeEventListener('storage', handleStorage)
 })
@@ -210,14 +212,25 @@ function startTitleEdit() {
 }
 
 function commitTitle() {
+  if (!editingTitle.value) return
   const nextTitle = draftTitle.value.trim() || '未命名'
   editingTitle.value = false
   emit('update:title', nextTitle)
+  if (nextTitle !== props.title) {
+    nextTick(() => emit('save'))
+  }
 }
 
 function cancelTitleEdit() {
   draftTitle.value = props.title
   editingTitle.value = false
+}
+
+function handleDocumentPointerDown(event) {
+  if (!editingTitle.value) return
+  const target = event.target instanceof Node ? event.target : null
+  if (target && titleInput.value?.contains?.(target)) return
+  commitTitle()
 }
 
 function toggleAccountPanel() {
