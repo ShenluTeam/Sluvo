@@ -470,7 +470,7 @@ const remoteMedia = {
   storyboard: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-storyboard-board.webp',
   firstFrame: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-first-frame.webp',
   filmPreview: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=900&q=82',
-  agentQueue: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?auto=format&fit=crop&w=900&q=82',
+  agentQueue: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/agent-team-planning-cover.webp',
   skillPack: 'https://images.unsplash.com/photo-1526498460520-4c246339dccb?auto=format&fit=crop&w=900&q=82',
   palace: 'https://images.unsplash.com/photo-1528181304800-259b08848526?auto=format&fit=crop&w=900&q=82',
   cyber: 'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=900&q=82',

@@ -4,6 +4,18 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Replaced the logged-in homepage Agent planning visual with the Shenlu OSS asset `agent-team-planning-cover.webp`.
+
+Verification:
+- `npm run build`
+
+## 2026-05-03
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
 - `backend/services/sluvo_service.py`
 - `backend/routers/sluvo.py`
 - `doc/UI_REQUIREMENTS.md`
