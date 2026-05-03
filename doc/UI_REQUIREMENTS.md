@@ -262,6 +262,9 @@ Avoid exposing backend terms in the UI unless needed for debugging:
 - The homepage uses the Sluvo black/gold palette: `#050505`, `#0d0b07`, `#d6b56d`, and `#fff1c7`.
 - The logged-out homepage should position Sluvo as an AI Agent driven infinite canvas where Agents understand context, connect nodes, and advance creative workflow execution.
 - Homepage creation controls should feel actionable: prompt input, upload/script/character/storyboard actions, recent projects, and canvas entry points must look like real workspace affordances.
+- The logged-in homepage should use visual media to communicate creative output: a central prompt composer may be surrounded by low-emphasis floating image/video cards, followed by an inspiration sample strip and visual project covers.
+- Homepage sample videos must be muted, inline, and lightweight. Use poster images and hover/focus playback where practical; failed video loads should still leave an image or gradient fallback.
+- Remote homepage media should use stable official or owned URLs when available. Do not commit large binary showcase assets to the repository for the first homepage visual pass.
 - Keep cards at `8px` border radius or less unless a future design system changes this.
 - Use icons for common commands where appropriate.
 - Avoid oversized hero typography inside tool surfaces.

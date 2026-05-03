@@ -7,6 +7,35 @@ Changed files:
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
+- Replaced the first batch of logged-in homepage visual media with Shenlu OSS-hosted showcase assets.
+- Wired `hero-character-board.webp`, `hero-storyboard-board.webp`, `hero-first-frame.webp`, and `video-first-frame.mp4` into the homepage media configuration.
+
+Verification:
+- `npm run build`
+
+## 2026-05-03
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Enhanced the logged-in homepage with a floating media canvas layer around the prompt composer.
+- Added an inspiration sample strip with remote image/video previews and prompt-seeded creation actions.
+- Upgraded recent projects and open ecosystem cards with visual covers while preserving existing project actions.
+- Documented homepage media, hover-video, and remote-asset expectations.
+
+Verification:
+- `npm run build`
+
+## 2026-05-03
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
 - Expanded the public and logged-in homepage copy around the future open canvas, Agent team, Skill, and community sharing vision.
 - Updated the logged-in workbench banner, prompt guidance, quick skill chips, Agent capability copy, and added an open ecosystem goal module.
 - Kept the approved hero eyebrow and logged-in creator title unchanged.

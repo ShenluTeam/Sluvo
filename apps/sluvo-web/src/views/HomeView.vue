@@ -130,47 +130,126 @@
         </header>
 
         <section class="creator-console" aria-labelledby="creator-title">
-          <div class="creator-console__mascot">
-            <Sparkles :size="20" />
-          </div>
-          <h1 id="creator-title">导演～今天想创作什么影视项目？</h1>
-          <p>输入创意、粘贴剧本，或上传参考素材。Sluvo 会把它整理成可执行画布，并逐步沉淀为可复用、可分享的创作流程。</p>
+          <div class="creator-stage">
+            <div class="creator-media-layer" aria-hidden="true">
+              <article
+                v-for="card in heroMediaCards"
+                :key="card.title"
+                class="hero-media-card"
+                :class="card.className"
+                :style="{ '--card-accent': card.accent }"
+                @mouseenter="playPreviewVideo"
+                @mouseleave="pausePreviewVideo"
+              >
+                <span class="hero-media-card__visual">
+                  <video
+                    v-if="card.videoUrl"
+                    muted
+                    loop
+                    playsinline
+                    preload="metadata"
+                    :poster="card.posterUrl || card.imageUrl"
+                  >
+                    <source :src="card.videoUrl" type="video/mp4" />
+                  </video>
+                  <img v-else :src="card.imageUrl" alt="" loading="lazy" />
+                </span>
+                <span class="hero-media-card__kind">{{ card.kind }}</span>
+                <strong>{{ card.title }}</strong>
+                <small>{{ card.description }}</small>
+              </article>
+            </div>
 
-          <form class="prompt-composer" @submit.prevent="startProjectFromPrompt()">
-            <textarea
-              v-model="promptText"
-              aria-label="创作描述"
-              placeholder="描述一个漫剧创意、角色设定、分镜目标，或你想构建的 Agent / Skill 工作流"
-            />
-            <div class="prompt-composer__footer">
-              <div class="composer-tools">
-                <button v-for="tool in composerTools" :key="tool.label" type="button">
-                  <component :is="tool.icon" :size="16" />
-                  {{ tool.label }}
+            <div class="creator-console__content">
+              <div class="creator-console__mascot">
+                <Sparkles :size="20" />
+              </div>
+              <h1 id="creator-title">导演～今天想创作什么影视项目？</h1>
+              <p>输入创意、粘贴剧本，或上传参考素材。Sluvo 会把它整理成可执行画布，并逐步沉淀为可复用、可分享的创作流程。</p>
+
+              <form class="prompt-composer" @submit.prevent="startProjectFromPrompt()">
+                <textarea
+                  v-model="promptText"
+                  aria-label="创作描述"
+                  placeholder="描述一个漫剧创意、角色设定、分镜目标，或你想构建的 Agent / Skill 工作流"
+                />
+                <div class="prompt-composer__footer">
+                  <div class="composer-tools">
+                    <button v-for="tool in composerTools" :key="tool.label" type="button">
+                      <component :is="tool.icon" :size="16" />
+                      {{ tool.label }}
+                    </button>
+                  </div>
+                  <button class="send-button" type="submit" :disabled="isCreatingProject" aria-label="开始生成画布">
+                    <Send :size="18" />
+                  </button>
+                </div>
+              </form>
+              <p v-if="projectFeedback" class="creator-console__feedback">{{ projectFeedback }}</p>
+
+              <div class="skill-strip" aria-label="快捷技能">
+                <button v-for="skill in skillChips" :key="skill.label" type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt(skill.label)">
+                  <component :is="skill.icon" :size="16" />
+                  {{ skill.label }}
+                  <small v-if="skill.badge">{{ skill.badge }}</small>
                 </button>
               </div>
-              <button class="send-button" type="submit" :disabled="isCreatingProject" aria-label="开始生成画布">
-                <Send :size="18" />
-              </button>
             </div>
-          </form>
-          <p v-if="projectFeedback" class="creator-console__feedback">{{ projectFeedback }}</p>
+          </div>
+        </section>
 
-          <div class="skill-strip" aria-label="快捷技能">
-            <button v-for="skill in skillChips" :key="skill.label" type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt(skill.label)">
-              <component :is="skill.icon" :size="16" />
-              {{ skill.label }}
-              <small v-if="skill.badge">{{ skill.badge }}</small>
-            </button>
+        <section class="home-section showcase-section" aria-labelledby="showcase-title">
+          <div class="section-heading section-heading--stacked">
+            <h2 id="showcase-title">
+              <Film :size="22" />
+              灵感样片
+            </h2>
+            <p>从官方样片开始，把风格、角色和分镜拆成你的下一张画布。</p>
+          </div>
+
+          <div class="showcase-rail" aria-label="灵感样片">
+            <article
+              v-for="item in showcaseItems"
+              :key="item.title"
+              class="showcase-card"
+              tabindex="0"
+              :style="{ '--card-accent': item.accent }"
+              @click="startProjectFromPrompt(item.promptSeed)"
+              @keydown.enter.prevent="startProjectFromPrompt(item.promptSeed)"
+              @keydown.space.prevent="startProjectFromPrompt(item.promptSeed)"
+              @mouseenter="playPreviewVideo"
+              @mouseleave="pausePreviewVideo"
+              @focusin="playPreviewVideo"
+              @focusout="pausePreviewVideo"
+            >
+              <span class="showcase-card__media">
+                <video
+                  v-if="item.videoUrl"
+                  muted
+                  loop
+                  playsinline
+                  preload="metadata"
+                  :poster="item.posterUrl || item.imageUrl"
+                >
+                  <source :src="item.videoUrl" type="video/mp4" />
+                </video>
+                <img :src="item.imageUrl" :alt="item.title" loading="lazy" />
+              </span>
+              <span class="showcase-card__meta">{{ item.kind }}</span>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.description }}</p>
+              <button type="button" :disabled="isCreatingProject" @click.stop="startProjectFromPrompt(item.promptSeed)">用这个风格开始</button>
+            </article>
           </div>
         </section>
 
         <section ref="projectsSection" class="home-section recent-projects" aria-labelledby="recent-title">
-          <div class="section-heading">
+          <div class="section-heading section-heading--stacked">
             <h2 id="recent-title">
               <Sparkles :size="22" />
-              最近项目
+              最近创作
             </h2>
+            <p>继续你的画布，或把一次创作过程沉淀为可分享资产。</p>
           </div>
 
           <p v-if="projectStore.error" class="home-section__error">{{ projectStore.error }}</p>
@@ -193,10 +272,9 @@
               @keydown.enter.prevent="openProject(project.id)"
               @keydown.space.prevent="openProject(project.id)"
             >
-              <span class="project-card__preview" :class="`project-card__preview--${(index % 3) + 1}`">
-                <span />
-                <span />
-                <span />
+              <span class="project-card__preview project-card__preview--media">
+                <img :src="getProjectCover(project, index)" :alt="project.title || '未命名画布'" loading="lazy" />
+                <span class="project-card__nodes">画布 · {{ ((index + 2) * 4) + 1 }} 节点</span>
               </span>
               <button
                 class="project-card__delete"
@@ -238,7 +316,24 @@
           </div>
 
           <div class="open-ecosystem-grid">
-            <article v-for="item in openEcosystemCards" :key="item.title" class="open-ecosystem-card">
+            <article v-for="item in ecosystemVisualCards" :key="item.title" class="open-ecosystem-card">
+              <span class="open-ecosystem-card__visual">
+                <video
+                  v-if="item.videoUrl"
+                  muted
+                  loop
+                  playsinline
+                  preload="metadata"
+                  :poster="item.posterUrl || item.imageUrl"
+                  @mouseenter="playPreviewVideo"
+                  @mouseleave="pausePreviewVideo"
+                  @focusin="playPreviewVideo"
+                  @focusout="pausePreviewVideo"
+                >
+                  <source :src="item.videoUrl" type="video/mp4" />
+                </video>
+                <img v-else :src="item.imageUrl" :alt="item.title" loading="lazy" />
+              </span>
               <span class="open-ecosystem-card__icon">
                 <component :is="item.icon" :size="20" />
               </span>
@@ -343,6 +438,133 @@ const isCreatingProject = computed(() => projectStore.creatingProject)
 const userName = computed(() => authStore.displayName)
 const userInitial = computed(() => authStore.userInitial)
 
+const remoteMedia = {
+  character: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-character-board.webp',
+  storyboard: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-storyboard-board.webp',
+  firstFrame: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-first-frame.webp',
+  filmPreview: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=900&q=82',
+  agentQueue: 'https://images.unsplash.com/photo-1518709268805-4e9042af2176?auto=format&fit=crop&w=900&q=82',
+  skillPack: 'https://images.unsplash.com/photo-1526498460520-4c246339dccb?auto=format&fit=crop&w=900&q=82',
+  palace: 'https://images.unsplash.com/photo-1528181304800-259b08848526?auto=format&fit=crop&w=900&q=82',
+  cyber: 'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=900&q=82',
+  portrait: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=900&q=82',
+  music: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=82',
+  commerce: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=900&q=82',
+  canvasMap: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=82',
+  videoPreview: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/video-first-frame.mp4',
+  motionPreview: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'
+}
+
+const heroMediaCards = [
+  {
+    kind: 'Character Board',
+    title: '角色三视图',
+    description: '设定、服装、表情统一在同一张创作画布。',
+    imageUrl: remoteMedia.character,
+    accent: '#f2c879',
+    className: 'hero-media-card--character'
+  },
+  {
+    kind: 'Storyboard',
+    title: '分镜板',
+    description: '镜头顺序、动作节奏和画面参考一眼可见。',
+    imageUrl: remoteMedia.storyboard,
+    accent: '#caa466',
+    className: 'hero-media-card--storyboard'
+  },
+  {
+    kind: 'First Frame',
+    title: '首帧图生视频',
+    description: '从关键画面推进到动态短剧镜头。',
+    imageUrl: remoteMedia.firstFrame,
+    posterUrl: remoteMedia.firstFrame,
+    videoUrl: remoteMedia.videoPreview,
+    accent: '#9fd8ff',
+    className: 'hero-media-card--firstframe'
+  },
+  {
+    kind: 'Preview',
+    title: '漫剧成片预览',
+    description: '让样片和生成结果回到画布继续迭代。',
+    imageUrl: remoteMedia.filmPreview,
+    posterUrl: remoteMedia.filmPreview,
+    videoUrl: remoteMedia.motionPreview,
+    accent: '#ffcf8a',
+    className: 'hero-media-card--preview'
+  },
+  {
+    kind: 'Agent Queue',
+    title: 'Agent 正在规划',
+    description: '导演、编剧、分镜、美术各自推进下一步。',
+    imageUrl: remoteMedia.agentQueue,
+    accent: '#d6b56d',
+    className: 'hero-media-card--agent'
+  },
+  {
+    kind: 'Skill Pack',
+    title: '画布 Skill 包',
+    description: '把高频流程保存为可安装的创作方法。',
+    imageUrl: remoteMedia.skillPack,
+    accent: '#e6d6a7',
+    className: 'hero-media-card--skill'
+  }
+]
+
+const showcaseItems = [
+  {
+    kind: '古风短剧',
+    title: '宫墙夜雨',
+    description: '从角色关系到宫廷分镜，快速生成一条古风剧情链路。',
+    imageUrl: remoteMedia.palace,
+    promptSeed: '古风短剧：宫墙夜雨，女主在雨夜宫墙边发现密信，生成角色设定、三幕剧情、分镜和首帧视频链路。',
+    accent: '#d6b56d'
+  },
+  {
+    kind: '赛博漫剧',
+    title: '霓虹追逃',
+    description: '霓虹城市、机械义体和高节奏镜头组合成短剧样片。',
+    imageUrl: remoteMedia.cyber,
+    posterUrl: remoteMedia.cyber,
+    videoUrl: remoteMedia.motionPreview,
+    promptSeed: '赛博漫剧：霓虹追逃，义体侦探在雨夜城市追踪失控 AI，生成视觉风格、角色、分镜和视频镜头。',
+    accent: '#9fd8ff'
+  },
+  {
+    kind: '角色设定集',
+    title: '双主角设定',
+    description: '生成主角、反派、服装、表情和角色一致性参考。',
+    imageUrl: remoteMedia.portrait,
+    promptSeed: '角色设定集：双主角漫剧，生成男女主外貌、服装、三视图、表情包和一致性参考。',
+    accent: '#f0b982'
+  },
+  {
+    kind: '分镜到成片',
+    title: '镜头推进',
+    description: '从分镜表开始，把镜头说明拆成图片和视频生成节点。',
+    imageUrl: remoteMedia.filmPreview,
+    posterUrl: remoteMedia.filmPreview,
+    videoUrl: remoteMedia.videoPreview,
+    promptSeed: '分镜到成片：根据一场追逐戏生成 8 格分镜、首帧图、镜头运动和图生视频链路。',
+    accent: '#fff1c7'
+  },
+  {
+    kind: '音乐剧情短片',
+    title: '雨夜独白',
+    description: '把音乐情绪、旁白和镜头节奏整理成可执行画布。',
+    imageUrl: remoteMedia.music,
+    promptSeed: '音乐剧情短片：雨夜独白，围绕一段低沉钢琴曲生成旁白、镜头节奏、画面风格和视频片段。',
+    accent: '#c7a7ff'
+  },
+  {
+    kind: '广告剧情片',
+    title: '新品一分钟',
+    description: '把产品卖点写成剧情，用分镜和视频节点输出短片。',
+    imageUrl: remoteMedia.commerce,
+    promptSeed: '广告剧情片：新品一分钟，将产品卖点转成三幕剧情、人物场景、分镜脚本和视频生成节点。',
+    accent: '#ffcf8a'
+  }
+]
+
 const previewNodes = [
   {
     kind: 'Open Canvas',
@@ -412,21 +634,24 @@ const skillChips = [
   { label: '社区画布灵感', icon: Expand, badge: '多模型' }
 ]
 
-const openEcosystemCards = [
+const ecosystemVisualCards = [
   {
     title: '画布可以发布',
     description: '把一次完整创作过程发布为社区画布。其他创作者可以浏览、学习、复制或 fork。',
-    icon: Share2
+    icon: Share2,
+    imageUrl: remoteMedia.canvasMap
   },
   {
     title: 'Agent 可以组队',
     description: '把你的导演、编剧、分镜、美术和生成 Agent 保存为团队模板，在项目之间复用。',
-    icon: UsersRound
+    icon: UsersRound,
+    imageUrl: remoteMedia.agentQueue
   },
   {
     title: 'Skill 可以流通',
     description: '把高频创作流程封装成 Skill，让别人一键安装到自己的无限画布中。',
-    icon: Boxes
+    icon: Boxes,
+    imageUrl: remoteMedia.skillPack
   }
 ]
 
@@ -578,6 +803,33 @@ async function deleteProject(project) {
     next.delete(project.id)
     deletingProjectIds.value = next
   }
+}
+
+function playPreviewVideo(event) {
+  const video = event?.currentTarget?.querySelector?.('video')
+  if (!video) return
+  video.play?.().catch(() => {})
+}
+
+function pausePreviewVideo(event) {
+  const video = event?.currentTarget?.querySelector?.('video')
+  if (!video) return
+  video.pause?.()
+}
+
+function getProjectCover(project, index = 0) {
+  return (
+    project?.coverUrl ||
+    project?.cover_url ||
+    project?.thumbnailUrl ||
+    project?.thumbnail_url ||
+    project?.previewUrl ||
+    project?.preview_url ||
+    project?.settings?.coverUrl ||
+    project?.settings?.posterUrl ||
+    showcaseItems[index % showcaseItems.length]?.imageUrl ||
+    remoteMedia.canvasMap
+  )
 }
 
 function formatProjectMeta(project) {
@@ -1188,7 +1440,11 @@ onBeforeUnmount(() => {
   color: #fff8e6;
 }
 
-.creator-console,
+.creator-console {
+  width: min(1320px, calc(100vw - 140px));
+  margin: 0 auto;
+}
+
 .home-section {
   width: min(960px, calc(100vw - 140px));
   margin: 0 auto;
@@ -1196,10 +1452,56 @@ onBeforeUnmount(() => {
 
 .creator-console {
   position: relative;
+  padding: 26px 0 30px;
+  text-align: center;
+}
+
+.creator-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 560px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.creator-stage::before {
+  position: absolute;
+  inset: 8% 15%;
+  border: 1px solid rgba(214, 181, 109, 0.08);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(214, 181, 109, 0.2), transparent 42%),
+    radial-gradient(circle at 50% 50%, rgba(255, 241, 199, 0.08), transparent 54%);
+  content: "";
+  opacity: 0.84;
+}
+
+.creator-stage::after {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(90deg, #050505 0%, rgba(5, 5, 5, 0) 18%, rgba(5, 5, 5, 0) 82%, #050505 100%),
+    linear-gradient(180deg, rgba(5, 5, 5, 0) 0%, #050505 96%);
+  content: "";
+  pointer-events: none;
+}
+
+.creator-media-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.creator-console__content {
+  position: relative;
+  z-index: 3;
   display: grid;
   justify-items: center;
-  padding: 40px 0 30px;
-  text-align: center;
+  width: min(720px, 100%);
+  padding: 24px 20px;
 }
 
 .creator-console__mascot {
@@ -1234,6 +1536,134 @@ onBeforeUnmount(() => {
   color: #f3d894 !important;
   font-size: 13px !important;
   font-weight: 800;
+}
+
+.hero-media-card {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  gap: 6px;
+  width: 196px;
+  padding: 8px 8px 10px;
+  border: 1px solid rgba(214, 181, 109, 0.2);
+  border-color: color-mix(in srgb, var(--card-accent, #d6b56d) 44%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--card-accent, #d6b56d) 18%, transparent), transparent 54%),
+    rgba(16, 14, 10, 0.78);
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  opacity: 0.58;
+  text-align: left;
+  transform: translate3d(0, 0, 0) rotate(var(--card-rotate, 0deg));
+  animation: mediaFloat 8s ease-in-out infinite;
+  pointer-events: auto;
+}
+
+.hero-media-card__visual {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--card-accent, #d6b56d) 28%, transparent), transparent 46%),
+    #1c1810;
+}
+
+.hero-media-card__visual::after,
+.showcase-card__media::after,
+.open-ecosystem-card__visual::after,
+.project-card__preview--media::after {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.38)),
+    linear-gradient(110deg, transparent 0 45%, rgba(255, 241, 199, 0.12) 48%, transparent 54%);
+  content: "";
+  pointer-events: none;
+}
+
+.hero-media-card img,
+.hero-media-card video,
+.showcase-card img,
+.showcase-card video,
+.open-ecosystem-card img,
+.open-ecosystem-card video,
+.project-card__preview--media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hero-media-card__kind {
+  color: color-mix(in srgb, var(--card-accent, #d6b56d) 82%, #fff8e6);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hero-media-card strong {
+  color: #fff8e6;
+  font-size: 14px;
+}
+
+.hero-media-card small {
+  color: rgba(249, 241, 220, 0.56);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.hero-media-card:hover {
+  z-index: 4;
+  opacity: 0.92;
+}
+
+.hero-media-card--character {
+  top: 8%;
+  left: 7%;
+  --card-rotate: -5deg;
+}
+
+.hero-media-card--storyboard {
+  top: 17%;
+  right: 8%;
+  --card-rotate: 4deg;
+  animation-delay: -1.4s;
+}
+
+.hero-media-card--firstframe {
+  top: 47%;
+  left: 2%;
+  width: 224px;
+  --card-rotate: 3deg;
+  animation-delay: -2.2s;
+}
+
+.hero-media-card--preview {
+  right: 3%;
+  bottom: 13%;
+  width: 236px;
+  --card-rotate: -3deg;
+  animation-delay: -3.1s;
+}
+
+.hero-media-card--agent {
+  bottom: 5%;
+  left: 20%;
+  width: 178px;
+  --card-rotate: 2deg;
+  animation-delay: -4s;
+}
+
+.hero-media-card--skill {
+  top: 4%;
+  right: 28%;
+  width: 170px;
+  --card-rotate: -2deg;
+  animation-delay: -5s;
 }
 
 .prompt-composer {
@@ -1382,6 +1812,118 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.showcase-section {
+  width: min(1180px, calc(100vw - 140px));
+  padding-top: 8px;
+}
+
+.showcase-rail {
+  display: grid;
+  grid-auto-columns: minmax(246px, 286px);
+  grid-auto-flow: column;
+  gap: 16px;
+  overflow-x: auto;
+  padding: 2px 4px 12px;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+}
+
+.showcase-rail::-webkit-scrollbar {
+  height: 8px;
+}
+
+.showcase-rail::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(214, 181, 109, 0.22);
+}
+
+.showcase-card {
+  position: relative;
+  display: grid;
+  gap: 9px;
+  min-height: 360px;
+  padding: 10px 10px 14px;
+  overflow: hidden;
+  border: 1px solid rgba(214, 181, 109, 0.13);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--card-accent, #d6b56d) 13%, transparent), transparent 60%),
+    rgba(255, 255, 255, 0.045);
+  color: #fff8e6;
+  cursor: pointer;
+  scroll-snap-align: start;
+  text-align: left;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.showcase-card:hover,
+.showcase-card:focus-visible {
+  border-color: color-mix(in srgb, var(--card-accent, #d6b56d) 54%, transparent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--card-accent, #d6b56d) 18%, transparent), transparent 60%),
+    rgba(214, 181, 109, 0.065);
+  outline: none;
+  transform: translateY(-3px);
+}
+
+.showcase-card__media {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 4 / 5;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--card-accent, #d6b56d) 22%, transparent), transparent 46%),
+    #17130d;
+}
+
+.showcase-card__media video {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.showcase-card:hover .showcase-card__media video,
+.showcase-card:focus-visible .showcase-card__media video {
+  opacity: 1;
+}
+
+.showcase-card__meta {
+  color: color-mix(in srgb, var(--card-accent, #d6b56d) 76%, #fff8e6);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.showcase-card strong {
+  font-size: 18px;
+}
+
+.showcase-card p {
+  min-height: 42px;
+  margin: 0;
+  color: rgba(249, 241, 220, 0.58);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.showcase-card button {
+  width: fit-content;
+  min-height: 34px;
+  margin-top: auto;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 221, 151, 0.32);
+  border-radius: 8px;
+  background: rgba(214, 181, 109, 0.14);
+  color: #fff1c7;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .project-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
@@ -1476,6 +2018,7 @@ onBeforeUnmount(() => {
 }
 
 .project-card__preview {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
@@ -1485,11 +2028,36 @@ onBeforeUnmount(() => {
   background: #24211b;
 }
 
+.project-card__preview--media {
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: 112px;
+  padding: 0;
+}
+
 .project-card__preview span {
   border-radius: 5px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent),
     var(--preview-fill, #7f6740);
+}
+
+.project-card__preview--media .project-card__nodes {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 7px;
+  border: 1px solid rgba(255, 241, 199, 0.22);
+  border-radius: 999px;
+  background: rgba(5, 5, 5, 0.62);
+  color: rgba(255, 248, 230, 0.82);
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .project-card__preview--1 {
@@ -1550,8 +2118,8 @@ onBeforeUnmount(() => {
   display: grid;
   align-content: start;
   gap: 12px;
-  min-height: 218px;
-  padding: 20px;
+  min-height: 320px;
+  padding: 10px 10px 18px;
   border: 1px solid rgba(214, 181, 109, 0.12);
   border-radius: 8px;
   background:
@@ -1563,6 +2131,17 @@ onBeforeUnmount(() => {
     background 0.18s ease;
 }
 
+.open-ecosystem-card__visual {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(214, 181, 109, 0.18), transparent 42%),
+    #17130d;
+}
+
 .open-ecosystem-card__icon {
   display: grid;
   place-items: center;
@@ -1572,11 +2151,13 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: rgba(214, 181, 109, 0.1);
   color: #fff1c7;
+  margin: 2px 10px 0;
 }
 
 .open-ecosystem-card strong {
   color: #fff8e6;
   font-size: 18px;
+  padding: 0 10px;
 }
 
 .open-ecosystem-card p {
@@ -1584,6 +2165,7 @@ onBeforeUnmount(() => {
   color: rgba(249, 241, 220, 0.58);
   font-size: 13px;
   line-height: 1.65;
+  padding: 0 10px;
 }
 
 .open-ecosystem-cta {
@@ -1803,6 +2385,17 @@ onBeforeUnmount(() => {
   }
 }
 
+@keyframes mediaFloat {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--card-rotate, 0deg));
+  }
+
+  50% {
+    transform: translate3d(0, -10px, 0) rotate(var(--card-rotate, 0deg));
+  }
+}
+
 @media (max-width: 1180px) {
   .guest-hero {
     grid-template-columns: 1fr;
@@ -1824,8 +2417,18 @@ onBeforeUnmount(() => {
   }
 
   .creator-console,
-  .home-section {
+  .home-section,
+  .showcase-section {
     width: min(820px, calc(100vw - 116px));
+  }
+
+  .creator-stage {
+    min-height: 540px;
+  }
+
+  .hero-media-card--agent,
+  .hero-media-card--skill {
+    display: none;
   }
 
   .workbench-topbar {
@@ -1901,8 +2504,43 @@ onBeforeUnmount(() => {
   }
 
   .creator-console,
-  .home-section {
+  .home-section,
+  .showcase-section {
     width: calc(100vw - 32px);
+  }
+
+  .creator-stage {
+    min-height: 520px;
+  }
+
+  .creator-stage::before {
+    inset: 12% 4%;
+  }
+
+  .hero-media-card {
+    width: 160px;
+    opacity: 0.42;
+  }
+
+  .hero-media-card--character,
+  .hero-media-card--storyboard {
+    display: none;
+  }
+
+  .hero-media-card--firstframe {
+    top: 10%;
+    left: -8px;
+    width: 168px;
+  }
+
+  .hero-media-card--preview {
+    right: -10px;
+    bottom: 7%;
+    width: 176px;
+  }
+
+  .showcase-rail {
+    grid-auto-columns: minmax(220px, 76vw);
   }
 
   .agent-primary {
@@ -1985,6 +2623,25 @@ onBeforeUnmount(() => {
 
   .send-button {
     align-self: flex-end;
+  }
+
+  .creator-stage {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .creator-stage::before,
+  .creator-stage::after,
+  .creator-media-layer {
+    display: none;
+  }
+
+  .creator-console__content {
+    padding: 26px 0 8px;
+  }
+
+  .showcase-card {
+    min-height: 330px;
   }
 
   .section-heading {
