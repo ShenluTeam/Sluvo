@@ -352,9 +352,9 @@ const canSendCode = computed(() => (
 ))
 
 const redirectPath = computed(() => {
-  const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+  const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/workspace'
   if (!target.startsWith('/') || target.startsWith('//')) {
-    return '/'
+    return '/workspace'
   }
   return target
 })

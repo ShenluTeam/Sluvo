@@ -1,6 +1,6 @@
 <template>
-  <main class="sluvo-home" :class="{ 'is-authed': isAuthenticated }">
-    <section v-if="!isAuthenticated" class="home-guest-shell">
+  <main class="sluvo-home" :class="{ 'is-authed': showWorkbench }">
+    <section v-if="!showWorkbench" class="home-guest-shell">
       <nav class="home-nav" aria-label="Sluvo">
         <button class="home-brand" type="button" @click="scrollToTop">
           <span class="home-brand__mark">
@@ -14,9 +14,9 @@
         <div class="home-nav__actions">
           <button class="home-nav__link" type="button" @click="scrollToCapabilities">能力</button>
           <button class="home-nav__link" type="button" @click="openCanvas()">自由画布</button>
-          <button class="home-nav__primary" type="button" @click="openLogin">
+          <button class="home-nav__primary" type="button" @click="openSluvo">
             <LogIn :size="17" />
-            登录 Sluvo
+            {{ isAuthenticated ? '进入 Sluvo' : '登录 Sluvo' }}
           </button>
         </div>
       </nav>
@@ -30,7 +30,7 @@
           <h1>Sluvo</h1>
           <p class="guest-hero__lead">把灵感、角色、分镜、模型与 Agent 团队放进同一张无限画布。Sluvo 让创作过程可以被记录、复用、分享，并在社区中生长为新的画布、Agent 与 Skill。</p>
           <div class="guest-hero__actions">
-            <button class="gold-button" type="button" @click="openLogin">
+            <button class="gold-button" type="button" @click="openSluvo">
               进入 Sluvo
               <ArrowUpRight :size="18" />
             </button>
@@ -130,6 +130,10 @@
           </button>
 
           <div class="workbench-topbar__actions">
+            <button class="top-chip top-chip--home" type="button" @click="openLandingHome">
+              <House :size="16" />
+              首页
+            </button>
             <button class="top-chip" type="button">
               <Globe2 :size="16" />
               简体中文
@@ -490,7 +494,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowUpRight,
   Bell,
@@ -506,6 +510,7 @@ import {
   FolderOpen,
   Globe2,
   GitFork,
+  House,
   Loader2,
   Image,
   Layers,
@@ -529,6 +534,7 @@ import { fetchUserDashboard } from '../api/authApi'
 import { fetchSluvoCommunityCanvases, forkSluvoCommunityCanvas, saveSluvoCanvasBatch } from '../api/sluvoApi'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const projectStore = useProjectStore()
 const projectsSection = ref(null)
@@ -547,6 +553,7 @@ const communityError = ref('')
 const forkingCommunityIds = ref(new Set())
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
+const showWorkbench = computed(() => isAuthenticated.value && route.name === 'workspace')
 const isCreatingProject = computed(() => projectStore.creatingProject)
 const userName = computed(() => authStore.displayName)
 const userInitial = computed(() => authStore.userInitial)
@@ -828,6 +835,19 @@ function openLogin() {
   router.push({ name: 'login' })
 }
 
+function openSluvo() {
+  if (authStore.isAuthenticated) {
+    router.push({ name: 'workspace' })
+    return
+  }
+  router.push({ name: 'login', query: { redirect: '/workspace' } })
+}
+
+function openLandingHome() {
+  router.push({ name: 'home' })
+  scrollToTop()
+}
+
 async function loadCommunityCanvases() {
   communityLoading.value = true
   communityError.value = ''
@@ -924,7 +944,7 @@ function openCanvas(projectId = '') {
   if (!authStore.isAuthenticated) {
     router.push({
       name: 'login',
-      query: { redirect: '/projects' }
+      query: { redirect: '/workspace' }
     })
     return
   }
@@ -1730,6 +1750,17 @@ onBeforeUnmount(() => {
   border-color: rgba(255, 221, 151, 0.42);
   background: rgba(214, 181, 109, 0.16);
   color: #fff1c7;
+}
+
+.top-chip--home {
+  border-color: rgba(255, 221, 151, 0.36);
+  background: rgba(214, 181, 109, 0.12);
+  color: #fff1c7;
+}
+
+.top-chip--home:hover {
+  border-color: rgba(255, 221, 151, 0.5);
+  background: rgba(214, 181, 109, 0.18);
 }
 
 .top-chip--logout {
