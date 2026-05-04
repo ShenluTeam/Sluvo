@@ -2026,10 +2026,17 @@ def build_sluvo_agent_action_payload(
     canvas = _require_canvas(session, agent_session.canvas_id)
     context = payload.get("contextSnapshot") if isinstance(payload.get("contextSnapshot"), dict) else _json_load(agent_session.context_snapshot_json, {})
     selected_nodes = context.get("selectedNodes") if isinstance(context.get("selectedNodes"), list) else []
-    profile_key = _resolve_agent_profile_key(session, agent_session.agent_profile)
     model_code = normalize_sluvo_agent_model_code(context.get("modelCode") or payload.get("modelCode") or context.get("agentModelCode"))
     prompt = str(content or payload.get("content") or "").strip()
-    action_type = _infer_agent_action_type(profile_key, prompt)
+    route = resolve_sluvo_agent_route(
+        session,
+        requested_profile=payload.get("agentProfile") or agent_session.agent_profile,
+        prompt=prompt,
+        context=context,
+        selected_nodes=selected_nodes,
+    )
+    profile_key = route["profile"]
+    action_type = route["actionType"]
     llm_payload = _try_deepseek_canvas_agent_payload(
         model_code=model_code,
         profile_key=profile_key,
@@ -2052,9 +2059,13 @@ def build_sluvo_agent_action_payload(
     node_count = len(patch.get("nodes") or [])
     edge_count = len(patch.get("edges") or [])
     reply = {
-        "content": f"{profile_label} 已基于当前画布生成 {node_count} 个节点、{edge_count} 条连线的提案。",
+        "content": f"创作总监已协调{profile_label}，基于当前画布生成 {node_count} 个节点、{edge_count} 条连线的提案。",
         "modelCode": model_code,
         "profile": profile_key,
+        "resolvedProfile": profile_key,
+        "resolvedProfileLabel": profile_label,
+        "resolvedActionType": action_type,
+        "routingReason": route["reason"],
         "requiresApproval": True,
         "summary": _agent_action_summary(action_type),
         "llmUsed": bool(llm_payload),
@@ -2067,14 +2078,67 @@ def build_sluvo_agent_action_payload(
                 "selectedNodeCount": len(selected_nodes),
                 "modelCode": model_code,
                 "profile": profile_key,
+                "requestedProfile": agent_session.agent_profile,
+                "resolvedProfile": profile_key,
+                "resolvedProfileLabel": profile_label,
+                "resolvedActionType": action_type,
+                "routingReason": route["reason"],
             },
         },
         "patch": patch,
     }, reply
 
 
+def resolve_sluvo_agent_route(
+    session: Session,
+    *,
+    requested_profile: Optional[str],
+    prompt: str,
+    context: Dict[str, Any],
+    selected_nodes: List[Dict[str, Any]],
+) -> Dict[str, str]:
+    requested = str(requested_profile or "auto").strip() or "auto"
+    if requested not in {"auto", "creative_director"}:
+        profile_key = _resolve_agent_profile_key(session, requested)
+        return {
+            "profile": profile_key,
+            "actionType": _infer_agent_action_type(profile_key, prompt),
+            "reason": "已按高级设置使用指定 Agent。",
+        }
+
+    searchable_parts = [prompt]
+    project = context.get("project") if isinstance(context.get("project"), dict) else {}
+    searchable_parts.append(str(project.get("title") or ""))
+    for item in selected_nodes[:8]:
+        if not isinstance(item, dict):
+            continue
+        searchable_parts.extend([
+            str(item.get("title") or ""),
+            str(item.get("directType") or item.get("nodeType") or ""),
+            str(item.get("prompt") or "")[:500],
+        ])
+    text = "\n".join(searchable_parts).lower()
+
+    def has_any(*keywords: str) -> bool:
+        return any(keyword.lower() in text for keyword in keywords)
+
+    if has_any("prompt", "提示词", "精修", "改写", "润色"):
+        return {"profile": "prompt_polisher", "actionType": "prompt.rewrite", "reason": "识别到提示词优化需求。"}
+    if has_any("一致", "检查", "角色漂移", "风格漂移", "设定冲突", "检查一致性"):
+        return {"profile": "consistency_checker", "actionType": "agent.report", "reason": "识别到一致性检查需求。"}
+    if has_any("任务", "排期", "缺口", "失败", "重试", "成本", "制片", "整理工作流"):
+        return {"profile": "production_planner", "actionType": "agent.report", "reason": "识别到制片调度或任务整理需求。"}
+    if has_any("分镜", "镜头", "storyboard", "下游", "首帧", "视频链路", "拆分"):
+        return {"profile": "storyboard_director", "actionType": "workflow.plan", "reason": "识别到分镜或下游生成链路需求。"}
+    if has_any("剧情", "故事", "大纲", "对白", "角色关系", "冲突", "剧本"):
+        return {"profile": "story_director", "actionType": "canvas.patch", "reason": "识别到故事结构或剧本创作需求。"}
+    return {"profile": "canvas_agent", "actionType": "canvas.patch", "reason": "未命中特定专业任务，使用通用画布协作。"}
+
+
 def _resolve_agent_profile_key(session: Session, agent_profile: str) -> str:
     value = str(agent_profile or "canvas_agent").strip()
+    if value in {"auto", "creative_director"}:
+        return "canvas_agent"
     if value in SLUVO_OFFICIAL_AGENT_PROFILES:
         return value
     try:

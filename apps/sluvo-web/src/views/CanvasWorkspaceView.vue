@@ -1,5 +1,5 @@
 <template>
-  <div class="libtv-canvas-shell" :class="{ 'is-space-panning': spacePanning }" @click="closeFloatingPanels" @contextmenu.capture="handleCanvasContextMenu">
+  <div class="libtv-canvas-shell" :class="{ 'is-space-panning': spacePanning, 'is-agent-expanded': agentPanel.visible }" @click="closeFloatingPanels" @contextmenu.capture="handleCanvasContextMenu">
     <section
       ref="canvasFrame"
       class="libtv-canvas-frame"
@@ -883,28 +883,39 @@
       />
 
       <button
+        v-if="!agentPanel.visible"
         class="canvas-agent-trigger"
         type="button"
-        :class="{ 'is-active': agentPanel.visible }"
-        title="Canvas Agent"
+        title="打开创作总监"
         @click.stop="toggleAgentPanel"
       >
-        <Bot :size="20" />
-        Agent
+        <Bot :size="19" />
+        <span>创作总监</span>
+        <small v-if="pendingAgentActionCount">{{ pendingAgentActionCount }}</small>
       </button>
 
       <aside v-if="agentPanel.visible" class="canvas-agent-panel" @click.stop @pointerdown.stop @contextmenu.prevent.stop>
         <header class="canvas-agent-panel__header">
           <div>
-            <span>Canvas Agent</span>
-            <h2>创作协作者</h2>
+            <span>Canvas Agent Studio</span>
+            <h2>创作总监</h2>
+            <p>{{ agentPanel.busy ? '正在协调专业 Agent' : '对话驱动画布产物' }}</p>
           </div>
-          <button type="button" aria-label="关闭 Agent 面板" @click="agentPanel.visible = false">
+          <button type="button" aria-label="收起 Agent 面板" @click="setAgentPanelVisible(false)">
             <X :size="22" />
           </button>
         </header>
 
-        <section class="canvas-agent-panel__controls">
+        <section class="canvas-agent-panel__mode">
+          <strong>自由画布</strong>
+          <span>{{ selectedDirectNodeIds.length > 0 ? `已带入 ${selectedDirectNodeIds.length} 个选区节点` : '未选择节点，将基于项目画布理解需求' }}</span>
+          <button type="button" @click="agentPanel.advancedOpen = !agentPanel.advancedOpen">
+            <SlidersHorizontal :size="15" />
+            高级设置
+          </button>
+        </section>
+
+        <section v-if="agentPanel.advancedOpen" class="canvas-agent-panel__controls">
           <label>
             Agent
             <select v-model="agentPanel.profile">
@@ -920,26 +931,35 @@
         </section>
 
         <section class="canvas-agent-panel__context">
-          <strong>当前上下文</strong>
-          <span>已选 {{ selectedDirectNodeIds.length }} 个节点</span>
           <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请分析当前选区，并给出下一步创作建议。')">分析选区</button>
-          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请根据当前选区生成下游分镜、首帧和视频生成链路。')">生成下游</button>
-          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请检查当前选区的角色、场景和风格一致性。')">检查一致性</button>
+          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请根据当前选区生成下游分镜、首帧和视频生成链路。')">生成下游节点</button>
+          <button type="button" @click="startAgentWithSelection('请优化当前画布或选区中的提示词，让它更适合图片和视频生成。')">优化提示词</button>
+          <button type="button" @click="startAgentWithSelection('请把当前故事或选区拆成分镜计划。')">拆分分镜</button>
+          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请检查当前选区的角色、场景、道具和风格一致性。')">检查一致性</button>
+          <button type="button" @click="startAgentWithSelection('请整理当前画布的创作工作流，指出缺口和下一步任务。')">整理工作流</button>
         </section>
 
         <section class="canvas-agent-panel__messages">
           <article v-for="message in agentPanel.messages" :key="message.id" :class="`is-${message.role}`">
-            <span>{{ message.role === 'user' ? '你' : 'Agent' }}</span>
+            <span>{{ message.role === 'user' ? '你' : '创作总监' }}</span>
             <p>{{ message.content }}</p>
+            <small v-if="message.routing">{{ message.routing }}</small>
           </article>
-          <p v-if="agentPanel.messages.length === 0" class="canvas-agent-panel__empty">选择 Agent 和模型后，可以让它读取画布并生成可批准的提案。</p>
+          <p v-if="agentPanel.messages.length === 0" class="canvas-agent-panel__empty">直接描述你想要的创作结果，创作总监会自动选择专业 Agent，并先生成可批准的画布提案。</p>
         </section>
 
         <section v-if="agentPanel.pendingAction" class="canvas-agent-action">
           <div>
             <strong>{{ agentPanel.pendingAction.summary || agentPanel.pendingAction.actionType }}</strong>
             <span>{{ getAgentActionStats(agentPanel.pendingAction) }}</span>
+            <small>{{ getAgentRoutingLabel(agentPanel.pendingAction) }}</small>
           </div>
+          <ul v-if="getAgentActionPreviewNodes(agentPanel.pendingAction).length" class="canvas-agent-action__preview">
+            <li v-for="node in getAgentActionPreviewNodes(agentPanel.pendingAction)" :key="node.key">
+              <b>{{ node.title }}</b>
+              <span>{{ node.type }}</span>
+            </li>
+          </ul>
           <footer>
             <button type="button" :disabled="agentPanel.busy" @click="cancelAgentAction">
               <X :size="16" />
@@ -1497,6 +1517,7 @@ const publishDialog = reactive({
   publicationId: ''
 })
 const agentProfiles = [
+  { id: 'auto', label: '自动派发（推荐）' },
   { id: 'canvas_agent', label: '画布协作 Agent' },
   { id: 'story_director', label: '故事发展 Agent' },
   { id: 'storyboard_director', label: '分镜导演 Agent' },
@@ -1509,8 +1530,9 @@ const agentModelOptions = [
   { id: 'deepseek-v4-pro', label: 'DeepSeek v4 Pro' }
 ]
 const agentPanel = reactive({
-  visible: false,
-  profile: 'canvas_agent',
+  visible: true,
+  advancedOpen: false,
+  profile: 'auto',
   modelCode: 'deepseek-v4-flash',
   sessionId: '',
   input: '',
@@ -1519,6 +1541,7 @@ const agentPanel = reactive({
   pendingAction: null,
   messages: []
 })
+const AGENT_PANEL_VISIBILITY_STORAGE_KEY = 'sluvo_agent_panel_visible'
 const referenceUploadAccept = ref('image/*')
 const referenceUploadTargetSlot = ref('')
 const directNodeElements = new Map()
@@ -1820,6 +1843,7 @@ const canUndo = computed(() => historyStack.value.length > 0)
 const canRedo = computed(() => redoStack.value.length > 0)
 const zoomLabel = computed(() => `${Math.round((viewport.value?.zoom || 1) * 100)}%`)
 const isCompactCanvas = computed(() => frameSize.width <= 900)
+const pendingAgentActionCount = computed(() => (agentPanel.pendingAction ? 1 : 0))
 const showStarterStrip = computed(
   () =>
     !canvasActivated.value &&
@@ -2043,6 +2067,15 @@ watch(
 )
 
 watch(
+  () => agentPanel.visible,
+  (visible) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(AGENT_PANEL_VISIBILITY_STORAGE_KEY, visible ? 'true' : 'false')
+    }
+  }
+)
+
+watch(
   () => route.params.projectId,
   () => {
     loadProjectCanvas()
@@ -2059,6 +2092,10 @@ watch(
 onMounted(() => {
   previousDocumentKeydown = document.onkeydown
   previousWindowKeydown = window.onkeydown
+  const storedAgentPanelVisible = window.localStorage.getItem(AGENT_PANEL_VISIBILITY_STORAGE_KEY)
+  if (storedAgentPanelVisible === 'false') {
+    agentPanel.visible = false
+  }
   loadAudioVoiceFavorites()
   document.onkeydown = handleGlobalDeleteShortcut
   window.onkeydown = handleGlobalDeleteShortcut
@@ -2235,7 +2272,11 @@ async function publishCurrentCanvas() {
 }
 
 function toggleAgentPanel() {
-  agentPanel.visible = !agentPanel.visible
+  setAgentPanelVisible(!agentPanel.visible)
+}
+
+function setAgentPanelVisible(visible) {
+  agentPanel.visible = visible
   if (agentPanel.visible) {
     addMenu.visible = false
     referenceMenu.visible = false
@@ -2280,6 +2321,7 @@ function buildAgentContextSnapshot() {
     },
     selectedNodes,
     relatedEdges,
+    agentProfile: agentPanel.profile,
     modelCode: agentPanel.modelCode,
     agentModelCode: agentPanel.modelCode
   }
@@ -2291,7 +2333,7 @@ async function ensureAgentSession() {
   if (!projectId) throw new Error('缺少项目 ID')
   const response = await createSluvoAgentSession(projectId, {
     canvasId: activeCanvas.value?.id || null,
-    title: 'Canvas Agent',
+    title: '创作总监',
     agentProfile: agentPanel.profile,
     modelCode: agentPanel.modelCode,
     mode: 'semi_auto',
@@ -2313,7 +2355,7 @@ async function startAgentWithSelection(content) {
 }
 
 async function runAgentPrompt(content) {
-  agentPanel.visible = true
+  setAgentPanelVisible(true)
   agentPanel.busy = true
   agentPanel.error = ''
   try {
@@ -2325,12 +2367,18 @@ async function runAgentPrompt(content) {
       content,
       payload: {
         contextSnapshot: buildAgentContextSnapshot(),
+        agentProfile: agentPanel.profile,
         modelCode: agentPanel.modelCode
       },
       turnId: `turn-${Date.now()}`
     })
     const agentContent = response?.agentEvent?.payload?.content || 'Agent 已生成一条可审阅提案。'
-    agentPanel.messages.push({ id: response?.agentEvent?.id || `agent-${Date.now()}`, role: 'agent', content: agentContent })
+    agentPanel.messages.push({
+      id: response?.agentEvent?.id || `agent-${Date.now()}`,
+      role: 'agent',
+      content: agentContent,
+      routing: getAgentEventRoutingLabel(response?.agentEvent?.payload)
+    })
     agentPanel.pendingAction = normalizeAgentAction(response?.action)
     agentPanel.input = ''
   } catch (error) {
@@ -2343,9 +2391,10 @@ async function runAgentPrompt(content) {
 
 function normalizeAgentAction(action) {
   if (!action) return null
+  const contextSummary = action.input?.contextSummary || {}
   return {
     ...action,
-    summary: action.result?.summary || action.input?.contextSummary?.profile || getAgentActionSummary(action.actionType)
+    summary: action.result?.summary || contextSummary.resolvedProfileLabel || contextSummary.profile || getAgentActionSummary(action.actionType)
   }
 }
 
@@ -2364,6 +2413,39 @@ function getAgentActionStats(action) {
   const nodeCount = Array.isArray(patch.nodes) ? patch.nodes.length : 0
   const edgeCount = Array.isArray(patch.edges) ? patch.edges.length : 0
   return `${nodeCount} 个节点 · ${edgeCount} 条连线 · 待批准`
+}
+
+function getAgentEventRoutingLabel(payload) {
+  if (!payload) return ''
+  const profile = payload.resolvedProfileLabel || getAgentProfileLabel(payload.resolvedProfile || payload.profile)
+  const model = getAgentModelLabel(payload.modelCode)
+  const reason = payload.routingReason || ''
+  return [profile ? `主导：${profile}` : '', model, reason].filter(Boolean).join(' · ')
+}
+
+function getAgentRoutingLabel(action) {
+  const summary = action?.input?.contextSummary || {}
+  const profile = summary.resolvedProfileLabel || getAgentProfileLabel(summary.resolvedProfile || summary.profile)
+  const model = getAgentModelLabel(summary.modelCode)
+  const reason = summary.routingReason || ''
+  return [profile ? `主导：${profile}` : '', model, reason].filter(Boolean).join(' · ')
+}
+
+function getAgentProfileLabel(profileId) {
+  return agentProfiles.find((profile) => profile.id === profileId)?.label || profileId || ''
+}
+
+function getAgentModelLabel(modelCode) {
+  return agentModelOptions.find((model) => model.id === modelCode)?.label || modelCode || ''
+}
+
+function getAgentActionPreviewNodes(action) {
+  const nodes = Array.isArray(action?.patch?.nodes) ? action.patch.nodes : []
+  return nodes.slice(0, 5).map((node, index) => ({
+    key: node.id || node.clientId || node.data?.clientId || `${index}`,
+    title: node.title || node.data?.title || `节点 ${index + 1}`,
+    type: node.nodeType || node.data?.directType || 'node'
+  }))
 }
 
 async function approveAgentAction() {
@@ -8879,13 +8961,11 @@ function handleContextAgentAnalyze() {
 
 function handleContextAgentDownstream() {
   contextMenu.visible = false
-  agentPanel.profile = 'storyboard_director'
   startAgentWithSelection('请根据当前选区生成下游分镜、首帧和视频生成链路。')
 }
 
 function handleContextAgentConsistency() {
   contextMenu.visible = false
-  agentPanel.profile = 'consistency_checker'
   startAgentWithSelection('请检查当前选区的角色、场景、道具和风格一致性。')
 }
 

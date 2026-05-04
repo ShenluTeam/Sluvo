@@ -62,7 +62,7 @@ MVP canvas interactions:
 - Open inspector from node click
 - Run node action from node or inspector
 - Upload image, video, and audio files into a canvas asset node with instant preview and visible upload state
-- Open the Canvas Agent panel, choose an Agent profile and model, send selected-node context, review the proposed action, then approve or cancel it.
+- Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, let the system auto-route to a specialist Agent, review the proposed action, then approve or cancel it.
 - Add an Agent node to the canvas and connect it to creative inputs/outputs like other workflow nodes.
 
 Canvas layout must be stable: hover states, badges, task indicators, and loading states should not cause node size jumps.
@@ -130,7 +130,7 @@ Upload capacity errors should use user-facing copy that explains the storage lim
 
 Publishing to community must make clear that it creates a shareable snapshot. Updating the original project after publishing should not visually imply the community version changes until the creator publishes again.
 
-Agent proposals must make clear that they are not written to the canvas until the user approves them. The initial selectable Agent models are `DeepSeek v4 Flash` and `DeepSeek v4 Pro`; model choice should appear as a creative control, not as a raw provider-debug field.
+Agent proposals must make clear that they are not written to the canvas until the user approves them. The default Agent profile is automatic 创作总监 routing; manual Agent and model controls belong in advanced settings. The initial selectable Agent models are `DeepSeek v4 Flash` and `DeepSeek v4 Pro`; model choice should appear as a creative control, not as a raw provider-debug field.
 
 ## 7. Copywriting
 

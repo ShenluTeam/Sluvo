@@ -110,6 +110,7 @@ Frontend write mapping:
 - Uploaded Sluvo media is stored in OSS by user namespace and Sluvo project: `users/{namespace}/sluvo/projects/{project}/canvases/{canvas}/{images|videos|audio}/...`.
 - Sluvo uploads enforce the existing user storage quota path; the default free-user capacity is `5GB`. Duplicate uploads in the same user/project scope can reuse an existing OSS object by `sha256 + user_id + project_id`.
 - Canvas Agent endpoints are called by the current canvas milestone. Messages create proposed actions; approving an action applies its batch-compatible `patch` through the existing canvas save path and records `SluvoCanvasMutation` with Agent session/action IDs.
+- `agentProfile: "auto"` is the default 创作总监 contract. The backend resolves the specialist Agent and action type from the prompt and canvas context, then exposes `resolvedProfile`, `resolvedActionType`, `routingReason`, and `modelCode` in the Agent event/action input summary.
 - Agent model choices currently allow `deepseek-v4-flash` and `deepseek-v4-pro`. Unknown values normalize to `deepseek-v4-flash`; when `DEEPSEEK_API_KEY` exists, the selected model is used to draft proposal content, with deterministic fallback on failure. Future models should be added server-side before exposing them in the frontend.
 
 ## 5. Legacy Project Workspace APIs

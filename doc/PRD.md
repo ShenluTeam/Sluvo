@@ -196,7 +196,7 @@ Edge types:
 ### P1: Production Beta
 
 - Node templates and workflow templates.
-- Canvas Agent panel and Agent nodes that read selected canvas context, propose batch-compatible canvas changes, and require user approval before writing.
+- Right-side collapsible 创作总监 Agent panel and Agent nodes that read selected canvas context, auto-route to specialist Agents, propose batch-compatible canvas changes, and require user approval before writing.
 - User-created no-code Agent templates with selectable DeepSeek v4 Flash / v4 Pro model choice.
 - Branch run: execute selected downstream graph.
 - Output comparison board for image and video variants.

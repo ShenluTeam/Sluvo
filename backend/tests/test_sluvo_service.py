@@ -47,6 +47,7 @@ from services.sluvo_service import (
     create_sluvo_project,
     get_or_create_main_canvas,
     require_sluvo_project_access,
+    resolve_sluvo_agent_route,
     update_sluvo_node,
 )
 
@@ -358,6 +359,7 @@ def test_sluvo_agent_session_event_action_approval_writes_mutation():
             target_node_id=None,
             title="Agent",
             agent_profile="canvas_agent",
+            model_code="deepseek-v4-flash",
             mode="semi_auto",
             context_snapshot={"goal": "test"},
         )
@@ -384,3 +386,35 @@ def test_sluvo_agent_session_event_action_approval_writes_mutation():
         assert event.sequence_no == 1
         assert approved.status == "succeeded"
         assert session.exec(select(SluvoCanvasMutation).where(SluvoCanvasMutation.actor_type == "agent")).first()
+
+
+def test_sluvo_agent_auto_route_selects_specialist_profiles():
+    with _make_session() as session:
+        prompt_route = resolve_sluvo_agent_route(
+            session,
+            requested_profile="auto",
+            prompt="请优化这个 prompt，让它适合视频生成",
+            context={},
+            selected_nodes=[],
+        )
+        storyboard_route = resolve_sluvo_agent_route(
+            session,
+            requested_profile="auto",
+            prompt="把这段剧情拆分成分镜和首帧视频链路",
+            context={},
+            selected_nodes=[],
+        )
+        explicit_route = resolve_sluvo_agent_route(
+            session,
+            requested_profile="consistency_checker",
+            prompt="请看一下",
+            context={},
+            selected_nodes=[],
+        )
+
+        assert prompt_route["profile"] == "prompt_polisher"
+        assert prompt_route["actionType"] == "prompt.rewrite"
+        assert storyboard_route["profile"] == "storyboard_director"
+        assert storyboard_route["actionType"] == "workflow.plan"
+        assert explicit_route["profile"] == "consistency_checker"
+        assert explicit_route["actionType"] == "agent.report"

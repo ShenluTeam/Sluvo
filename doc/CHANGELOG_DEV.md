@@ -457,6 +457,29 @@ Verification suggestions:
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/PRD.md`
+- `doc/UI_REQUIREMENTS.md`
+
+Impact scope:
+- Reworked the Canvas Agent UX into a right-side, collapsible 创作总监 panel that defaults open and stores its collapsed state locally.
+- Changed the default Agent flow to `agentProfile: "auto"` with manual Agent/model controls moved into advanced settings.
+- Added backend auto-routing from prompt/context to specialist Agents and action types, returning resolved profile/action/model metadata for the UI.
+- Expanded proposal cards with route metadata and a compact node preview list before approval.
+
+Verification suggestions:
+- Run `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/models.py backend/schemas.py`.
+- Run `python3 -m pytest backend/tests/test_sluvo_service.py -q`.
+- Run `npm run build`.
+- Run `git diff --check`.
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
