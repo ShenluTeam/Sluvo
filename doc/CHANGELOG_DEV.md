@@ -3,6 +3,21 @@
 ## 2026-05-04
 
 Changed files:
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Fixed permanent recycle-bin deletion ordering for Sluvo projects.
+- Child records are now deleted and flushed in dependency order before parent canvas and project rows, preventing MySQL foreign-key failures when deleting a project with canvas nodes.
+
+Verification:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py`
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
 - `apps/sluvo-web/src/views/ProjectListView.vue`
 - `apps/sluvo-web/src/views/TrashView.vue`

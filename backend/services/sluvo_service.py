@@ -896,6 +896,12 @@ def permanently_delete_sluvo_project(session: Session, project: SluvoProject) ->
     if project.deleted_at is None and project.status != SLUVO_PROJECT_STATUS_DELETED:
         raise HTTPException(status_code=400, detail="只能彻底删除回收站中的项目")
 
+    def delete_and_flush(items: List[Any]) -> None:
+        for item in items:
+            session.delete(item)
+        if items:
+            session.flush()
+
     canvases = session.exec(select(SluvoCanvas).where(SluvoCanvas.project_id == project.id)).all()
     canvas_ids = [item.id for item in canvases if item.id is not None]
     nodes = session.exec(
@@ -906,38 +912,28 @@ def permanently_delete_sluvo_project(session: Session, project: SluvoProject) ->
     actions = session.exec(select(SluvoAgentAction).where(SluvoAgentAction.project_id == project.id)).all()
     action_ids = [item.id for item in actions if item.id is not None]
 
-    for item in session.exec(select(SluvoCanvasMutation).where(SluvoCanvasMutation.project_id == project.id)).all():
-        session.delete(item)
-
-    if action_ids:
-        for item in session.exec(select(SluvoAgentAction).where(SluvoAgentAction.id.in_(action_ids))).all():
-            session.delete(item)
+    delete_and_flush(session.exec(select(SluvoCanvasMutation).where(SluvoCanvasMutation.project_id == project.id)).all())
     if session_ids:
-        for item in session.exec(select(SluvoAgentEvent).where(SluvoAgentEvent.session_id.in_(session_ids))).all():
-            session.delete(item)
-        for item in session.exec(select(SluvoAgentSession).where(SluvoAgentSession.id.in_(session_ids))).all():
-            session.delete(item)
+        delete_and_flush(session.exec(select(SluvoAgentEvent).where(SluvoAgentEvent.session_id.in_(session_ids))).all())
+    if action_ids:
+        delete_and_flush(session.exec(select(SluvoAgentAction).where(SluvoAgentAction.id.in_(action_ids))).all())
+    if session_ids:
+        delete_and_flush(session.exec(select(SluvoAgentSession).where(SluvoAgentSession.id.in_(session_ids))).all())
 
-    for item in session.exec(select(SluvoCommunityCanvas).where(SluvoCommunityCanvas.source_project_id == project.id)).all():
-        session.delete(item)
-    for item in session.exec(select(SluvoCanvasAsset).where(SluvoCanvasAsset.project_id == project.id)).all():
-        session.delete(item)
+    delete_and_flush(session.exec(select(SluvoCommunityCanvas).where(SluvoCommunityCanvas.source_project_id == project.id)).all())
+    delete_and_flush(session.exec(select(SluvoCanvasAsset).where(SluvoCanvasAsset.project_id == project.id)).all())
     if canvas_ids:
-        for item in session.exec(select(SluvoCanvasEdge).where(SluvoCanvasEdge.canvas_id.in_(canvas_ids))).all():
-            session.delete(item)
+        delete_and_flush(session.exec(select(SluvoCanvasEdge).where(SluvoCanvasEdge.canvas_id.in_(canvas_ids))).all())
 
     if nodes:
         for node in nodes:
             node.parent_node_id = None
             session.add(node)
         session.flush()
-        for node in nodes:
-            session.delete(node)
+        delete_and_flush(nodes)
 
-    for canvas in canvases:
-        session.delete(canvas)
-    for item in session.exec(select(SluvoProjectMember).where(SluvoProjectMember.project_id == project.id)).all():
-        session.delete(item)
+    delete_and_flush(canvases)
+    delete_and_flush(session.exec(select(SluvoProjectMember).where(SluvoProjectMember.project_id == project.id)).all())
     session.delete(project)
     session.commit()
 
