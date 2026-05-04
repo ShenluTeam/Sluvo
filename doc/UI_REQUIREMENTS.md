@@ -23,7 +23,9 @@ After the logged-in homepage prompt composer, the first lower module should prio
 
 The open canvas community should feel like a creator gallery, not an admin table. Guests may browse community cards, but detail and fork actions must lead through login. Community detail is read-only; reuse happens by forking into a new editable project.
 
-The left rail folder icon opens the full project space. The left rail trash icon opens the recycle bin, which lists soft-deleted projects while restore/permanent-delete controls are not yet implemented.
+The left rail folder icon opens the full project space. The left rail trash icon opens the recycle bin, which lists soft-deleted projects and supports restoring a project or permanently deleting it.
+
+The logged-in left navigation rail should be fixed to the viewport on the home, project space, and recycle-bin pages. Desktop uses a fixed left rail; narrow screens convert the same rail into a fixed top bar so page scrolling never moves the navigation away.
 
 Design tone:
 - Clear

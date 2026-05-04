@@ -33,7 +33,7 @@
       <div class="trash-content">
         <div class="trash-heading">
           <h1>回收站</h1>
-          <p>已删除的项目会暂存在这里，后续可接入恢复和彻底删除能力。</p>
+          <p>已删除的项目会暂存在这里，你可以恢复到项目空间，也可以彻底删除。</p>
         </div>
 
         <div class="trash-tabs" aria-label="回收站分类">
@@ -56,6 +56,17 @@
             </span>
             <strong>{{ project.title || '未命名画布' }}</strong>
             <small>{{ formatTrashMeta(project) }}</small>
+            <div class="trash-card__actions">
+              <button type="button" :disabled="processingProjectIds.has(project.id)" @click="restoreProject(project)">
+                <Loader2 v-if="processingProjectIds.has(project.id)" class="spin" :size="14" />
+                <RotateCcw v-else :size="14" />
+                恢复
+              </button>
+              <button type="button" :disabled="processingProjectIds.has(project.id)" @click="permanentlyDeleteProject(project)">
+                <Trash2 :size="14" />
+                彻底删除
+              </button>
+            </div>
           </article>
 
           <article v-if="!loading && filteredDeletedProjects.length === 0" class="trash-card trash-card--empty">
@@ -72,10 +83,10 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Compass, FolderOpen, Home, Search, Trash2 } from 'lucide-vue-next'
+import { Compass, FolderOpen, Home, Loader2, RotateCcw, Search, Trash2 } from 'lucide-vue-next'
 import logoUrl from '../../LOGO.png'
 import { useAuthStore } from '../stores/authStore'
-import { fetchSluvoProjects } from '../api/sluvoApi'
+import { fetchSluvoProjects, permanentlyDeleteSluvoProject, restoreSluvoProject } from '../api/sluvoApi'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -83,6 +94,7 @@ const deletedProjects = ref([])
 const loading = ref(false)
 const errorText = ref('')
 const searchText = ref('')
+const processingProjectIds = ref(new Set())
 
 const filteredDeletedProjects = computed(() => {
   const keyword = searchText.value.toLowerCase()
@@ -122,6 +134,42 @@ function goProjects() {
 
 function goCommunity() {
   router.push({ name: 'home', hash: '#community' })
+}
+
+async function restoreProject(project) {
+  if (!project?.id || processingProjectIds.value.has(project.id)) return
+  processingProjectIds.value = new Set([...processingProjectIds.value, project.id])
+  errorText.value = ''
+  try {
+    await restoreSluvoProject(project.id)
+    deletedProjects.value = deletedProjects.value.filter((item) => item.id !== project.id)
+  } catch (error) {
+    if (error?.status === 401) authStore.logout()
+    errorText.value = error instanceof Error ? error.message : '项目恢复失败'
+  } finally {
+    const next = new Set(processingProjectIds.value)
+    next.delete(project.id)
+    processingProjectIds.value = next
+  }
+}
+
+async function permanentlyDeleteProject(project) {
+  if (!project?.id || processingProjectIds.value.has(project.id)) return
+  const title = project.title || '未命名画布'
+  if (!window.confirm(`彻底删除「${title}」吗？该操作无法撤销。`)) return
+  processingProjectIds.value = new Set([...processingProjectIds.value, project.id])
+  errorText.value = ''
+  try {
+    await permanentlyDeleteSluvoProject(project.id)
+    deletedProjects.value = deletedProjects.value.filter((item) => item.id !== project.id)
+  } catch (error) {
+    if (error?.status === 401) authStore.logout()
+    errorText.value = error instanceof Error ? error.message : '彻底删除失败'
+  } finally {
+    const next = new Set(processingProjectIds.value)
+    next.delete(project.id)
+    processingProjectIds.value = next
+  }
 }
 
 function resolveProjectImageUrl(value) {
@@ -174,20 +222,23 @@ function formatTrashMeta(project) {
 
 <style scoped>
 .trash-space {
-  display: grid;
-  grid-template-columns: 76px 1fr;
+  display: block;
   min-height: 100vh;
+  padding-left: 76px;
   background: #060606;
   color: #f9f1dc;
 }
 
 .trash-rail {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  z-index: 12;
   display: flex;
   align-items: center;
   flex-direction: column;
   gap: 12px;
+  width: 76px;
   height: 100vh;
   padding: 18px 12px;
   background: rgba(13, 13, 13, 0.96);
@@ -380,17 +431,65 @@ function formatTrashMeta(project) {
   font-size: 12px;
 }
 
+.trash-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 4px 0;
+}
+
+.trash-card__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.075);
+  color: rgba(249, 241, 220, 0.82);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.trash-card__actions button:first-child {
+  border: 1px solid rgba(255, 221, 151, 0.34);
+  background: rgba(214, 181, 109, 0.14);
+  color: #fff1c7;
+}
+
+.trash-card__actions button:last-child {
+  border: 1px solid rgba(255, 136, 120, 0.28);
+  color: #ffd0c8;
+}
+
+.trash-card__actions button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
 .trash-card--empty {
   opacity: 0.72;
 }
 
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 820px) {
   .trash-space {
-    grid-template-columns: 1fr;
+    padding-top: 64px;
+    padding-left: 0;
   }
 
   .trash-rail {
-    z-index: 10;
+    z-index: 12;
     flex-direction: row;
     width: 100%;
     height: 64px;

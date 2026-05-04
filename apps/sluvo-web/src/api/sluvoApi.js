@@ -50,6 +50,18 @@ export function deleteSluvoProject(projectId) {
   })
 }
 
+export function restoreSluvoProject(projectId) {
+  return apiFetch(`/api/sluvo/projects/${projectId}/restore`, {
+    method: 'POST'
+  })
+}
+
+export function permanentlyDeleteSluvoProject(projectId) {
+  return apiFetch(`/api/sluvo/projects/${projectId}/permanent`, {
+    method: 'DELETE'
+  })
+}
+
 export function fetchSluvoProjectCanvas(projectId) {
   return apiFetch(`/api/sluvo/projects/${projectId}/canvas`)
 }

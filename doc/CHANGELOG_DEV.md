@@ -6,6 +6,44 @@ Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
 - `apps/sluvo-web/src/views/ProjectListView.vue`
 - `apps/sluvo-web/src/views/TrashView.vue`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the logged-in navigation rail from sticky layout behavior to fixed viewport positioning across the home, full project space, and recycle-bin pages.
+- Added main-content offsets so desktop content does not slide under the fixed left rail, and narrow screens use a fixed top rail with matching top spacing.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `apps/sluvo-web/src/views/TrashView.vue`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Implemented recycle-bin actions for Sluvo projects: users can restore soft-deleted projects or permanently delete them.
+- Added backend endpoints for project restore and permanent deletion. Permanent deletion removes the Sluvo project record and its Sluvo canvases, nodes, edges, canvas assets, agent records, mutations, members, and community publication record while leaving OSS objects untouched.
+- Updated the recycle-bin copy and cards to show real action buttons instead of future-capability language.
+
+Verification:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py`
+- `npm run build`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/ProjectListView.vue`
+- `apps/sluvo-web/src/views/TrashView.vue`
 - `apps/sluvo-web/src/router/index.js`
 - `apps/sluvo-web/src/api/sluvoApi.js`
 - `backend/routers/sluvo.py`

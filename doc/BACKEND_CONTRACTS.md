@@ -65,6 +65,8 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | Read Sluvo project | GET | `/api/sluvo/projects/{project_id}` |
 | Patch Sluvo project | PATCH | `/api/sluvo/projects/{project_id}` |
 | Soft-delete Sluvo project | DELETE | `/api/sluvo/projects/{project_id}` |
+| Restore Sluvo project | POST | `/api/sluvo/projects/{project_id}/restore` |
+| Permanently delete Sluvo project | DELETE | `/api/sluvo/projects/{project_id}/permanent` |
 | Read main canvas | GET | `/api/sluvo/projects/{project_id}/canvas` |
 | Patch canvas snapshot/viewport | PATCH | `/api/sluvo/canvases/{canvas_id}` |
 | Create node | POST | `/api/sluvo/canvases/{canvas_id}/nodes` |

@@ -221,20 +221,23 @@ function formatProjectMeta(project) {
 
 <style scoped>
 .project-space {
-  display: grid;
-  grid-template-columns: 76px 1fr;
+  display: block;
   min-height: 100vh;
+  padding-left: 76px;
   background: #060606;
   color: #f9f1dc;
 }
 
 .space-rail {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  z-index: 12;
   display: flex;
   align-items: center;
   flex-direction: column;
   gap: 12px;
+  width: 76px;
   height: 100vh;
   padding: 18px 12px;
   background: rgba(13, 13, 13, 0.96);
@@ -501,11 +504,12 @@ function formatProjectMeta(project) {
 
 @media (max-width: 820px) {
   .project-space {
-    grid-template-columns: 1fr;
+    padding-top: 64px;
+    padding-left: 0;
   }
 
   .space-rail {
-    z-index: 10;
+    z-index: 12;
     flex-direction: row;
     width: 100%;
     height: 64px;

@@ -1613,19 +1613,21 @@ onBeforeUnmount(() => {
 }
 
 .home-workbench {
-  display: grid;
-  grid-template-columns: 76px 1fr;
+  display: block;
+  padding-left: 76px;
   background: #050505;
 }
 
 .workbench-rail {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
   z-index: 15;
   display: flex;
   align-items: center;
   flex-direction: column;
   gap: 12px;
+  width: 76px;
   height: 100vh;
   padding: 18px 12px;
   border-right: 1px solid rgba(214, 181, 109, 0.12);
@@ -3255,12 +3257,14 @@ onBeforeUnmount(() => {
   }
 
   .home-workbench {
-    grid-template-columns: 1fr;
+    padding-top: 64px;
+    padding-left: 0;
   }
 
   .workbench-rail {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
     flex-direction: row;
     width: 100%;
     height: 64px;
