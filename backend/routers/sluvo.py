@@ -53,6 +53,7 @@ from services.sluvo_service import (
     list_sluvo_project_members,
     list_sluvo_projects,
     publish_sluvo_project_to_community,
+    permanently_delete_sluvo_project,
     remove_sluvo_project_member,
     require_sluvo_community_canvas,
     require_sluvo_agent_action,
@@ -66,6 +67,7 @@ from services.sluvo_service import (
     serialize_sluvo_node,
     serialize_sluvo_project,
     soft_delete_sluvo_project,
+    restore_sluvo_project,
     unpublish_sluvo_community_canvas,
     update_sluvo_canvas,
     update_sluvo_edge,
@@ -86,6 +88,7 @@ def _access_project(
     team_member: TeamMemberLink,
     project_id: str,
     permission: str,
+    include_deleted: bool = False,
 ):
     return require_sluvo_project_access(
         session,
@@ -94,6 +97,7 @@ def _access_project(
         team_member=team_member,
         project_id=decode_id(project_id),
         permission=permission,
+        include_deleted=include_deleted,
     )
 
 
@@ -130,13 +134,14 @@ async def post_sluvo_project(
 @router.get("/api/sluvo/projects")
 async def get_sluvo_projects(
     includeArchived: bool = False,
+    includeDeleted: bool = False,
     _: TeamMemberLink = Depends(require_team_permission("project:read")),
     user: User = Depends(get_current_user),
     team: Team = Depends(get_current_team),
     team_member: TeamMemberLink = Depends(get_current_team_member),
     session: Session = Depends(get_session),
 ):
-    return {"items": list_sluvo_projects(session, user=user, team=team, team_member=team_member, include_archived=includeArchived)}
+    return {"items": list_sluvo_projects(session, user=user, team=team, team_member=team_member, include_archived=includeArchived, include_deleted=includeDeleted)}
 
 
 @router.get("/api/sluvo/community/canvases")
@@ -264,6 +269,52 @@ async def delete_sluvo_project(
         permission=SLUVO_PERMISSION_MANAGE,
     )
     soft_delete_sluvo_project(session, project)
+    return {"status": "success", "deletedProjectId": project_id}
+
+
+@router.post("/api/sluvo/projects/{project_id}/restore")
+async def post_sluvo_project_restore(
+    project_id: str,
+    _: TeamMemberLink = Depends(require_team_permission("project:manage")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    project, member = _access_project(
+        session,
+        user=user,
+        team=team,
+        team_member=team_member,
+        project_id=project_id,
+        permission=SLUVO_PERMISSION_MANAGE,
+        include_deleted=True,
+    )
+    project = restore_sluvo_project(session, project)
+    first_image_url = get_sluvo_project_first_image_url(session, project.id)
+    publication = get_sluvo_project_community_publication(session, project.id)
+    return {"project": serialize_sluvo_project(project, member.role if member else None, first_image_url, publication)}
+
+
+@router.delete("/api/sluvo/projects/{project_id}/permanent")
+async def delete_sluvo_project_permanent(
+    project_id: str,
+    _: TeamMemberLink = Depends(require_team_permission("project:manage")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    project, _ = _access_project(
+        session,
+        user=user,
+        team=team,
+        team_member=team_member,
+        project_id=project_id,
+        permission=SLUVO_PERMISSION_MANAGE,
+        include_deleted=True,
+    )
+    permanently_delete_sluvo_project(session, project)
     return {"status": "success", "deletedProjectId": project_id}
 
 

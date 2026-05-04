@@ -44,15 +44,22 @@
         </div>
       </header>
 
-      <section class="community-preview" aria-label="只读画布预览">
-        <svg class="community-preview__edges" :viewBox="previewViewBox" preserveAspectRatio="xMidYMid meet">
-          <path v-for="edge in previewEdges" :key="edge.id" :d="edge.path" />
+      <section ref="previewFrame" class="community-preview" aria-label="只读画布全景预览">
+        <div class="community-preview__hud">
+          <span>只读画布全景</span>
+          <strong>{{ previewZoomLabel }}</strong>
+        </div>
+        <svg class="community-preview__edges" aria-hidden="true">
+          <g :transform="previewSvgTransform">
+            <path v-for="edge in previewEdges" :key="edge.id" :d="edge.path" />
+          </g>
         </svg>
-        <div class="community-preview__nodes" :style="previewTransformStyle">
+        <div class="community-preview__nodes" :style="previewLayerStyle">
           <article
             v-for="node in previewNodes"
             :key="node.id"
             class="community-node"
+            :class="{ 'community-node--image': node.imageUrl }"
             :style="{ left: `${node.x}px`, top: `${node.y}px`, width: `${node.width}px`, height: `${node.height}px` }"
           >
             <strong>{{ node.title }}</strong>
@@ -67,7 +74,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { GitFork, Loader2 } from 'lucide-vue-next'
 import logoUrl from '../../LOGO.png'
@@ -79,6 +86,9 @@ const publication = ref(null)
 const loading = ref(false)
 const forking = ref(false)
 const error = ref('')
+const previewFrame = ref(null)
+const previewSize = ref({ width: 1180, height: 620 })
+let previewResizeObserver = null
 
 const previewNodes = computed(() => {
   return (publication.value?.nodes || []).map((node, index) => {
@@ -90,9 +100,9 @@ const previewNodes = computed(() => {
       kind: data.directType || node.nodeType || 'node',
       x: Number(node.position?.x || 0),
       y: Number(node.position?.y || 0),
-      width: Number(node.size?.width || 220),
-      height: Number(node.size?.height || 150),
-      imageUrl: resolveImageUrl(media) || resolveImageUrl(data.referenceImages),
+      width: normalizeNodeSize(node.size?.width, 260),
+      height: normalizeNodeSize(node.size?.height, resolveImageUrl(media) ? 190 : 150),
+      imageUrl: resolveImageUrl(media) || resolveImageUrl(data.referenceImages) || resolveImageUrl(data),
       body: data.prompt || data.body || '社区画布节点'
     }
   })
@@ -104,29 +114,44 @@ const previewBounds = computed(() => {
   const ys = previewNodes.value.map((node) => node.y)
   const rights = previewNodes.value.map((node) => node.x + node.width)
   const bottoms = previewNodes.value.map((node) => node.y + node.height)
-  const x = Math.min(...xs) - 120
-  const y = Math.min(...ys) - 120
+  const rawWidth = Math.max(...rights) - Math.min(...xs)
+  const rawHeight = Math.max(...bottoms) - Math.min(...ys)
+  const gutter = Math.max(160, Math.min(420, Math.max(rawWidth, rawHeight) * 0.08))
+  const x = Math.min(...xs) - gutter
+  const y = Math.min(...ys) - gutter
   return {
     x,
     y,
-    width: Math.max(...rights) - x + 120,
-    height: Math.max(...bottoms) - y + 120
+    width: Math.max(...rights) - x + gutter,
+    height: Math.max(...bottoms) - y + gutter
   }
 })
 
-const previewViewBox = computed(() => {
+const previewFit = computed(() => {
   const bounds = previewBounds.value
-  return `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`
+  const frame = previewSize.value
+  const padding = frame.width < 760 ? 28 : 58
+  const availableWidth = Math.max(1, frame.width - padding * 2)
+  const availableHeight = Math.max(1, frame.height - padding * 2)
+  const scale = Math.min(1, availableWidth / bounds.width, availableHeight / bounds.height)
+  const offsetX = (frame.width - bounds.width * scale) / 2 - bounds.x * scale
+  const offsetY = (frame.height - bounds.height * scale) / 2 - bounds.y * scale
+  return { scale, offsetX, offsetY }
 })
 
-const previewTransformStyle = computed(() => {
-  const bounds = previewBounds.value
+const previewLayerStyle = computed(() => {
+  const fit = previewFit.value
   return {
-    width: `${bounds.width}px`,
-    height: `${bounds.height}px`,
-    transform: `translate(${-bounds.x}px, ${-bounds.y}px)`
+    transform: `translate(${fit.offsetX}px, ${fit.offsetY}px) scale(${fit.scale})`
   }
 })
+
+const previewSvgTransform = computed(() => {
+  const fit = previewFit.value
+  return `translate(${fit.offsetX} ${fit.offsetY}) scale(${fit.scale})`
+})
+
+const previewZoomLabel = computed(() => `${Math.round(previewFit.value.scale * 100)}%`)
 
 const previewEdges = computed(() => {
   const nodeMap = new Map(previewNodes.value.map((node) => [node.id, node]))
@@ -148,7 +173,23 @@ const previewEdges = computed(() => {
     .filter(Boolean)
 })
 
-onMounted(loadPublication)
+onMounted(() => {
+  loadPublication()
+  nextTick(() => observePreviewFrame())
+})
+
+onBeforeUnmount(() => {
+  previewResizeObserver?.disconnect?.()
+  previewResizeObserver = null
+})
+
+watch(
+  () => publication.value?.id,
+  () => nextTick(() => {
+    observePreviewFrame()
+    measurePreviewFrame()
+  })
+)
 
 async function loadPublication() {
   loading.value = true
@@ -190,9 +231,41 @@ function resolveImageUrl(value) {
     return ''
   }
   if (typeof value === 'object') {
-    return resolveImageUrl(value.url) || resolveImageUrl(value.previewUrl) || resolveImageUrl(value.thumbnailUrl) || resolveImageUrl(value.imageUrl)
+    return (
+      resolveImageUrl(value.url) ||
+      resolveImageUrl(value.previewUrl) ||
+      resolveImageUrl(value.thumbnailUrl) ||
+      resolveImageUrl(value.imageUrl) ||
+      resolveImageUrl(value.src) ||
+      resolveImageUrl(value.assetUrl) ||
+      resolveImageUrl(value.mediaUrl) ||
+      resolveImageUrl(value.coverUrl) ||
+      resolveImageUrl(value.images) ||
+      resolveImageUrl(value.assets)
+    )
   }
   return ''
+}
+
+function normalizeNodeSize(value, fallback) {
+  const size = Number(value)
+  return Number.isFinite(size) && size > 0 ? size : fallback
+}
+
+function observePreviewFrame() {
+  const element = previewFrame.value
+  if (!element) return
+  if (!previewResizeObserver && typeof ResizeObserver !== 'undefined') {
+    previewResizeObserver = new ResizeObserver(measurePreviewFrame)
+    previewResizeObserver.observe(element)
+  }
+  measurePreviewFrame()
+}
+
+function measurePreviewFrame() {
+  const rect = previewFrame.value?.getBoundingClientRect?.()
+  if (!rect?.width || !rect?.height) return
+  previewSize.value = { width: rect.width, height: rect.height }
 }
 
 function formatDate(value) {
@@ -339,7 +412,8 @@ function goHome() {
   position: relative;
   overflow: hidden;
   max-width: 1180px;
-  height: 620px;
+  height: min(760px, 72vh);
+  min-height: 560px;
   margin: 0 auto;
   border: 1px solid rgba(214, 181, 109, 0.14);
   border-radius: 8px;
@@ -349,6 +423,34 @@ function goHome() {
     radial-gradient(circle at 50% 40%, rgba(214, 181, 109, 0.12), transparent 46%),
     #090806;
   background-size: 34px 34px, 34px 34px, auto, auto;
+}
+
+.community-preview__hud {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.community-preview__hud span,
+.community-preview__hud strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 241, 199, 0.13);
+  border-radius: 8px;
+  background: rgba(18, 15, 10, 0.72);
+  color: rgba(255, 248, 230, 0.72);
+  font-size: 12px;
+  font-weight: 900;
+  backdrop-filter: blur(8px);
 }
 
 .community-preview__edges {
@@ -362,6 +464,7 @@ function goHome() {
   fill: none;
   stroke: rgba(214, 181, 109, 0.58);
   stroke-width: 3;
+  vector-effect: non-scaling-stroke;
 }
 
 .community-preview__nodes {
@@ -383,6 +486,10 @@ function goHome() {
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32);
 }
 
+.community-node--image {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
 .community-node strong {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -397,10 +504,11 @@ function goHome() {
 
 .community-node img {
   width: 100%;
-  min-height: 80px;
-  max-height: 180px;
-  object-fit: cover;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
   border-radius: 6px;
+  background: rgba(0, 0, 0, 0.38);
 }
 
 .community-node p {
@@ -450,7 +558,8 @@ function goHome() {
   }
 
   .community-preview {
-    height: 520px;
+    height: 62vh;
+    min-height: 420px;
   }
 }
 </style>

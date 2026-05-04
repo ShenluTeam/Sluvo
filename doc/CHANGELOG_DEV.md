@@ -1,5 +1,161 @@
 # Sluvo Development Changelog
 
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/index.html`
+- `apps/sluvo-web/public/favicon.png`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added the Sluvo logo as the website favicon and Apple touch icon so browser tabs and shortcuts show the product logo instead of the default browser icon.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Fixed permanent recycle-bin deletion ordering for Sluvo projects.
+- Child records are now deleted and flushed in dependency order before parent canvas and project rows, preventing MySQL foreign-key failures when deleting a project with canvas nodes.
+
+Verification:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py`
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/ProjectListView.vue`
+- `apps/sluvo-web/src/views/TrashView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Aligned the full project space and recycle-bin navigation rail with the logged-in homepage rail.
+- Unified rail logo sizing, dark gold background, active/hover states, icon order, separator styling, and topbar brand logo framing across the logged-in pages.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/ProjectListView.vue`
+- `apps/sluvo-web/src/views/TrashView.vue`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the logged-in navigation rail from sticky layout behavior to fixed viewport positioning across the home, full project space, and recycle-bin pages.
+- Added main-content offsets so desktop content does not slide under the fixed left rail, and narrow screens use a fixed top rail with matching top spacing.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `apps/sluvo-web/src/views/TrashView.vue`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Implemented recycle-bin actions for Sluvo projects: users can restore soft-deleted projects or permanently delete them.
+- Added backend endpoints for project restore and permanent deletion. Permanent deletion removes the Sluvo project record and its Sluvo canvases, nodes, edges, canvas assets, agent records, mutations, members, and community publication record while leaving OSS objects untouched.
+- Updated the recycle-bin copy and cards to show real action buttons instead of future-capability language.
+
+Verification:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py`
+- `npm run build`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/ProjectListView.vue`
+- `apps/sluvo-web/src/views/TrashView.vue`
+- `apps/sluvo-web/src/router/index.js`
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Adjusted the logged-in homepage toward an OiiOii-style information flow: recent projects are now a single horizontal row with `新建项目` and `查看全部` actions, platform highlights sit below, and the community block moves to the bottom as a larger scroll discovery space.
+- Added a full project space at `/projects`, opened by the left rail folder icon and by the homepage `查看全部` action.
+- Added a recycle bin at `/trash`, opened by the left rail trash icon, backed by soft-deleted Sluvo projects from `GET /api/sluvo/projects?includeDeleted=true`.
+- Exposed `deletedAt` in the Sluvo project serializer so the recycle bin can show retention timing.
+
+Verification:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py`
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Reordered the logged-in homepage lower area so the creation start module appears before inspiration samples and community content.
+- Added a creation-first two-column section with a prominent new-canvas card, up to four recent projects, empty-state guidance, and lightweight platform highlights.
+- Merged the open ecosystem and Agent capability blocks into one lower explanatory section to reduce page weight while preserving platform positioning.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the logged-in homepage creator headline into a single-line rotating slogan.
+- Added six director/producer/storyboard/agent-themed prompt slogans while preserving the existing headline as the first line.
+- Widened the headline content area and added responsive type sizes so the desktop title stays on one row.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/CommunityCanvasView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the community canvas detail preview from a cropped full-size node view to a fit-to-frame panoramic canvas preview.
+- Added ResizeObserver-based preview sizing so the read-only canvas scales to show all nodes across desktop and mobile widths.
+- Changed image nodes in the community preview to use contain-fit media rendering so published images are not cropped inside the preview card.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
 ## 2026-05-03
 
 Changed files:

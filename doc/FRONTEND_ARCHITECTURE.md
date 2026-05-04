@@ -55,6 +55,7 @@ apps/sluvo-web/
       LoginView.vue
       CommunityCanvasView.vue
       ProjectListView.vue
+      TrashView.vue
       CanvasWorkspaceView.vue
     App.vue
     main.js
@@ -101,7 +102,8 @@ Current MVP routes:
 | --- | --- |
 | `/login` | `LoginView.vue` |
 | `/` | `HomeView.vue` |
-| `/projects` | `HomeView.vue` |
+| `/projects` | `ProjectListView.vue` |
+| `/trash` | `TrashView.vue` |
 | `/projects/:projectId/canvas` | `CanvasWorkspaceView.vue` |
 | `/community/canvases/:publicationId` | `CommunityCanvasView.vue` |
 
@@ -110,6 +112,8 @@ Current MVP routes:
 - With `localStorage.shenlu_token`, it shows the OiiOii-style creation workbench backed by real `/api/sluvo/projects` data.
 
 Home project cards route to `/projects/{projectId}/canvas`. The central prompt composer creates a real Sluvo project, writes the prompt as the first `note` node on the main canvas, then routes to the canvas page.
+
+The logged-in home keeps projects in a single horizontal recent-project row with a `查看全部` route to `/projects`. The left rail folder icon opens `/projects`, and the trash icon opens `/trash` as the deleted-project holding area.
 
 Community canvas cards are visible on the public and logged-in home. Guests can browse cards but must log in before opening detail or forking. Logged-in users can open the read-only community detail view and fork a publication into a new editable Sluvo project.
 

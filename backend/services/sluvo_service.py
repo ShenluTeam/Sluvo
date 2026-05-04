@@ -32,6 +32,7 @@ from schemas import (
     SLUVO_MEMBER_ROLE_VIEWER,
     SLUVO_COMMUNITY_CANVAS_STATUS_PUBLISHED,
     SLUVO_COMMUNITY_CANVAS_STATUS_UNPUBLISHED,
+    SLUVO_PROJECT_STATUS_ACTIVE,
     SLUVO_PROJECT_STATUS_DELETED,
     SluvoCanvasBatchRequest,
     SluvoCommunityCanvasPublishRequest,
@@ -231,6 +232,7 @@ def serialize_sluvo_project(
         } if community_publication else None,
         "memberRole": member_role,
         "lastOpenedAt": project.last_opened_at.isoformat() if project.last_opened_at else None,
+        "deletedAt": project.deleted_at.isoformat() if project.deleted_at else None,
         "createdAt": project.created_at.isoformat() if project.created_at else None,
         "updatedAt": project.updated_at.isoformat() if project.updated_at else None,
     }
@@ -476,8 +478,11 @@ def require_sluvo_project_access(
     team_member: TeamMemberLink,
     project_id: int,
     permission: str,
+    include_deleted: bool = False,
 ) -> tuple[SluvoProject, Optional[SluvoProjectMember]]:
-    project = _require_active_project(session, project_id)
+    project = session.get(SluvoProject, project_id) if include_deleted else _require_active_project(session, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Sluvo 项目不存在")
     if int(project.team_id) != int(team.id):
         raise HTTPException(status_code=403, detail="无权限访问该 Sluvo 项目")
 
@@ -558,9 +563,11 @@ def list_sluvo_projects(
     team: Team,
     team_member: Optional[TeamMemberLink] = None,
     include_archived: bool = False,
+    include_deleted: bool = False,
 ) -> List[Dict[str, Any]]:
+    deleted_condition = SluvoProject.deleted_at != None if include_deleted else SluvoProject.deleted_at == None
     projects = session.exec(
-        select(SluvoProject).where(SluvoProject.team_id == team.id, SluvoProject.deleted_at == None).order_by(SluvoProject.updated_at.desc())
+        select(SluvoProject).where(SluvoProject.team_id == team.id, deleted_condition).order_by(SluvoProject.updated_at.desc())
     ).all()
     result: List[Dict[str, Any]] = []
     can_manage_team = bool(team_member and _has_team_manage_role(team_member.role))
@@ -869,6 +876,65 @@ def soft_delete_sluvo_project(session: Session, project: SluvoProject) -> None:
     project.deleted_at = now
     project.updated_at = now
     session.add(project)
+    session.commit()
+
+
+def restore_sluvo_project(session: Session, project: SluvoProject) -> SluvoProject:
+    if project.deleted_at is None and project.status != SLUVO_PROJECT_STATUS_DELETED:
+        return project
+    now = _utc_now()
+    project.status = SLUVO_PROJECT_STATUS_ACTIVE
+    project.deleted_at = None
+    project.updated_at = now
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    return project
+
+
+def permanently_delete_sluvo_project(session: Session, project: SluvoProject) -> None:
+    if project.deleted_at is None and project.status != SLUVO_PROJECT_STATUS_DELETED:
+        raise HTTPException(status_code=400, detail="只能彻底删除回收站中的项目")
+
+    def delete_and_flush(items: List[Any]) -> None:
+        for item in items:
+            session.delete(item)
+        if items:
+            session.flush()
+
+    canvases = session.exec(select(SluvoCanvas).where(SluvoCanvas.project_id == project.id)).all()
+    canvas_ids = [item.id for item in canvases if item.id is not None]
+    nodes = session.exec(
+        select(SluvoCanvasNode).where(SluvoCanvasNode.canvas_id.in_(canvas_ids))
+    ).all() if canvas_ids else []
+    sessions = session.exec(select(SluvoAgentSession).where(SluvoAgentSession.project_id == project.id)).all()
+    session_ids = [item.id for item in sessions if item.id is not None]
+    actions = session.exec(select(SluvoAgentAction).where(SluvoAgentAction.project_id == project.id)).all()
+    action_ids = [item.id for item in actions if item.id is not None]
+
+    delete_and_flush(session.exec(select(SluvoCanvasMutation).where(SluvoCanvasMutation.project_id == project.id)).all())
+    if session_ids:
+        delete_and_flush(session.exec(select(SluvoAgentEvent).where(SluvoAgentEvent.session_id.in_(session_ids))).all())
+    if action_ids:
+        delete_and_flush(session.exec(select(SluvoAgentAction).where(SluvoAgentAction.id.in_(action_ids))).all())
+    if session_ids:
+        delete_and_flush(session.exec(select(SluvoAgentSession).where(SluvoAgentSession.id.in_(session_ids))).all())
+
+    delete_and_flush(session.exec(select(SluvoCommunityCanvas).where(SluvoCommunityCanvas.source_project_id == project.id)).all())
+    delete_and_flush(session.exec(select(SluvoCanvasAsset).where(SluvoCanvasAsset.project_id == project.id)).all())
+    if canvas_ids:
+        delete_and_flush(session.exec(select(SluvoCanvasEdge).where(SluvoCanvasEdge.canvas_id.in_(canvas_ids))).all())
+
+    if nodes:
+        for node in nodes:
+            node.parent_node_id = None
+            session.add(node)
+        session.flush()
+        delete_and_flush(nodes)
+
+    delete_and_flush(canvases)
+    delete_and_flush(session.exec(select(SluvoProjectMember).where(SluvoProjectMember.project_id == project.id)).all())
+    session.delete(project)
     session.commit()
 
 
