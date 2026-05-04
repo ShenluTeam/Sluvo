@@ -231,6 +231,7 @@ def serialize_sluvo_project(
         } if community_publication else None,
         "memberRole": member_role,
         "lastOpenedAt": project.last_opened_at.isoformat() if project.last_opened_at else None,
+        "deletedAt": project.deleted_at.isoformat() if project.deleted_at else None,
         "createdAt": project.created_at.isoformat() if project.created_at else None,
         "updatedAt": project.updated_at.isoformat() if project.updated_at else None,
     }
@@ -558,9 +559,11 @@ def list_sluvo_projects(
     team: Team,
     team_member: Optional[TeamMemberLink] = None,
     include_archived: bool = False,
+    include_deleted: bool = False,
 ) -> List[Dict[str, Any]]:
+    deleted_condition = SluvoProject.deleted_at != None if include_deleted else SluvoProject.deleted_at == None
     projects = session.exec(
-        select(SluvoProject).where(SluvoProject.team_id == team.id, SluvoProject.deleted_at == None).order_by(SluvoProject.updated_at.desc())
+        select(SluvoProject).where(SluvoProject.team_id == team.id, deleted_condition).order_by(SluvoProject.updated_at.desc())
     ).all()
     result: List[Dict[str, Any]] = []
     can_manage_team = bool(team_member and _has_team_manage_role(team_member.role))

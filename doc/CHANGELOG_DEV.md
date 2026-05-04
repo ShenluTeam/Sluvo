@@ -4,6 +4,33 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/ProjectListView.vue`
+- `apps/sluvo-web/src/views/TrashView.vue`
+- `apps/sluvo-web/src/router/index.js`
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Adjusted the logged-in homepage toward an OiiOii-style information flow: recent projects are now a single horizontal row with `新建项目` and `查看全部` actions, platform highlights sit below, and the community block moves to the bottom as a larger scroll discovery space.
+- Added a full project space at `/projects`, opened by the left rail folder icon and by the homepage `查看全部` action.
+- Added a recycle bin at `/trash`, opened by the left rail trash icon, backed by soft-deleted Sluvo projects from `GET /api/sluvo/projects?includeDeleted=true`.
+- Exposed `deletedAt` in the Sluvo project serializer so the recycle bin can show retention timing.
+
+Verification:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py`
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
 - `doc/UI_REQUIREMENTS.md`
 - `doc/CHANGELOG_DEV.md`
 

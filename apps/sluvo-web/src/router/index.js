@@ -3,9 +3,20 @@ import CanvasWorkspaceView from '../views/CanvasWorkspaceView.vue'
 import CommunityCanvasView from '../views/CommunityCanvasView.vue'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
+import ProjectListView from '../views/ProjectListView.vue'
+import TrashView from '../views/TrashView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to) {
+    if (to.hash) {
+      return {
+        el: to.hash,
+        behavior: 'smooth'
+      }
+    }
+    return { top: 0 }
+  },
   routes: [
     {
       path: '/',
@@ -32,7 +43,13 @@ const router = createRouter({
     {
       path: '/projects',
       name: 'projects',
-      component: HomeView,
+      component: ProjectListView,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/trash',
+      name: 'trash',
+      component: TrashView,
       meta: { requiresAuth: true }
     }
   ]

@@ -185,6 +185,7 @@ Standalone Sluvo:
 | Capability | API |
 | --- | --- |
 | List/create Sluvo projects | `GET/POST /api/sluvo/projects` |
+| List deleted Sluvo projects | `GET /api/sluvo/projects?includeDeleted=true` |
 | Read/update/delete Sluvo project | `GET/PATCH/DELETE /api/sluvo/projects/{project_id}` |
 | Read main canvas | `GET /api/sluvo/projects/{project_id}/canvas` |
 | Patch canvas snapshot/viewport | `PATCH /api/sluvo/canvases/{canvas_id}` |
@@ -200,6 +201,7 @@ Standalone Sluvo:
 
 Frontend implementation note:
 - `src/api/sluvoApi.js` wraps the standalone project/canvas endpoints.
+- `fetchSluvoProjects({ includeDeleted: true })` is used by the recycle bin to list soft-deleted projects. The normal project list keeps deleted projects hidden.
 - The logged-in home creates projects through `POST /api/sluvo/projects`; when the user enters a prompt, Sluvo writes it as an initial `note` node through `POST /api/sluvo/canvases/{canvas_id}/batch`.
 - Canvas pages hydrate from `GET /api/sluvo/projects/{project_id}/canvas` and autosave node, edge, viewport, and snapshot state through the batch endpoint.
 - `409` responses are treated as revision conflicts; the canvas refreshes instead of overwriting newer server state.

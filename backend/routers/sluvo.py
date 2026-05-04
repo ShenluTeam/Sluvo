@@ -130,13 +130,14 @@ async def post_sluvo_project(
 @router.get("/api/sluvo/projects")
 async def get_sluvo_projects(
     includeArchived: bool = False,
+    includeDeleted: bool = False,
     _: TeamMemberLink = Depends(require_team_permission("project:read")),
     user: User = Depends(get_current_user),
     team: Team = Depends(get_current_team),
     team_member: TeamMemberLink = Depends(get_current_team_member),
     session: Session = Depends(get_session),
 ):
-    return {"items": list_sluvo_projects(session, user=user, team=team, team_member=team_member, include_archived=includeArchived)}
+    return {"items": list_sluvo_projects(session, user=user, team=team, team_member=team_member, include_archived=includeArchived, include_deleted=includeDeleted)}
 
 
 @router.get("/api/sluvo/community/canvases")

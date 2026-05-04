@@ -17,11 +17,13 @@ The logged-in homepage should still behave like a tool surface, not a traditiona
 
 The logged-in homepage must expose a clear logout action near the account controls.
 
-On the logged-in homepage, the recent creation grid must place the new-project card first. Existing project cards should use the project's own first uploaded image as the cover when available; projects without images should render as no-cover cards instead of falling back to sample or decorative media.
+On the logged-in homepage, recent projects should appear as one horizontal row under the prompt composer, with compact `新建项目` and `查看全部` actions in the section header. Existing project cards should use the project's own first uploaded image as the cover when available; projects without images should render as no-cover cards instead of falling back to sample or decorative media.
 
-After the logged-in homepage prompt composer, the first lower module should prioritize creation: a prominent new-canvas card, recent projects, and only lightweight platform highlights beside or below them. Showcase, community, and ecosystem education modules should come after this creation start area.
+After the logged-in homepage prompt composer, the first lower module should prioritize creation: recent projects in a single row plus a route to the full project space. Platform highlights should sit below the project row. Community content should come later and feel like a larger scrollable discovery space instead of competing with the creation entry.
 
 The open canvas community should feel like a creator gallery, not an admin table. Guests may browse community cards, but detail and fork actions must lead through login. Community detail is read-only; reuse happens by forking into a new editable project.
+
+The left rail folder icon opens the full project space. The left rail trash icon opens the recycle bin, which lists soft-deleted projects while restore/permanent-delete controls are not yet implemented.
 
 Design tone:
 - Clear

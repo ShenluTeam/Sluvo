@@ -100,14 +100,14 @@
         <button class="rail-tool is-active" type="button" aria-label="首页">
           <Compass :size="20" />
         </button>
-        <button class="rail-tool" type="button" aria-label="项目" @click="focusProjects">
+        <button class="rail-tool" type="button" aria-label="我的项目" @click="openProjectsSpace">
           <FolderOpen :size="20" />
         </button>
-        <button class="rail-tool" type="button" aria-label="资产">
+        <button class="rail-tool" type="button" aria-label="社区" @click="scrollToCommunity">
           <Image :size="20" />
         </button>
         <span class="rail-separator" />
-        <button class="rail-tool rail-tool--muted" type="button" aria-label="回收站">
+        <button class="rail-tool rail-tool--muted" type="button" aria-label="回收站" @click="openTrash">
           <Trash2 :size="19" />
         </button>
       </aside>
@@ -228,130 +228,99 @@
         </section>
 
         <section ref="projectsSection" class="home-section creation-start" aria-labelledby="creation-title">
-          <div class="creation-start__main">
-            <div class="section-heading section-heading--stacked">
+          <div class="section-heading creation-heading">
+            <div>
               <h2 id="creation-title">
                 <Sparkles :size="22" />
-                开始创作
+                最近项目
               </h2>
-              <p>新建一张画布，或继续最近的漫剧项目。</p>
+              <p>继续你的画布，或新建一个影视创作项目。</p>
             </div>
-
-            <p v-if="projectStore.error" class="home-section__error">{{ projectStore.error }}</p>
-
-            <div v-if="projectStore.loadingProjects" class="project-grid project-grid--focused">
-              <article v-for="item in 3" :key="item" class="project-card project-card--loading">
-                <span class="project-card__preview project-card__preview--empty" />
-                <strong>加载中</strong>
-                <small>正在同步 Sluvo 项目</small>
-              </article>
-            </div>
-
-            <div v-else class="project-grid project-grid--focused">
-              <button
-                class="project-card project-card--empty project-card--create-primary"
-                type="button"
-                :disabled="isCreatingProject"
-                @click="startProjectFromPrompt()"
-              >
-                <span class="project-card__preview project-card__preview--empty">
-                  <span class="project-card__create-icon">
-                    <Plus :size="28" />
-                  </span>
-                </span>
-                <strong>新建画布</strong>
-                <small>从一个创意、剧本、角色或分镜目标开始</small>
+            <div class="creation-heading__actions">
+              <button type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt()">
+                <Plus :size="15" />
+                新建项目
               </button>
-              <article
-                v-for="project in visibleRecentProjects"
-                :key="project.id"
-                class="project-card"
-                tabindex="0"
-                @click="openProject(project.id)"
-                @keydown.enter.prevent="openProject(project.id)"
-                @keydown.space.prevent="openProject(project.id)"
-              >
-                <span
-                  class="project-card__preview"
-                  :class="getProjectCover(project) ? 'project-card__preview--media' : 'project-card__preview--no-cover'"
-                >
-                  <img
-                    v-if="getProjectCover(project)"
-                    :src="getProjectCover(project)"
-                    :alt="project.title || '未命名画布'"
-                    loading="lazy"
-                  />
-                  <span v-else class="project-card__no-cover">无封面</span>
-                </span>
-                <button
-                  class="project-card__delete"
-                  type="button"
-                  :disabled="deletingProjectIds.has(project.id)"
-                  :title="`删除 ${project.title || '未命名画布'}`"
-                  aria-label="删除项目"
-                  @click.stop="deleteProject(project)"
-                >
-                  <Trash2 :size="16" />
-                </button>
-                <strong>{{ project.title || '未命名画布' }}</strong>
-                <small>{{ formatProjectMeta(project) }}</small>
-              </article>
-              <article v-if="projectStore.projects.length === 0" class="project-card project-card--hint">
-                <span class="project-card__hint-icon">
-                  <Film :size="20" />
-                </span>
-                <strong>从样片开始</strong>
-                <small>向下挑一个风格，自动拆成你的下一张画布。</small>
-              </article>
-              <article v-if="projectStore.projects.length === 0" class="project-card project-card--hint">
-                <span class="project-card__hint-icon">
-                  <GitFork :size="20" />
-                </span>
-                <strong>Fork 社区画布</strong>
-                <small>复用其他创作者的节点结构和素材链路。</small>
-              </article>
+              <button type="button" @click="openProjectsSpace">
+                查看全部
+                <ArrowUpRight :size="15" />
+              </button>
             </div>
           </div>
 
-          <aside class="platform-highlights" aria-label="Sluvo 平台亮点">
-            <div class="platform-highlights__heading">
-              <span>Sluvo 正在构建</span>
-              <strong>把个人创作变成可复用资产</strong>
-            </div>
-            <article>
-              <span><Share2 :size="18" /></span>
-              <div>
-                <strong>开放画布</strong>
-                <p>创作过程可以发布、Fork，并成为社区资产。</p>
-              </div>
+          <p v-if="projectStore.error" class="home-section__error">{{ projectStore.error }}</p>
+
+          <div v-if="projectStore.loadingProjects" class="project-strip">
+            <article v-for="item in 4" :key="item" class="project-card project-card--loading project-card--strip">
+              <span class="project-card__preview project-card__preview--empty" />
+              <strong>加载中</strong>
+              <small>正在同步 Sluvo 项目</small>
             </article>
-            <article>
-              <span><UsersRound :size="18" /></span>
-              <div>
-                <strong>Agent 团队</strong>
-                <p>把导演、编剧、分镜、美术组织成可复用团队。</p>
-              </div>
+          </div>
+
+          <div v-else class="project-strip" aria-label="最近项目">
+            <button
+              v-if="projectStore.projects.length === 0"
+              class="project-card project-card--empty project-card--strip project-card--new-inline"
+              type="button"
+              :disabled="isCreatingProject"
+              @click="startProjectFromPrompt()"
+            >
+              <span class="project-card__preview project-card__preview--empty">
+                <span class="project-card__create-icon">
+                  <Plus :size="24" />
+                </span>
+              </span>
+              <strong>新建项目</strong>
+              <small>从创意、剧本、角色或分镜目标开始</small>
+            </button>
+            <article
+              v-for="project in visibleRecentProjects"
+              :key="project.id"
+              class="project-card project-card--strip"
+              tabindex="0"
+              @click="openProject(project.id)"
+              @keydown.enter.prevent="openProject(project.id)"
+              @keydown.space.prevent="openProject(project.id)"
+            >
+              <span
+                class="project-card__preview"
+                :class="getProjectCover(project) ? 'project-card__preview--media' : 'project-card__preview--no-cover'"
+              >
+                <img
+                  v-if="getProjectCover(project)"
+                  :src="getProjectCover(project)"
+                  :alt="project.title || '未命名画布'"
+                  loading="lazy"
+                />
+                <span v-else class="project-card__no-cover">无封面</span>
+              </span>
+              <button
+                class="project-card__delete"
+                type="button"
+                :disabled="deletingProjectIds.has(project.id)"
+                :title="`删除 ${project.title || '未命名画布'}`"
+                aria-label="删除项目"
+                @click.stop="deleteProject(project)"
+              >
+                <Trash2 :size="16" />
+              </button>
+              <strong>{{ project.title || '未命名画布' }}</strong>
+              <small>{{ formatProjectMeta(project) }}</small>
             </article>
-            <article>
-              <span><PackageOpen :size="18" /></span>
-              <div>
-                <strong>画布 Skill</strong>
-                <p>把高频工作流沉淀成可安装的创作方法。</p>
-              </div>
-            </article>
-          </aside>
+          </div>
         </section>
 
         <section class="home-section showcase-section" aria-labelledby="showcase-title">
           <div class="section-heading section-heading--stacked">
             <h2 id="showcase-title">
               <Film :size="22" />
-              灵感样片
+              亮点
             </h2>
-            <p>从官方样片开始，把风格、角色和分镜拆成你的下一张画布。</p>
+            <p>从样片、角色、场景和工作流开始，把平台能力拆成你的下一张画布。</p>
           </div>
 
-          <div class="showcase-carousel" aria-label="灵感样片" @mouseenter="stopShowcaseRotation" @mouseleave="startShowcaseRotation">
+          <div class="showcase-carousel" aria-label="平台亮点" @mouseenter="stopShowcaseRotation" @mouseleave="startShowcaseRotation">
             <article
               v-for="(item, index) in visibleShowcaseItems"
               :key="item.title"
@@ -396,45 +365,6 @@
               :aria-label="`显示${item.title}`"
               @click="selectShowcase(index)"
             />
-          </div>
-        </section>
-
-        <section class="home-section community-section" aria-labelledby="community-title">
-          <div class="section-heading section-heading--stacked">
-            <h2 id="community-title">
-              <GitFork :size="22" />
-              社区画布
-            </h2>
-            <p>从其他创作者的画布快照开始，把结构、素材和生成链路 Fork 成你的新项目。</p>
-          </div>
-          <p v-if="communityError" class="home-section__error">{{ communityError }}</p>
-          <div class="community-grid">
-            <article v-for="item in visibleCommunityCanvases" :key="item.id" class="community-card" tabindex="0" @click="openCommunityDetail(item)">
-              <span class="community-card__cover">
-                <img v-if="item.coverUrl" :src="item.coverUrl" :alt="item.title" loading="lazy" />
-                <span v-else>开放画布</span>
-              </span>
-              <span class="community-card__meta">{{ item.author?.nickname || 'Sluvo 创作者' }} · {{ item.forkCount || 0 }} Fork</span>
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.description || '一张可学习、可复用的社区画布。' }}</p>
-              <div class="community-card__actions">
-                <button type="button" @click.stop="openCommunityDetail(item)">查看详情</button>
-                <button type="button" :disabled="forkingCommunityIds.has(item.id)" @click.stop="forkCommunityCanvas(item)">
-                  <Loader2 v-if="forkingCommunityIds.has(item.id)" class="spin" :size="15" />
-                  Fork 到我的画布
-                </button>
-              </div>
-            </article>
-            <article v-if="communityLoading" class="community-card community-card--empty">
-              <span class="community-card__cover">同步中</span>
-              <strong>正在加载社区画布</strong>
-              <p>稍等片刻，Sluvo 正在拉取最新开放画布。</p>
-            </article>
-            <article v-if="!communityLoading && visibleCommunityCanvases.length === 0" class="community-card community-card--empty">
-              <span class="community-card__cover">等待发布</span>
-              <strong>还没有社区画布</strong>
-              <p>你可以先创建项目，在画布工作台里发布到社区。</p>
-            </article>
           </div>
         </section>
 
@@ -507,6 +437,52 @@
             <button type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt()">创建开放画布</button>
           </div>
         </section>
+
+        <section id="community" ref="communitySection" class="home-section community-section community-space" aria-labelledby="community-title">
+          <div class="section-heading section-heading--stacked community-space__heading">
+            <h2 id="community-title">
+              <GitFork :size="22" />
+              开放画布社区
+            </h2>
+            <p>向下探索其他创作者发布的画布，Fork 成你的下一张作品。</p>
+          </div>
+          <p v-if="communityError" class="home-section__error">{{ communityError }}</p>
+          <div class="community-grid community-grid--space">
+            <article
+              v-for="(item, index) in visibleCommunityCanvases"
+              :key="item.id"
+              class="community-card community-card--space"
+              :style="{ '--space-index': index }"
+              tabindex="0"
+              @click="openCommunityDetail(item)"
+            >
+              <span class="community-card__cover">
+                <img v-if="item.coverUrl" :src="item.coverUrl" :alt="item.title" loading="lazy" />
+                <span v-else>开放画布</span>
+              </span>
+              <span class="community-card__meta">{{ item.author?.nickname || 'Sluvo 创作者' }} · {{ item.forkCount || 0 }} Fork</span>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.description || '一张可学习、可复用的社区画布。' }}</p>
+              <div class="community-card__actions">
+                <button type="button" @click.stop="openCommunityDetail(item)">查看详情</button>
+                <button type="button" :disabled="forkingCommunityIds.has(item.id)" @click.stop="forkCommunityCanvas(item)">
+                  <Loader2 v-if="forkingCommunityIds.has(item.id)" class="spin" :size="15" />
+                  Fork 到我的画布
+                </button>
+              </div>
+            </article>
+            <article v-if="communityLoading" class="community-card community-card--empty community-card--space">
+              <span class="community-card__cover">同步中</span>
+              <strong>正在加载社区画布</strong>
+              <p>稍等片刻，Sluvo 正在拉取最新开放画布。</p>
+            </article>
+            <article v-if="!communityLoading && visibleCommunityCanvases.length === 0" class="community-card community-card--empty community-card--space">
+              <span class="community-card__cover">等待发布</span>
+              <strong>还没有社区画布</strong>
+              <p>你可以先创建项目，在画布工作台里发布到社区。</p>
+            </article>
+          </div>
+        </section>
       </div>
     </section>
   </main>
@@ -556,6 +532,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const projectStore = useProjectStore()
 const projectsSection = ref(null)
+const communitySection = ref(null)
 const promptText = ref('')
 const projectFeedback = ref('')
 const deletingProjectIds = ref(new Set())
@@ -580,7 +557,7 @@ const visibleShowcaseItems = computed(() => {
 })
 const visibleCommunityCanvases = computed(() => communityCanvases.value.slice(0, 6))
 const activeCreatorHeadline = computed(() => creatorHeadlines[activeHeadlineIndex.value] || creatorHeadlines[0])
-const visibleRecentProjects = computed(() => projectStore.projects.slice(0, 4))
+const visibleRecentProjects = computed(() => projectStore.projects.slice(0, 5))
 
 const remoteMedia = {
   character: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-character-board.webp',
@@ -1149,8 +1126,16 @@ function scrollToCapabilities() {
   document.getElementById('capabilities')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function focusProjects() {
-  projectsSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+function openProjectsSpace() {
+  router.push({ name: 'projects' })
+}
+
+function openTrash() {
+  router.push({ name: 'trash' })
+}
+
+function scrollToCommunity() {
+  communitySection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 onMounted(() => {
@@ -2136,81 +2121,74 @@ onBeforeUnmount(() => {
 }
 
 .creation-start {
-  display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(280px, 0.9fr);
-  gap: 18px;
   width: min(1180px, calc(100vw - 140px));
   padding-top: 14px;
-  align-items: start;
 }
 
-.creation-start__main,
-.platform-highlights {
-  min-width: 0;
+.creation-heading {
+  align-items: flex-end;
+  margin-bottom: 16px;
 }
 
-.platform-highlights {
-  position: sticky;
-  top: 92px;
+.creation-heading > div:first-child {
   display: grid;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid rgba(214, 181, 109, 0.14);
-  border-radius: 8px;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(214, 181, 109, 0.16), transparent 34%),
-    rgba(255, 255, 255, 0.04);
+  gap: 8px;
 }
 
-.platform-highlights__heading {
-  display: grid;
-  gap: 5px;
-  padding: 4px 4px 8px;
+.creation-heading p {
+  max-width: 620px;
+  margin: 0;
+  color: rgba(249, 241, 220, 0.58);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.55;
 }
 
-.platform-highlights__heading span {
-  color: #d6b56d;
+.creation-heading__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.creation-heading__actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 241, 199, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(249, 241, 220, 0.8);
   font-size: 12px;
   font-weight: 900;
 }
 
-.platform-highlights__heading strong {
-  color: #fff8e6;
-  font-size: 18px;
-  line-height: 1.35;
-}
-
-.platform-highlights article {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(255, 241, 199, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.045);
-}
-
-.platform-highlights article > span {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 1px solid rgba(255, 241, 199, 0.16);
-  border-radius: 8px;
-  background: rgba(214, 181, 109, 0.1);
+.creation-heading__actions button:first-child {
+  border-color: rgba(255, 221, 151, 0.34);
+  background: rgba(214, 181, 109, 0.14);
   color: #fff1c7;
 }
 
-.platform-highlights article strong {
-  color: #fff8e6;
-  font-size: 15px;
+.project-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 260px;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 10px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
 }
 
-.platform-highlights article p {
-  margin: 5px 0 0;
-  color: rgba(249, 241, 220, 0.56);
-  font-size: 12px;
-  line-height: 1.55;
+.project-card--strip {
+  min-height: 184px;
+  scroll-snap-align: start;
+}
+
+.project-card--new-inline {
+  border-color: rgba(255, 221, 151, 0.28);
 }
 
 .showcase-section,
@@ -2602,10 +2580,78 @@ onBeforeUnmount(() => {
   margin-top: 46px;
 }
 
+.community-space {
+  width: min(1280px, calc(100vw - 120px));
+  min-height: 860px;
+  padding: 82px clamp(16px, 4vw, 52px) 120px;
+  overflow: hidden;
+  border-radius: 10px;
+  background:
+    linear-gradient(rgba(214, 181, 109, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 181, 109, 0.045) 1px, transparent 1px),
+    radial-gradient(circle at 24% 18%, rgba(214, 181, 109, 0.18), transparent 26%),
+    radial-gradient(circle at 82% 48%, rgba(120, 96, 52, 0.14), transparent 28%),
+    rgba(255, 255, 255, 0.018);
+  background-size: 42px 42px, 42px 42px, auto, auto, auto;
+}
+
+.community-space__heading {
+  max-width: 620px;
+  margin-bottom: 34px;
+}
+
 .community-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+}
+
+.community-grid--space {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  grid-auto-rows: 96px;
+  gap: 18px;
+  min-height: 620px;
+}
+
+.community-card--space {
+  grid-column: span 2;
+  grid-row: span 3;
+  align-self: start;
+  animation: community-rise linear both;
+  animation-timeline: view();
+  animation-range: entry 0% cover 34%;
+}
+
+.community-card--space:nth-child(1) {
+  grid-column: 1 / span 2;
+  margin-top: 20px;
+}
+
+.community-card--space:nth-child(2) {
+  grid-column: 4 / span 2;
+  margin-top: 104px;
+}
+
+.community-card--space:nth-child(3) {
+  grid-column: 2 / span 2;
+  margin-top: 42px;
+}
+
+.community-card--space:nth-child(4) {
+  grid-column: 5 / span 2;
+  margin-top: 8px;
+}
+
+.community-card--space:nth-child(5) {
+  grid-column: 1 / span 2;
+  margin-top: 84px;
+}
+
+.community-card--space:nth-child(6) {
+  grid-column: 3 / span 2;
+  margin-top: 156px;
 }
 
 .community-card {
@@ -3087,6 +3133,18 @@ onBeforeUnmount(() => {
   }
 }
 
+@keyframes community-rise {
+  from {
+    opacity: 0;
+    transform: translateY(72px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -3247,6 +3305,10 @@ onBeforeUnmount(() => {
     min-height: 150px;
   }
 
+  .project-strip {
+    grid-auto-columns: minmax(220px, 78vw);
+  }
+
   .open-ecosystem-grid--compact .open-ecosystem-card__visual {
     grid-row: auto;
     aspect-ratio: 16 / 9;
@@ -3302,6 +3364,24 @@ onBeforeUnmount(() => {
   .open-ecosystem-cta {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .community-space {
+    width: calc(100vw - 32px);
+    min-height: 760px;
+    padding: 56px 16px 80px;
+  }
+
+  .community-grid--space {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+    min-height: 0;
+  }
+
+  .community-card--space {
+    grid-column: auto !important;
+    grid-row: auto;
+    margin-top: 0 !important;
   }
 }
 
@@ -3394,6 +3474,10 @@ onBeforeUnmount(() => {
 
   .creator-console h1 {
     font-size: 22px;
+  }
+
+  .project-strip {
+    grid-auto-columns: minmax(210px, 84vw);
   }
 
   .showcase-card {

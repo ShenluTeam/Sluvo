@@ -17,8 +17,11 @@ function wrapSluvoError(error) {
   throw error
 }
 
-export async function fetchSluvoProjects({ includeArchived = false } = {}) {
-  const query = includeArchived ? '?includeArchived=true' : ''
+export async function fetchSluvoProjects({ includeArchived = false, includeDeleted = false } = {}) {
+  const params = new URLSearchParams()
+  if (includeArchived) params.set('includeArchived', 'true')
+  if (includeDeleted) params.set('includeDeleted', 'true')
+  const query = params.toString() ? `?${params.toString()}` : ''
   const payload = await apiFetch(`/api/sluvo/projects${query}`)
   return Array.isArray(payload?.items) ? payload.items : []
 }

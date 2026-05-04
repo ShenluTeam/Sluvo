@@ -61,6 +61,7 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | --- | --- | --- |
 | Create Sluvo project | POST | `/api/sluvo/projects` |
 | List Sluvo projects | GET | `/api/sluvo/projects` |
+| List deleted Sluvo projects | GET | `/api/sluvo/projects?includeDeleted=true` |
 | Read Sluvo project | GET | `/api/sluvo/projects/{project_id}` |
 | Patch Sluvo project | PATCH | `/api/sluvo/projects/{project_id}` |
 | Soft-delete Sluvo project | DELETE | `/api/sluvo/projects/{project_id}` |
