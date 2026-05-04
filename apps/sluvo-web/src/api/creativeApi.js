@@ -8,6 +8,14 @@ export function fetchCreativeVideoCatalog() {
   return apiFetch('/api/creative/videos/catalog')
 }
 
+export function fetchCreativeAudioCatalog() {
+  return apiFetch('/api/creative/audio/catalog')
+}
+
+export function fetchCreativeVoiceAssets() {
+  return apiFetch('/api/creative/voice-assets')
+}
+
 export function submitCreativeImage(payload) {
   return apiFetch('/api/creative/images', {
     method: 'POST',
@@ -24,6 +32,20 @@ export function estimateCreativeVideo(payload) {
 
 export function submitCreativeVideo(payload) {
   return apiFetch('/api/creative/videos', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function estimateCreativeAudio(payload) {
+  return apiFetch('/api/creative/audio/estimate', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function submitCreativeAudio(payload) {
+  return apiFetch('/api/creative/audio/generate', {
     method: 'POST',
     body: JSON.stringify(payload)
   })

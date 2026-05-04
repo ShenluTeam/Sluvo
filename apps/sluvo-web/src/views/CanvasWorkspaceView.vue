@@ -28,7 +28,7 @@
         :min-zoom="0.22"
         :max-zoom="2"
         :pan-on-drag="[1]"
-        :zoom-on-scroll="true"
+        :zoom-on-scroll="false"
         :zoom-on-pinch="true"
         :zoom-on-double-click="false"
         :selection-on-drag="true"
@@ -83,6 +83,17 @@
             pathLength="1"
           />
         </svg>
+
+        <section
+          v-for="group in directNodeGroups"
+          :key="group.id"
+          class="direct-group-frame"
+          :class="{ 'is-selected': group.id === selectedDirectGroupId }"
+          :style="getDirectGroupFrameStyle(group)"
+          @pointerdown.stop="handleDirectGroupPointerDown($event, group.id)"
+        >
+          <div class="direct-group-frame__label">{{ group.title }}</div>
+        </section>
 
         <article
           v-for="(node, index) in directNodes"
@@ -160,7 +171,6 @@
               </div>
               <div v-else-if="node.upload?.status === 'uploading'" class="uploaded-asset__state">
                 <span>上传中 {{ node.upload.progress }}%</span>
-                <small v-if="node.upload.message">{{ node.upload.message }}</small>
                 <div class="uploaded-asset__progress">
                   <span :style="{ width: `${node.upload.progress}%` }" />
                 </div>
@@ -168,7 +178,6 @@
               <div v-else class="uploaded-asset__state">上传成功</div>
               <div v-if="node.upload?.status === 'uploading' && node.media?.url" class="uploaded-asset__overlay">
                 <span>上传中 {{ node.upload.progress }}%</span>
-                <small v-if="node.upload.message">{{ node.upload.message }}</small>
                 <div class="uploaded-asset__progress">
                   <span :style="{ width: `${node.upload.progress}%` }" />
                 </div>
@@ -247,6 +256,37 @@
               </div>
             </div>
 
+            <div
+              v-else-if="node.type === 'audio_unit' && node.generationStatus === 'running'"
+              class="generated-image__state"
+            >
+              <span class="generated-image__spinner" />
+              <strong>音频生成中...</strong>
+              <small>{{ node.generationMessage || '正在同步配音结果' }}</small>
+            </div>
+
+            <div
+              v-else-if="node.type === 'audio_unit' && node.generatedAudio?.url"
+              class="generated-audio__preview"
+            >
+              <div class="generated-audio__wave" aria-hidden="true">
+                <span v-for="index in 34" :key="index" :style="{ '--bar': ((index * 17) % 34) + 24 }" />
+              </div>
+              <div class="generated-audio__meta">
+                <Music2 :size="36" />
+                <div>
+                  <strong>{{ node.generatedAudio.title || '音频结果' }}</strong>
+                  <span>{{ getAudioModelLabel(node) }} · {{ getAudioCharacterLabel(node) }}</span>
+                </div>
+              </div>
+              <audio :src="getGeneratedAudioSrc(node)" controls />
+              <div class="generated-image__actions" @click.stop @pointerdown.stop @contextmenu.prevent.stop>
+                <button type="button" title="下载音频" @click.stop="downloadGeneratedAudio(node)">
+                  <Download :size="16" />
+                </button>
+              </div>
+            </div>
+
             <template v-else>
             <div class="direct-workflow-node__hero">
               <span v-if="node.type === 'prompt_note'" class="direct-workflow-node__lines" />
@@ -259,7 +299,7 @@
           </div>
 
           <div
-            v-if="node.type !== 'uploaded_asset' && selectedDirectNodeIds.includes(node.id)"
+            v-if="node.type !== 'uploaded_asset' && isSingleSelectedDirectNode(node.id)"
             class="direct-workflow-node__fixed-panel"
             >
               <div
@@ -629,8 +669,167 @@
                 {{ node.generationMessage || '视频生成失败，请稍后重试' }}
               </p>
             </div>
+            <div
+              v-if="node.type === 'audio_unit'"
+              class="direct-workflow-node__generation-controls direct-workflow-node__generation-controls--audio"
+              @click.stop
+              @dblclick.stop
+              @keydown.stop
+              @keyup.stop
+              @pointerdown.stop
+              @mousedown.stop
+            >
+              <div class="audio-composer-bar">
+                <div class="audio-token-tools">
+                  <details class="audio-token-menu">
+                    <summary title="插入停顿">
+                      <span>&lt;#&gt;</span>
+                      停顿
+                    </summary>
+                    <div class="audio-token-popover">
+                      <p>在文中插入停顿，精准掌控音频节奏，支持选择预设时长或直接输入秒数</p>
+                      <button
+                        v-for="pause in audioPauseOptions"
+                        :key="pause.value"
+                        type="button"
+                        :class="{ 'is-active': pause.value === '0.25' }"
+                        @click.stop="insertAudioPromptToken(node.id, pause.text, pause.text, 'pause', $event)"
+                      >
+                        {{ pause.label }}
+                      </button>
+                    </div>
+                  </details>
+                  <details class="audio-token-menu">
+                    <summary title="插入语气词">
+                      <span>()</span>
+                      语气词
+                    </summary>
+                    <div class="audio-token-popover audio-token-popover--narrow">
+                      <p>点击插入或输入生动的语气词，让语音更具感染力，系统仅支持预设库内的语气词标签</p>
+                      <button
+                        v-for="word in audioInterjectionOptions"
+                        :key="word"
+                        type="button"
+                        @click.stop="insertAudioPromptToken(node.id, `(${word})`, `(${word})`, 'interjection', $event)"
+                      >
+                        {{ word }}
+                      </button>
+                    </div>
+                  </details>
+                </div>
+
+                <label class="audio-model-select">
+                  <AudioWaveform :size="18" />
+                  <select
+                    :value="getAudioTierSelectValue(node)"
+                    :disabled="node.generationStatus === 'running'"
+                    @change="setAudioTierFromSelect(node, $event)"
+                  >
+                    <option v-for="tier in getAudioTierOptions(node)" :key="tier.value" :value="tier.value">
+                      {{ tier.label }}
+                    </option>
+                  </select>
+                </label>
+
+                <button v-if="isAudioLanguageBoostSupported(node)" class="audio-icon-button" type="button" title="语言增强" :class="{ 'is-active': node.audioLanguageBoost === 'auto' }" @click.stop="toggleAudioLanguageBoost(node)">
+                  <Languages :size="18" />
+                </button>
+
+                <button class="audio-icon-button" type="button" title="音频设置" :class="{ 'is-active': node.audioSettingsOpen }" @click.stop="toggleAudioSettingsPanel(node)">
+                  <SlidersHorizontal :size="18" />
+                </button>
+
+                <span class="audio-character-count">{{ getAudioCharacterLabel(node) }}</span>
+                <span class="audio-point-label"><Star :size="14" /> {{ getAudioGenerationPointsButtonLabel(node) }}</span>
+                <button
+                  class="audio-send-button"
+                  type="button"
+                  :title="getAudioGenerationBlocker(node)"
+                  :disabled="node.generationStatus === 'running' || !node.prompt.trim() || isAudioEstimatePending(node) || Boolean(getAudioGenerationBlocker(node))"
+                  @click.stop="runDirectAudioNode(node)"
+                >
+                  <ArrowUp :size="20" />
+                </button>
+              </div>
+              <p v-if="node.generationStatus === 'error'" class="direct-workflow-node__generation-error">
+                {{ node.generationMessage || '音频生成失败，请稍后重试' }}
+              </p>
+              <section v-if="node.audioSettingsOpen" class="audio-inline-settings">
+                <header>
+                  <strong>音色设置</strong>
+                  <button type="button" @click.stop="resetAudioNodeSettings(node)">一键重置</button>
+                </header>
+                <button class="audio-voice-card" type="button" @click.stop="openAudioVoicePicker(node)">
+                  <span class="audio-voice-card__icon"><Music2 :size="22" /></span>
+                  <span class="audio-voice-card__name">{{ getAudioVoiceLabel(node) }}</span>
+                  <span class="audio-voice-card__copy">▣</span>
+                  <span class="audio-voice-card__tag">{{ getAudioVoiceLanguageLabel(node) }}</span>
+                  <ChevronDown :size="18" />
+                </button>
+                <div class="audio-basic-header">
+                  <strong>基础调节</strong>
+                  <ChevronDown :size="16" />
+                </div>
+                <label class="audio-slider-row">
+                  <span>语速</span>
+                  <input v-model.number="node.audioSpeed" type="range" min="0.5" max="2" step="0.01" />
+                  <output>{{ formatAudioNumber(node.audioSpeed, 2) }}</output>
+                </label>
+                <label class="audio-slider-row">
+                  <span>声调</span>
+                  <input v-model.number="node.audioPitch" type="range" min="-12" max="12" step="1" />
+                  <output>{{ formatAudioNumber(node.audioPitch, 0) }}</output>
+                </label>
+                <label class="audio-slider-row">
+                  <span>音量</span>
+                  <input v-model.number="node.audioVolume" type="range" min="0.1" max="10" step="0.1" />
+                  <output>{{ formatAudioNumber(node.audioVolume, 1) }}</output>
+                </label>
+                <label v-if="isAudioEmotionSupported(node)" class="audio-select-row">
+                  <span>情绪</span>
+                  <select v-model="node.audioEmotion">
+                    <option value="">默认</option>
+                    <option v-for="emotion in audioEmotionOptions" :key="emotion.value" :value="emotion.value">
+                      {{ emotion.label }}
+                    </option>
+                  </select>
+                </label>
+              </section>
+            </div>
           </div>
         </article>
+      </div>
+
+      <div
+        v-if="directSelectionFrame.visible"
+        class="direct-selection-frame"
+        :class="{ 'is-grouped': directSelectionFrame.grouped }"
+        :style="directSelectionFrameStyle"
+      />
+
+      <div
+        v-if="directGroupToolbar.visible"
+        class="direct-group-toolbar"
+        :style="directGroupToolbarStyle"
+        @pointerdown.stop
+        @click.stop
+      >
+        <button
+          v-if="directGroupToolbar.mode === 'group'"
+          type="button"
+          @click="groupSelectedDirectNodes"
+        >
+          <span>▦</span>
+          打组 {{ selectedDirectNodeIds.length }} 个节点
+        </button>
+        <button
+          v-else
+          type="button"
+          @click="ungroupSelectedDirectNodes"
+        >
+          <span>□</span>
+          解组
+        </button>
       </div>
 
       <div v-if="selectionBox.active" class="direct-selection-box" :style="selectionBoxStyle" />
@@ -867,14 +1066,35 @@
         </button>
       </div>
 
-      <div v-if="helpVisible" class="canvas-help-panel" @click.stop>
-        <strong>{{ copy.helpTitle }}</strong>
-        <span>{{ copy.helpAdd }}</span>
-        <span>{{ copy.helpPan }}</span>
-        <span>{{ copy.helpSelect }}</span>
-        <span>{{ copy.helpCopy }}</span>
-        <span>{{ copy.helpZoom }}</span>
-      </div>
+      <Transition name="canvas-panel-pop">
+        <aside v-if="helpVisible" class="canvas-help-panel" @click.stop>
+          <header class="canvas-help-panel__header">
+            <div>
+              <span>快捷键与画布操作</span>
+              <h2>{{ copy.helpTitle }}</h2>
+            </div>
+            <button type="button" aria-label="关闭帮助" @click="toggleHelp">
+              <X :size="28" />
+            </button>
+          </header>
+          <div class="canvas-help-panel__body">
+            <section v-for="section in helpShortcutSections" :key="section.title" class="canvas-help-section">
+              <h3>{{ section.title }}</h3>
+              <div class="canvas-help-shortcuts">
+                <article v-for="item in section.items" :key="item.label">
+                  <span>{{ item.label }}</span>
+                  <div>
+                    <kbd v-for="key in item.keys" :key="key">{{ key }}</kbd>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+          <footer class="canvas-help-panel__footer">
+            <span>普通滚轮上下移动画布，按住 Ctrl / Cmd 再滚动即可缩放。</span>
+          </footer>
+        </aside>
+      </Transition>
 
       <div
         v-if="imagePreview.visible"
@@ -890,6 +1110,59 @@
           <X :size="32" />
         </button>
         <img :src="imagePreview.url" :alt="imagePreview.alt" draggable="false" @click.stop />
+      </div>
+
+      <div v-if="audioVoicePicker.visible" class="audio-voice-overlay" role="dialog" aria-modal="true" aria-label="音色选择" @click.stop>
+        <section class="audio-voice-dialog">
+          <header>
+            <h2>音色选择</h2>
+            <button type="button" aria-label="关闭" @click="closeAudioVoicePicker">
+              <X :size="28" />
+            </button>
+          </header>
+          <div class="audio-voice-dialog__tools">
+            <nav>
+              <button v-for="tab in audioVoiceTabs" :key="tab.id" :class="{ 'is-active': audioVoicePicker.tab === tab.id }" type="button" @click="audioVoicePicker.tab = tab.id">
+                {{ tab.label }}
+              </button>
+            </nav>
+            <label>
+              <span>⌕</span>
+              <input v-model="audioVoicePicker.query" type="search" placeholder="搜索音色库" />
+            </label>
+            <button type="button">筛选</button>
+          </div>
+          <div class="audio-voice-list">
+            <article
+              v-for="voice in filteredAudioVoiceOptions"
+              :key="voice.voiceId"
+              class="audio-voice-item"
+              :class="{ 'is-selected': voice.voiceId === getActiveAudioVoiceId() }"
+            >
+              <span class="audio-voice-item__icon"><Music2 :size="22" /></span>
+              <strong>{{ voice.label }}</strong>
+              <span class="audio-voice-item__tag">{{ voice.categoryLabel || '中文(普通话)' }}</span>
+              <span class="audio-voice-item__tag">{{ voice.styleLabel || 'Voice' }}</span>
+              <button class="audio-voice-item__select" type="button" :disabled="voice.voiceId === getActiveAudioVoiceId()" @click.stop="selectAudioVoice(voice)">
+                {{ voice.voiceId === getActiveAudioVoiceId() ? '已选' : '选择' }}
+              </button>
+              <button
+                class="audio-voice-item__star"
+                type="button"
+                :class="{ 'is-active': isAudioVoiceFavorite(voice) }"
+                :title="isAudioVoiceFavorite(voice) ? '取消收藏' : '收藏音色'"
+                @click.stop="toggleAudioVoiceFavorite(voice)"
+              >
+                {{ isAudioVoiceFavorite(voice) ? '★' : '☆' }}
+              </button>
+              <span class="audio-voice-item__more">•••</span>
+            </article>
+            <p v-if="filteredAudioVoiceOptions.length === 0" class="audio-voice-list__empty">暂无匹配音色</p>
+          </div>
+          <footer>
+            <span>共 {{ filteredAudioVoiceOptions.length }} 条</span>
+          </footer>
+        </section>
       </div>
 
       <div v-if="publishDialog.visible" class="publish-overlay" role="dialog" aria-modal="true" aria-label="发布到社区" @click.stop>
@@ -940,7 +1213,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { ArrowUpDown, ChevronDown, Download, Eye, ListChecks, Minus, Music2, Plus, SlidersHorizontal, Star, Upload, X } from 'lucide-vue-next'
+import { ArrowUp, ArrowUpDown, AudioWaveform, ChevronDown, Download, Eye, Languages, ListChecks, Minus, Music2, Plus, SlidersHorizontal, Star, Upload, X } from 'lucide-vue-next'
 import CommandBar from '../components/layout/CommandBar.vue'
 import AddNodeMenu from '../components/canvas/AddNodeMenu.vue'
 import CanvasBottomControls from '../components/canvas/CanvasBottomControls.vue'
@@ -949,12 +1222,16 @@ import StarterSkillStrip from '../components/canvas/StarterSkillStrip.vue'
 import WorkflowEdge from '../canvas/edges/WorkflowEdge.vue'
 import WorkflowNode from '../canvas/nodes/WorkflowNode.vue'
 import {
+  estimateCreativeAudio,
   estimateCreativeVideo,
+  fetchCreativeAudioCatalog,
   fetchCreativeImageCatalog,
   fetchCreativeVideoCatalog,
+  fetchCreativeVoiceAssets,
   fetchCreativeRecord,
   fetchCreativeRecords,
   fetchTask,
+  submitCreativeAudio,
   submitCreativeImage,
   submitCreativeVideo
 } from '../api/creativeApi'
@@ -983,6 +1260,51 @@ const copy = {
   helpCopy: 'Ctrl/Cmd+C \u590d\u5236\uff0cCtrl/Cmd+V \u7c98\u8d34\uff0cCtrl/Cmd+G \u6253\u7ec4',
   helpZoom: 'Ctrl/Cmd+0 \u5b9a\u4f4d\uff0cCtrl/Cmd+\u52a0\u51cf\u7f29\u653e\uff0cCtrl/Cmd+Z \u64a4\u9500'
 }
+
+const helpShortcutSections = [
+  {
+    title: '画布导航',
+    items: [
+      { label: '上下移动画布', keys: ['鼠标滚轮'] },
+      { label: '缩放画布', keys: ['Ctrl / Cmd', '鼠标滚轮'] },
+      { label: '拖拽平移画布', keys: ['空格', '拖拽'] },
+      { label: '方向键平移', keys: ['↑', '↓', '←', '→'] },
+      { label: '定位画布', keys: ['Ctrl / Cmd', '0'] },
+      { label: '放大 / 缩小', keys: ['Ctrl / Cmd', '+ / -'] }
+    ]
+  },
+  {
+    title: '节点操作',
+    items: [
+      { label: '添加节点', keys: ['双击空白处'] },
+      { label: '打开快捷菜单', keys: ['右键空白处'] },
+      { label: '框选节点', keys: ['Shift', '拖拽'] },
+      { label: '移动节点', keys: ['拖拽节点'] },
+      { label: '连接节点', keys: ['拖拽连接点'] },
+      { label: '删除节点', keys: ['Delete / Backspace'] }
+    ]
+  },
+  {
+    title: '编辑与历史',
+    items: [
+      { label: '复制', keys: ['Ctrl / Cmd', 'C'] },
+      { label: '粘贴', keys: ['Ctrl / Cmd', 'V'] },
+      { label: '复制一份', keys: ['Ctrl / Cmd', 'D'] },
+      { label: '打组', keys: ['Ctrl / Cmd', 'G'] },
+      { label: '撤销', keys: ['Ctrl / Cmd', 'Z'] },
+      { label: '关闭弹窗 / 菜单', keys: ['Esc'] }
+    ]
+  },
+  {
+    title: '音频输入',
+    items: [
+      { label: '插入普通文本', keys: ['直接输入'] },
+      { label: '插入停顿 / 语气词', keys: ['点击标签'] },
+      { label: '设置区内滚动', keys: ['鼠标滚轮'] },
+      { label: '选择音色', keys: ['音色卡片'] }
+    ]
+  }
+]
 
 const starterPositions = {
   script_episode: { x: 80, y: 140 },
@@ -1094,6 +1416,8 @@ let suppressCanvasSaveScheduling = false
 const imageGenerationTimers = new Map()
 const videoGenerationTimers = new Map()
 const videoEstimateTimers = new Map()
+const audioGenerationTimers = new Map()
+const audioEstimateTimers = new Map()
 const uploadFileMap = new Map()
 const localUploadPreviewUrls = new Map()
 const activeUploadSignatures = new Map()
@@ -1189,6 +1513,19 @@ const imagePreview = reactive({
   url: '',
   alt: ''
 })
+const audioVoicePicker = reactive({
+  visible: false,
+  nodeId: '',
+  tab: 'library',
+  query: ''
+})
+const audioVoiceTabs = [
+  { id: 'library', label: '音色库' },
+  { id: 'mine', label: '我的音色' },
+  { id: 'favorites', label: '收藏音色' }
+]
+const AUDIO_VOICE_FAVORITES_STORAGE_KEY = 'sluvo_audio_voice_favorites'
+const audioFavoriteVoiceIds = ref(new Set())
 const referenceDrag = reactive({
   nodeId: '',
   referenceId: ''
@@ -1285,6 +1622,43 @@ const fallbackVideoModelOptions = [
   features: buildFallbackVideoFeatures(model.id)
 }))
 const videoModelOptions = ref([...fallbackVideoModelOptions])
+const fallbackAudioAbilityOptions = [
+  {
+    id: 'realtime_dubbing',
+    label: '实时配音',
+    defaultTier: 'hd',
+    tiers: [
+      { id: 'hd', label: 'Minimax-speech-2.8-hd', modelCode: 'speech-2.8-hd', pointsPer10k: 53 },
+      { id: 'turbo', label: 'Minimax-speech-2.8-turbo', modelCode: 'speech-2.8-turbo', pointsPer10k: 30 }
+    ]
+  },
+  {
+    id: 'long_narration',
+    label: '长文本旁白',
+    defaultTier: 'hd',
+    tiers: [
+      { id: 'hd', label: 'Minimax-speech-2.8-hd', modelCode: 'speech-2.8-hd', pointsPer10k: 53 },
+      { id: 'turbo', label: 'Minimax-speech-2.8-turbo', modelCode: 'speech-2.8-turbo', pointsPer10k: 30 }
+    ]
+  }
+]
+const audioAbilityOptions = ref([...fallbackAudioAbilityOptions])
+const audioVoiceOptions = ref([])
+const audioEmotionOptions = [
+  { value: 'happy', label: '开心' },
+  { value: 'sad', label: '伤感' },
+  { value: 'angry', label: '愤怒' },
+  { value: 'calm', label: '平静' },
+  { value: 'fluent', label: '流畅' },
+  { value: 'whisper', label: '耳语' }
+]
+const audioPauseOptions = [
+  { value: '0.25', label: '0.25s', text: '<#0.25#>' },
+  { value: '0.5', label: '0.5s', text: '<#0.5#>' },
+  { value: '1.0', label: '1.0s', text: '<#1.0#>' },
+  { value: '1.5', label: '1.5s', text: '<#1.5#>' }
+]
+const audioInterjectionOptions = ['笑声', '轻笑', '咳嗽', '清嗓子', '正常换气', '喘气']
 const librarySourceTabs = ['Sluvo', 'Sluvo生成器', 'WebUI', 'ComfyUI', 'AI应用']
 const libraryTypeTabs = ['图片', '视频', '音频']
 const libraryPicker = reactive({
@@ -1355,6 +1729,74 @@ const selectionBoxStyle = computed(() => {
     height: `${rect.height}px`
   }
 })
+const selectedDirectNodes = computed(() => directNodes.value.filter((node) => selectedDirectNodeIds.value.includes(node.id)))
+const selectedDirectGroupId = computed(() => {
+  const groups = [...new Set(selectedDirectNodes.value.map((node) => node.groupId).filter(Boolean))]
+  return groups.length === 1 ? groups[0] : ''
+})
+const directNodeGroups = computed(() => {
+  const groups = new Map()
+  directNodes.value.forEach((node) => {
+    if (!node.groupId) return
+    if (!groups.has(node.groupId)) {
+      groups.set(node.groupId, {
+        id: node.groupId,
+        title: node.groupTitle || '分组',
+        nodes: []
+      })
+    }
+    groups.get(node.groupId).nodes.push(node)
+  })
+
+  return [...groups.values()]
+    .filter((group) => group.nodes.length >= 2)
+    .map((group) => {
+      const bounds = getDirectNodeFlowBounds(group.nodes)
+      return {
+        ...group,
+        title: group.title || `分组 ${group.nodes.length} 个节点`,
+        count: group.nodes.length,
+        bounds
+      }
+    })
+})
+const directGroupToolbar = computed(() => {
+  if (selectionBox.active || directDrag.active || directConnection.active) return { visible: false }
+  if (selectedDirectGroupId.value && selectedDirectNodes.value.every((node) => node.groupId === selectedDirectGroupId.value)) {
+    return { visible: true, mode: 'ungroup' }
+  }
+  if (selectedDirectNodes.value.length >= 2) return { visible: true, mode: 'group' }
+  return { visible: false }
+})
+const directSelectionFrame = computed(() => {
+  const grouped = Boolean(selectedDirectGroupId.value && selectedDirectNodes.value.every((node) => node.groupId === selectedDirectGroupId.value))
+  const visible = !grouped && !selectionBox.active && !directConnection.active && selectedDirectNodes.value.length >= 2
+  return {
+    visible,
+    grouped
+  }
+})
+const directSelectionFrameStyle = computed(() => {
+  const bounds = getSelectedDirectScreenBounds()
+  if (!bounds) return {}
+  const padding = 24
+  return {
+    left: `${bounds.x - padding}px`,
+    top: `${bounds.y - padding}px`,
+    width: `${bounds.width + padding * 2}px`,
+    height: `${bounds.height + padding * 2}px`
+  }
+})
+const directGroupToolbarStyle = computed(() => {
+  const bounds = getSelectedDirectScreenBounds()
+  if (!bounds) return {}
+  const width = directGroupToolbar.value.mode === 'group' ? 172 : 96
+  const padding = 24
+  return {
+    left: `${Math.max(12, bounds.x + bounds.width / 2 - width / 2)}px`,
+    top: `${Math.max(12, bounds.y - padding - 58)}px`
+  }
+})
 const contextMenuStyle = computed(() => ({
   left: `${contextMenu.screen.x}px`,
   top: `${contextMenu.screen.y}px`
@@ -1366,6 +1808,17 @@ const activeHistoryLabel = computed(() => {
     audio: '暂无音频历史记录'
   }
   return labels[activeHistoryTab.value] || '暂无历史记录'
+})
+const filteredAudioVoiceOptions = computed(() => {
+  const query = audioVoicePicker.query.trim().toLowerCase()
+  return audioVoiceOptions.value.filter((voice) => {
+    if (audioVoicePicker.tab === 'mine' && !isAudioVoiceMine(voice)) return false
+    if (audioVoicePicker.tab === 'favorites' && !isAudioVoiceFavorite(voice)) return false
+    if (!query) return true
+    return [voice.label, voice.voiceId, voice.categoryLabel, voice.styleLabel, voice.description, voice.searchText]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query))
+  })
 })
 const minimapItems = computed(() => {
   const vueNodes = nodes.value.map((node) => {
@@ -1481,6 +1934,7 @@ watch(
 onMounted(() => {
   previousDocumentKeydown = document.onkeydown
   previousWindowKeydown = window.onkeydown
+  loadAudioVoiceFavorites()
   document.onkeydown = handleGlobalDeleteShortcut
   window.onkeydown = handleGlobalDeleteShortcut
   nextTick(() => {
@@ -1503,6 +1957,8 @@ onMounted(() => {
   updateFrameSize()
   loadImageGenerationCatalog()
   loadVideoGenerationCatalog()
+  loadAudioGenerationCatalog()
+  loadAudioVoiceAssets()
   loadProjectCanvas()
   if (typeof ResizeObserver !== 'undefined' && canvasFrame.value) {
     frameResizeObserver = new ResizeObserver(updateFrameSize)
@@ -1537,6 +1993,8 @@ onBeforeUnmount(() => {
   clearImageGenerationTimers()
   clearVideoGenerationTimers()
   clearVideoEstimateTimers()
+  clearAudioGenerationTimers()
+  clearAudioEstimateTimers()
   resetHoverEffects()
 })
 
@@ -1798,6 +2256,8 @@ function mapBackendNodeToDirectNode(node) {
     prompt: data.prompt || data.body || '',
     promptSegments: normalizePromptSegments(data.promptSegments, data),
     promptPlaceholder: data.promptPlaceholder || getDirectNodePrompt(directType),
+    groupId: data.groupId || '',
+    groupTitle: data.groupTitle || '',
     media: data.media || null,
     upload: data.upload || null,
     imageModelId: data.imageModelId || fallbackImageModelOptions[0].id,
@@ -1813,6 +2273,23 @@ function mapBackendNodeToDirectNode(node) {
     videoWebSearch: Boolean(data.videoWebSearch || data.webSearch || data.web_search),
     videoEstimatePoints: Number.isFinite(Number(data.videoEstimatePoints)) ? Number(data.videoEstimatePoints) : null,
     videoEstimateStatus: data.videoEstimateStatus || 'idle',
+    audioAbilityType: data.audioAbilityType || data.abilityType || fallbackAudioAbilityOptions[0].id,
+    audioTierCode: data.audioTierCode || data.tierCode || fallbackAudioAbilityOptions[0].defaultTier,
+    audioModelCode: data.audioModelCode || data.modelCode || fallbackAudioAbilityOptions[0].tiers[0].modelCode,
+    audioVoiceId: data.audioVoiceId || data.voiceId || '',
+    audioVoiceSourceType: data.audioVoiceSourceType || data.voiceSourceType || 'system',
+    audioEmotion: data.audioEmotion || data.emotion || '',
+    audioSpeed: data.audioSpeed ?? data.speed ?? 1,
+    audioVolume: data.audioVolume ?? data.volume ?? 1,
+    audioPitch: data.audioPitch ?? data.pitch ?? 0,
+    audioFormat: data.audioFormat || 'mp3',
+    audioSampleRate: Number(data.audioSampleRate || 32000),
+    audioBitrate: Number(data.audioBitrate || 128000),
+    audioChannelCount: Number(data.audioChannelCount || 1),
+    audioLanguageBoost: data.audioLanguageBoost || data.languageBoost || 'none',
+    audioSettingsOpen: Boolean(data.audioSettingsOpen),
+    audioEstimatePoints: Number.isFinite(Number(data.audioEstimatePoints)) ? Number(data.audioEstimatePoints) : null,
+    audioEstimateStatus: data.audioEstimateStatus || 'idle',
     aspectRatio: data.aspectRatio || fallbackImageAspectRatioOptions[0],
     referenceImages: normalizeManualReferenceImages(data.referenceImages),
     referenceOrder: Array.isArray(data.referenceOrder) ? data.referenceOrder : [],
@@ -1823,6 +2300,7 @@ function mapBackendNodeToDirectNode(node) {
     generationRecordId: data.generationRecordId || '',
     generatedImage: data.generatedImage || null,
     generatedVideo: data.generatedVideo || null,
+    generatedAudio: data.generatedAudio || null,
     clientId: data.clientId || node.id
   }
 }
@@ -1925,6 +2403,8 @@ function handleDirectPromptInput(nodeId, event) {
   })
   directPromptEditorSignatures.set(nodeId, getPromptEditorSignature({ promptSegments: segments, prompt: getPromptTextFromSegments(segments) }))
   saveDirectPromptSelection(nodeId, event)
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (node?.type === 'audio_unit') refreshAudioEstimate(node)
   markDirectTextEditDirty()
 }
 
@@ -1986,6 +2466,10 @@ function hydrateDirectPromptEditor(element, node = null) {
       element.appendChild(createPromptReferenceToken(segment, node?.id))
       return
     }
+    if (segment.type === 'audio_token') {
+      element.appendChild(createPromptAudioToken(segment))
+      return
+    }
     element.appendChild(document.createTextNode(segment.text || ''))
   })
 }
@@ -2015,6 +2499,20 @@ function createPromptReferenceToken(mention, nodeId = '') {
   return token
 }
 
+function createPromptAudioToken(segment) {
+  const token = document.createElement('span')
+  token.className = `direct-workflow-node__audio-token-chip direct-workflow-node__audio-token-chip--${segment.tokenKind || 'tag'}`
+  token.contentEditable = 'false'
+  token.draggable = false
+  token.dataset.promptToken = 'audio_token'
+  token.dataset.tokenId = segment.id || `audio-token-${Date.now()}-${Math.round(Math.random() * 10000)}`
+  token.dataset.value = segment.value || segment.text || ''
+  token.dataset.label = segment.label || segment.value || segment.text || ''
+  token.dataset.tokenKind = segment.tokenKind || 'tag'
+  token.textContent = token.dataset.label
+  return token
+}
+
 function extractPromptEditorSegments(element) {
   if (!(element instanceof HTMLElement)) return []
   const segments = []
@@ -2034,6 +2532,16 @@ function extractPromptEditorSegments(element) {
       return
     }
     if (!(child instanceof HTMLElement)) return
+    if (child.dataset.promptToken === 'audio_token' || child.classList.contains('direct-workflow-node__audio-token-chip')) {
+      segments.push({
+        type: 'audio_token',
+        id: child.dataset.tokenId || `audio-token-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+        value: child.dataset.value || child.innerText || child.textContent || '',
+        label: child.dataset.label || child.innerText || child.textContent || '',
+        tokenKind: child.dataset.tokenKind || 'tag'
+      })
+      return
+    }
     if (child.dataset.promptToken === 'reference' || child.classList.contains('direct-workflow-node__mention-chip')) {
       segments.push({
         type: 'reference',
@@ -2050,8 +2558,8 @@ function extractPromptEditorSegments(element) {
 
 function getPromptTextFromSegments(segments) {
   return normalizePromptSegments(segments)
-    .filter((segment) => segment.type === 'text')
-    .map((segment) => segment.text)
+    .filter((segment) => segment.type === 'text' || segment.type === 'audio_token')
+    .map((segment) => (segment.type === 'audio_token' ? segment.value : segment.text))
     .join('')
 }
 
@@ -2071,6 +2579,10 @@ function getPromptEditorSignature(node = null) {
 
 function isDirectPromptEditorEmpty(node) {
   return normalizePromptSegments(node?.promptSegments, node).length === 0
+}
+
+function isSingleSelectedDirectNode(nodeId) {
+  return selectedDirectNodeIds.value.length === 1 && selectedDirectNodeIds.value[0] === nodeId
 }
 
 function findPreviousPromptToken(editor, range) {
@@ -2119,7 +2631,7 @@ function findNextPromptToken(editor, range) {
 
 function findLastTokenInside(node) {
   if (!(node instanceof HTMLElement) && node?.nodeType !== Node.TEXT_NODE) return null
-  if (node instanceof HTMLElement && node.classList.contains('direct-workflow-node__mention-chip')) return node
+  if (node instanceof HTMLElement && (node.classList.contains('direct-workflow-node__mention-chip') || node.classList.contains('direct-workflow-node__audio-token-chip'))) return node
   if (!(node instanceof HTMLElement)) return null
   for (let index = node.childNodes.length - 1; index >= 0; index -= 1) {
     const token = findLastTokenInside(node.childNodes[index])
@@ -2130,7 +2642,7 @@ function findLastTokenInside(node) {
 
 function findFirstTokenInside(node) {
   if (!(node instanceof HTMLElement) && node?.nodeType !== Node.TEXT_NODE) return null
-  if (node instanceof HTMLElement && node.classList.contains('direct-workflow-node__mention-chip')) return node
+  if (node instanceof HTMLElement && (node.classList.contains('direct-workflow-node__mention-chip') || node.classList.contains('direct-workflow-node__audio-token-chip'))) return node
   if (!(node instanceof HTMLElement)) return null
   for (const child of node.childNodes) {
     const token = findFirstTokenInside(child)
@@ -2434,6 +2946,8 @@ function serializeDirectNodeForSave(node, index = 0) {
       title: node.title,
       icon: node.icon,
       actions: node.actions || [],
+      groupId: node.groupId || '',
+      groupTitle: node.groupTitle || '',
       prompt: node.prompt || '',
       body: node.prompt || '',
       promptSegments: normalizePromptSegments(node.promptSegments, node),
@@ -2453,6 +2967,23 @@ function serializeDirectNodeForSave(node, index = 0) {
       videoWebSearch: Boolean(node.videoWebSearch),
       videoEstimatePoints: node.videoEstimatePoints ?? null,
       videoEstimateStatus: node.videoEstimateStatus || 'idle',
+      audioAbilityType: node.audioAbilityType || '',
+      audioTierCode: node.audioTierCode || '',
+      audioModelCode: node.audioModelCode || '',
+      audioVoiceId: node.audioVoiceId || '',
+      audioVoiceSourceType: node.audioVoiceSourceType || 'system',
+      audioEmotion: node.audioEmotion || '',
+      audioSpeed: node.audioSpeed ?? 1,
+      audioVolume: node.audioVolume ?? 1,
+      audioPitch: node.audioPitch ?? 0,
+      audioFormat: node.audioFormat || 'mp3',
+      audioSampleRate: Number(node.audioSampleRate || 32000),
+      audioBitrate: Number(node.audioBitrate || 128000),
+      audioChannelCount: Number(node.audioChannelCount || 1),
+      audioLanguageBoost: node.audioLanguageBoost || 'none',
+      audioSettingsOpen: Boolean(node.audioSettingsOpen),
+      audioEstimatePoints: node.audioEstimatePoints ?? null,
+      audioEstimateStatus: node.audioEstimateStatus || 'idle',
       aspectRatio: node.aspectRatio || '',
       referenceImages: normalizeManualReferenceImages(node.referenceImages)
         .filter((item) => item.status !== 'uploading')
@@ -2467,7 +2998,8 @@ function serializeDirectNodeForSave(node, index = 0) {
       generationTaskId: node.generationTaskId || '',
       generationRecordId: node.generationRecordId || '',
       generatedImage: node.generatedImage || null,
-      generatedVideo: node.generatedVideo || null
+      generatedVideo: node.generatedVideo || null,
+      generatedAudio: node.generatedAudio || null
     },
     ports: { left: true, right: true },
     style: {}
@@ -2988,6 +3520,10 @@ function handleKeydown(event) {
       closeImagePreview()
       return
     }
+    if (audioVoicePicker.visible) {
+      closeAudioVoicePicker()
+      return
+    }
     closeFloatingPanels()
   }
 
@@ -3026,7 +3562,7 @@ function handleFramePointerDown(event) {
   const target = event.target instanceof Element ? event.target : null
   if (
     target?.closest(
-      '.direct-workflow-node, .vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .publish-overlay'
+      '.direct-workflow-node, .direct-group-frame, .direct-group-toolbar, .direct-selection-frame, .vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .publish-overlay, .audio-voice-overlay'
     )
   ) {
     return
@@ -3045,13 +3581,33 @@ function handleFramePointerDown(event) {
 }
 
 function handleCanvasWheel(event) {
-  if (!isCanvasWheelZoomTarget(event.target)) return
-  const frame = canvasFrame.value
-  const rect = frame?.getBoundingClientRect?.()
-  if (!rect) return
+  if (!isCanvasWheelPanTarget(event.target)) return
+  if (handleScrollableCanvasControlWheel(event)) return
 
   event.preventDefault()
   event.stopPropagation()
+
+  if (event.ctrlKey || event.metaKey) {
+    zoomCanvasByWheel(event)
+    return
+  }
+
+  const nextViewport = {
+    x: Number(viewport.value?.x || 0) - normalizeWheelDelta(event.deltaX),
+    y: Number(viewport.value?.y || 0) - normalizeWheelDelta(event.deltaY),
+    zoom: Number(viewport.value?.zoom || 1)
+  }
+
+  setViewport(nextViewport, { duration: 0 })
+  canvasStore.setViewport(nextViewport)
+  syncPendingReferenceMenuScreen()
+  scheduleCanvasSave(900)
+}
+
+function zoomCanvasByWheel(event) {
+  const frame = canvasFrame.value
+  const rect = frame?.getBoundingClientRect?.()
+  if (!rect) return
 
   const currentZoom = Number(viewport.value?.zoom || 1)
   const nextZoom = clampNumber(currentZoom * Math.exp(-event.deltaY * 0.0012), 0.22, 2)
@@ -3072,12 +3628,42 @@ function handleCanvasWheel(event) {
   scheduleCanvasSave(900)
 }
 
-function isCanvasWheelZoomTarget(target) {
+function isCanvasWheelPanTarget(target) {
   const element = target instanceof Element ? target : null
   if (!element) return true
   return !element.closest(
     '.libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .add-node-menu, .publish-overlay'
   )
+}
+
+function handleScrollableCanvasControlWheel(event) {
+  const element = event.target instanceof Element ? event.target : null
+  const scrollable = element?.closest?.('.audio-inline-settings, .audio-voice-list, .generated-audio__preview')
+  if (!(scrollable instanceof HTMLElement)) return false
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  if (scrollable.scrollHeight > scrollable.clientHeight + 1) {
+    scrollable.scrollTop += getWheelScrollDelta(event)
+  }
+  return true
+}
+
+function normalizeWheelDelta(value) {
+  if (!Number.isFinite(value)) return 0
+  return clampNumber(value, -120, 120)
+}
+
+function getWheelScrollDelta(event) {
+  const delta = Number(event.deltaY || 0)
+  if (!Number.isFinite(delta)) return 0
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return delta * 16
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+    const element = event.target instanceof Element ? event.target.closest?.('.audio-inline-settings, .audio-voice-list, .generated-audio__preview') : null
+    return delta * Math.max(element?.clientHeight || 360, 1)
+  }
+  return delta
 }
 
 function clampNumber(value, min, max) {
@@ -3103,9 +3689,9 @@ function handleWindowPointerMove(event) {
   const rect = getSelectionRect()
   if (rect.width > 4 || rect.height > 4) {
     suppressNextPaneClick.value = true
-    selectedDirectNodeIds.value = directNodes.value
+    selectedDirectNodeIds.value = expandDirectGroupSelection(directNodes.value
       .filter((node) => intersectsRect(rect, getDirectNodeScreenRect(node)))
-      .map((node) => node.id)
+      .map((node) => node.id))
     activeDirectNodeId.value = selectedDirectNodeIds.value.at(-1) || ''
     focusedDirectNodeId.value = activeDirectNodeId.value
   }
@@ -3130,9 +3716,9 @@ function handleWindowPointerUp(event) {
 
   const rect = getSelectionRect()
   const wasDraggingSelection = rect.width > 4 || rect.height > 4
-  selectedDirectNodeIds.value = directNodes.value
+  selectedDirectNodeIds.value = expandDirectGroupSelection(directNodes.value
     .filter((node) => intersectsRect(rect, getDirectNodeScreenRect(node)))
-    .map((node) => node.id)
+    .map((node) => node.id))
   activeDirectNodeId.value = selectedDirectNodeIds.value.at(-1) || ''
   focusedDirectNodeId.value = activeDirectNodeId.value
   lastTouchedDirectNodeId.value = activeDirectNodeId.value
@@ -3337,6 +3923,18 @@ function flowToScreenCoordinate(point) {
   }
 }
 
+function flowBoundsToScreenBounds(bounds) {
+  if (!bounds) return null
+  const zoom = Number(viewport.value?.zoom || 1)
+  const safeZoom = zoom > 0 ? zoom : 1
+  return {
+    x: Number(viewport.value?.x || 0) + bounds.x * safeZoom,
+    y: Number(viewport.value?.y || 0) + bounds.y * safeZoom,
+    width: bounds.width * safeZoom,
+    height: bounds.height * safeZoom
+  }
+}
+
 function handleDirectNodePointerDown(event, nodeId) {
   if (event.button !== 0) return
   closeFloatingPanels()
@@ -3358,20 +3956,49 @@ function handleDirectNodePointerDown(event, nodeId) {
   focusDeleteKeySink()
 
   if (event.shiftKey) {
-    selectedDirectNodeIds.value = selectedDirectNodeIds.value.includes(nodeId)
-      ? selectedDirectNodeIds.value.filter((id) => id !== nodeId)
-      : [...selectedDirectNodeIds.value, nodeId]
+    const groupIds = getDirectNodeGroupMembers(nodeId)
+    const current = new Set(selectedDirectNodeIds.value)
+    const shouldRemove = groupIds.every((id) => current.has(id))
+    groupIds.forEach((id) => {
+      if (shouldRemove) current.delete(id)
+      else current.add(id)
+    })
+    selectedDirectNodeIds.value = [...current].filter((id) => directNodes.value.some((node) => node.id === id))
     return
   }
 
   if (!selectedDirectNodeIds.value.includes(nodeId)) {
-    selectedDirectNodeIds.value = [nodeId]
+    selectedDirectNodeIds.value = getDirectNodeGroupMembers(nodeId)
+  } else {
+    selectedDirectNodeIds.value = getDirectNodeGroupSelection(nodeId)
   }
   canvasStore.clearSelection()
   directDrag.active = true
   directDrag.startScreen = { x: event.clientX, y: event.clientY }
   directDrag.originals = directNodes.value
     .filter((node) => selectedDirectNodeIds.value.includes(node.id))
+    .map((node) => ({ id: node.id, x: node.x, y: node.y }))
+}
+
+function handleDirectGroupPointerDown(event, groupId) {
+  if (event.button !== 0) return
+  const ids = directNodes.value.filter((node) => node.groupId === groupId).map((node) => node.id)
+  if (ids.length < 2) return
+
+  closeFloatingPanels()
+  event.preventDefault()
+  canvasFrame.value?.focus?.({ preventScroll: true })
+  selectedDirectNodeIds.value = ids
+  activeDirectNodeId.value = ids.at(-1) || ''
+  focusedDirectNodeId.value = activeDirectNodeId.value
+  lastTouchedDirectNodeId.value = activeDirectNodeId.value
+  canvasStore.clearSelection()
+  focusDeleteKeySink()
+
+  directDrag.active = true
+  directDrag.startScreen = { x: event.clientX, y: event.clientY }
+  directDrag.originals = directNodes.value
+    .filter((node) => ids.includes(node.id))
     .map((node) => ({ id: node.id, x: node.x, y: node.y }))
 }
 
@@ -3410,6 +4037,95 @@ function moveDirectNodes(event) {
       y: original.y + dy
     }
   })
+}
+
+function getDirectNodeGroupMembers(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!node?.groupId) return node ? [node.id] : []
+  return directNodes.value.filter((item) => item.groupId === node.groupId).map((item) => item.id)
+}
+
+function expandDirectGroupSelection(ids) {
+  const next = new Set(ids)
+  ids.forEach((id) => getDirectNodeGroupMembers(id).forEach((memberId) => next.add(memberId)))
+  return [...next].filter((id) => directNodes.value.some((node) => node.id === id))
+}
+
+function getDirectNodeGroupSelection(nodeId) {
+  const selected = new Set(selectedDirectNodeIds.value)
+  getDirectNodeGroupMembers(nodeId).forEach((id) => selected.add(id))
+  return [...selected].filter((id) => directNodes.value.some((node) => node.id === id))
+}
+
+function getDirectNodeScreenBounds(items) {
+  if (!items.length) return null
+  const rects = items.map(getDirectNodeScreenRect)
+  const left = Math.min(...rects.map((rect) => rect.x))
+  const top = Math.min(...rects.map((rect) => rect.y))
+  const right = Math.max(...rects.map((rect) => rect.x + rect.width))
+  const bottom = Math.max(...rects.map((rect) => rect.y + rect.height))
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+function getDirectNodeFlowBounds(items) {
+  if (!items.length) return null
+  const left = Math.min(...items.map((node) => node.x))
+  const top = Math.min(...items.map((node) => node.y))
+  const right = Math.max(...items.map((node) => node.x + getDirectNodeSize(node.type).width))
+  const bottom = Math.max(...items.map((node) => node.y + getDirectNodeSize(node.type).height))
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+function getSelectedDirectScreenBounds() {
+  return flowBoundsToScreenBounds(getDirectNodeFlowBounds(selectedDirectNodes.value))
+}
+
+function getDirectGroupFrameStyle(group) {
+  const bounds = group?.bounds
+  if (!bounds) return {}
+  const paddingX = 34
+  const paddingTop = 54
+  const paddingBottom = 28
+  return {
+    left: `${bounds.x - paddingX}px`,
+    top: `${bounds.y - paddingTop}px`,
+    width: `${bounds.width + paddingX * 2}px`,
+    height: `${bounds.height + paddingTop + paddingBottom}px`
+  }
+}
+
+function groupSelectedDirectNodes() {
+  const selectedIds = new Set(selectedDirectNodeIds.value)
+  const ids = directNodes.value.filter((node) => selectedIds.has(node.id)).map((node) => node.id)
+  if (ids.length < 2) {
+    showToast('至少选择两个节点才能打组')
+    return
+  }
+  rememberHistory()
+  const groupId = `direct-group-${Date.now()}-${Math.round(Math.random() * 10000)}`
+  const groupTitle = `分组 ${ids.length} 个节点`
+  directNodes.value = directNodes.value.map((node) => (ids.includes(node.id) ? { ...node, groupId, groupTitle } : node))
+  selectedDirectNodeIds.value = ids
+  activeDirectNodeId.value = ids.at(-1) || ''
+  focusedDirectNodeId.value = activeDirectNodeId.value
+  lastTouchedDirectNodeId.value = activeDirectNodeId.value
+  flushDeferredInteractionSave()
+  showToast('已打组')
+}
+
+function ungroupSelectedDirectNodes() {
+  const groupIds = new Set(selectedDirectNodes.value.map((node) => node.groupId).filter(Boolean))
+  if (selectedDirectGroupId.value) groupIds.add(selectedDirectGroupId.value)
+  if (groupIds.size === 0) return
+  rememberHistory()
+  const releasedIds = directNodes.value.filter((node) => groupIds.has(node.groupId)).map((node) => node.id)
+  directNodes.value = directNodes.value.map((node) => (groupIds.has(node.groupId) ? { ...node, groupId: '', groupTitle: '' } : node))
+  selectedDirectNodeIds.value = releasedIds
+  activeDirectNodeId.value = releasedIds.at(-1) || ''
+  focusedDirectNodeId.value = activeDirectNodeId.value
+  lastTouchedDirectNodeId.value = activeDirectNodeId.value
+  flushDeferredInteractionSave()
+  showToast('已解组')
 }
 
 function getSelectionRect() {
@@ -3567,6 +4283,7 @@ function closeFloatingPanels(clearPendingConnection = true) {
   addMenu.visible = false
   referenceMenu.visible = false
   contextMenu.visible = false
+  if (audioVoicePicker.visible) closeAudioVoicePicker()
   activeRailPanel.value = ''
   if (clearPendingConnection) {
     pendingDirectConnection.sourceId = ''
@@ -4170,6 +4887,8 @@ function dedupeUploadedAssetNodes({ preferId = '', silent = false } = {}) {
     releaseUploadSignature(id)
     directNodeElements.delete(id)
     clearImageGenerationTimer(id)
+    clearVideoGenerationTimer(id)
+    clearAudioGenerationTimer(id)
   })
 
   directEdges.value = directEdges.value
@@ -4467,6 +5186,11 @@ function getGeneratedVideoPoster(node) {
   return normalizeDisplayImageSrc(video.posterUrl || video.thumbnailUrl || '')
 }
 
+function getGeneratedAudioSrc(node) {
+  const audio = node?.generatedAudio || {}
+  return normalizeDisplayAudioSrc(audio.url || audio.previewUrl || '')
+}
+
 function normalizeDisplayImageSrc(value) {
   const source = String(value || '').trim()
   if (!source) return ''
@@ -4481,6 +5205,15 @@ function normalizeDisplayVideoSrc(value) {
   if (!source) return ''
   if (source.startsWith('//')) return `${window.location.protocol}${source}`
   if (/^(https?:|blob:)/i.test(source)) return source
+  if (source.startsWith('/')) return buildApiUrl(source)
+  return source
+}
+
+function normalizeDisplayAudioSrc(value) {
+  const source = String(value || '').trim()
+  if (!source) return ''
+  if (source.startsWith('//')) return `${window.location.protocol}${source}`
+  if (/^(https?:|blob:|data:audio\/)/i.test(source)) return source
   if (source.startsWith('/')) return buildApiUrl(source)
   return source
 }
@@ -4642,6 +5375,18 @@ function downloadGeneratedVideo(node) {
   link.remove()
 }
 
+function downloadGeneratedAudio(node) {
+  const url = getGeneratedAudioSrc(node)
+  if (!url) return
+  const link = document.createElement('a')
+  link.href = url
+  link.download = buildGeneratedAudioFilename(node)
+  link.rel = 'noopener noreferrer'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
 function buildGeneratedImageFilename(node) {
   const image = node?.generatedImage || {}
   const base = String(node?.title || 'sluvo-image').trim().replace(/[\\/:*?"<>|\s]+/g, '-')
@@ -4654,6 +5399,13 @@ function buildGeneratedVideoFilename(node) {
   const base = String(node?.title || 'sluvo-video').trim().replace(/[\\/:*?"<>|\s]+/g, '-')
   const extension = inferVideoExtension(video.url || '')
   return `${base || 'sluvo-video'}${extension}`
+}
+
+function buildGeneratedAudioFilename(node) {
+  const audio = node?.generatedAudio || {}
+  const base = String(node?.title || 'sluvo-audio').trim().replace(/[\\/:*?"<>|\s]+/g, '-')
+  const extension = inferAudioExtension(audio.url || '')
+  return `${base || 'sluvo-audio'}${extension}`
 }
 
 function inferImageExtension(url) {
@@ -4670,6 +5422,14 @@ function inferVideoExtension(url) {
   if (source.endsWith('.mov')) return '.mov'
   if (source.endsWith('.m3u8')) return '.m3u8'
   return '.mp4'
+}
+
+function inferAudioExtension(url) {
+  const source = String(url || '').split('?')[0].toLowerCase()
+  if (source.endsWith('.wav')) return '.wav'
+  if (source.endsWith('.m4a')) return '.m4a'
+  if (source.endsWith('.ogg')) return '.ogg'
+  return '.mp3'
 }
 
 function rememberLocalUploadPreview(nodeId, previewUrl) {
@@ -4767,6 +5527,105 @@ async function loadVideoGenerationCatalog() {
   } catch {
     videoModelOptions.value = [...fallbackVideoModelOptions]
   }
+}
+
+async function loadAudioGenerationCatalog() {
+  try {
+    const catalog = await fetchCreativeAudioCatalog()
+    if (catalog?.success === false) return
+    const abilities = normalizeAudioCatalogAbilities(catalog)
+    if (abilities.length > 0) audioAbilityOptions.value = abilities
+  } catch {
+    audioAbilityOptions.value = [...fallbackAudioAbilityOptions]
+  }
+}
+
+async function loadAudioVoiceAssets() {
+  try {
+    const payload = await fetchCreativeVoiceAssets()
+    const voices = normalizeAudioVoiceOptions(payload)
+    audioVoiceOptions.value = voices
+    if (voices.length > 0) {
+      directNodes.value = directNodes.value.map((node) => {
+        if (node.type !== 'audio_unit' || node.audioVoiceId) return node
+        return {
+          ...node,
+          audioVoiceId: voices[0].voiceId,
+          audioVoiceSourceType: voices[0].sourceType || 'system'
+        }
+      })
+    }
+  } catch {
+    audioVoiceOptions.value = []
+  }
+}
+
+function normalizeAudioCatalogAbilities(catalog) {
+  const abilityItems =
+    (Array.isArray(catalog?.data?.abilities) && catalog.data.abilities) ||
+    (Array.isArray(catalog?.abilities) && catalog.abilities) ||
+    findArrayByKey(catalog, ['abilities', 'audio_abilities', 'audioAbilities'])
+  if (!abilityItems) return []
+
+  return abilityItems
+    .map((item) => {
+      const id = item?.ability_type || item?.abilityType || item?.id || item?.value
+      if (!id) return null
+      const tiers = normalizeAudioTierOptions(item?.tiers)
+      return {
+        id,
+        label: item?.label || item?.name || id,
+        defaultTier: item?.default_tier || item?.defaultTier || tiers[0]?.id || 'hd',
+        startPoints: Number.isFinite(Number(item?.start_points ?? item?.startPoints)) ? Number(item?.start_points ?? item?.startPoints) : null,
+        tiers: tiers.length > 0 ? tiers : getFallbackAudioAbility(id)?.tiers || fallbackAudioAbilityOptions[0].tiers
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeAudioTierOptions(tiers) {
+  const items = Array.isArray(tiers) ? tiers : Object.values(tiers || {})
+  return items
+    .map((tier) => {
+      const id = tier?.tier_code || tier?.tierCode || tier?.id || tier?.value
+      if (!id) return null
+      const modelCode = tier?.model_code || tier?.modelCode || tier?.model || id
+      return {
+        id,
+        label: modelCode ? `Minimax-${modelCode}` : tier?.tier_label || tier?.label || id,
+        tierLabel: tier?.tier_label || tier?.tierLabel || tier?.label || id,
+        modelCode
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeAudioVoiceOptions(payload) {
+  const items =
+    (Array.isArray(payload?.data?.assets) && payload.data.assets) ||
+    (Array.isArray(payload?.data?.items) && payload.data.items) ||
+    (Array.isArray(payload?.data?.voices) && payload.data.voices) ||
+    (Array.isArray(payload?.assets) && payload.assets) ||
+    (Array.isArray(payload?.items) && payload.items) ||
+    findArrayByKey(payload, ['assets', 'items', 'voices', 'voice_assets', 'voiceAssets'])
+  return (items || [])
+    .map((item) => {
+      const voiceId = String(item?.voice_id || item?.voiceId || item?.id || '').trim()
+      if (!voiceId) return null
+      return {
+        voiceId,
+        label: item?.label || item?.display_name || item?.displayName || item?.voice_name || item?.voiceName || voiceId,
+        sourceType: item?.source_type || item?.sourceType || (item?.voice_type === 'system_voice' ? 'system' : 'custom'),
+        sourceLabel: item?.source_label || item?.sourceLabel || '',
+        categoryLabel: item?.category_label || item?.categoryLabel || '',
+        styleLabel: item?.style_label || item?.styleLabel || '',
+        description: item?.description || '',
+        previewAudioUrl: item?.preview_audio_url || item?.previewAudioUrl || '',
+        isFavorite: Boolean(item?.is_favorite || item?.isFavorite || item?.favorite),
+        searchText: item?.search_text || item?.searchText || ''
+      }
+    })
+    .filter(Boolean)
 }
 
 function normalizeVideoCatalogModels(catalog) {
@@ -5120,7 +5979,7 @@ function normalizePromptSegments(value, fallback = null) {
       ]
   const normalized = []
   segments.forEach((segment, index) => {
-    const type = segment?.type === 'reference' ? 'reference' : 'text'
+    const type = segment?.type === 'reference' ? 'reference' : segment?.type === 'audio_token' ? 'audio_token' : 'text'
     if (type === 'reference') {
       const referenceId = String(segment.referenceId || segment.reference_id || '')
       const label = String(segment.label || segment.name || `图片${index + 1}`)
@@ -5131,6 +5990,18 @@ function normalizePromptSegments(value, fallback = null) {
         referenceId,
         label,
         previewUrl: segment.previewUrl || segment.url || ''
+      })
+      return
+    }
+    if (type === 'audio_token') {
+      const value = String(segment.value ?? segment.text ?? '')
+      if (!value) return
+      normalized.push({
+        type: 'audio_token',
+        id: String(segment.id || `audio-token-${index}-${value}`),
+        value,
+        label: String(segment.label || value),
+        tokenKind: segment.tokenKind || 'tag'
       })
       return
     }
@@ -5202,9 +6073,15 @@ function getDirectVideoReferenceItems(nodeId) {
     .map((edge) => {
       const source = directNodes.value.find((item) => item.id === edge.sourceId)
       const generatedVideoUrl = source?.generatedVideo?.url || ''
+      const generatedAudioUrl = source?.generatedAudio?.url || ''
       const mediaUrl = source?.media?.url || ''
-      const kind = source?.type === 'video_unit' && generatedVideoUrl ? 'video' : source?.media?.kind || ''
-      const url = source?.type === 'video_unit' ? generatedVideoUrl : mediaUrl
+      const kind =
+        source?.type === 'video_unit' && generatedVideoUrl
+          ? 'video'
+          : source?.type === 'audio_unit' && generatedAudioUrl
+            ? 'audio'
+            : source?.media?.kind || ''
+      const url = source?.type === 'video_unit' ? generatedVideoUrl : source?.type === 'audio_unit' ? generatedAudioUrl : mediaUrl
       if (!allowedKinds.includes(kind) || !url) return null
       return {
         id: `edge:${edge.sourceId}:${kind}`,
@@ -6187,6 +7064,546 @@ async function fetchLatestMatchingVideoRecord(prompt, taskId = '', recordId = ''
   }
 }
 
+function getFallbackAudioAbility(abilityType) {
+  return fallbackAudioAbilityOptions.find((ability) => ability.id === abilityType) || fallbackAudioAbilityOptions[0]
+}
+
+function findAudioAbilityOption(abilityType) {
+  return audioAbilityOptions.value.find((ability) => ability.id === abilityType) || getFallbackAudioAbility(abilityType)
+}
+
+function getAudioTierOptions(node) {
+  const ability = findAudioAbilityOption(node?.audioAbilityType || fallbackAudioAbilityOptions[0].id)
+  return (ability?.tiers || fallbackAudioAbilityOptions[0].tiers).map((tier) => ({
+    value: tier.id,
+    label: tier.label || `Minimax-${tier.modelCode || tier.id}`,
+    modelCode: tier.modelCode,
+    pointsPer10k: tier.pointsPer10k
+  }))
+}
+
+function getAudioTierSelectValue(node) {
+  const tiers = getAudioTierOptions(node)
+  return tiers.find((tier) => tier.value === node?.audioTierCode)?.value || tiers[0]?.value || 'hd'
+}
+
+function getAudioTierOption(node) {
+  const tiers = getAudioTierOptions(node)
+  return tiers.find((tier) => tier.value === getAudioTierSelectValue(node)) || tiers[0] || fallbackAudioAbilityOptions[0].tiers[0]
+}
+
+function getAudioModelLabel(node) {
+  const tier = getAudioTierOption(node)
+  return tier?.label || `Minimax-${node?.audioModelCode || 'speech-2.8-hd'}`
+}
+
+function setAudioTierFromSelect(node, event) {
+  const value = event?.target?.value || 'hd'
+  const tier = getAudioTierOptions(node).find((item) => item.value === value) || getAudioTierOptions(node)[0]
+  updateDirectNode(node.id, {
+    audioTierCode: tier?.value || value,
+    audioModelCode: tier?.modelCode || node.audioModelCode || 'speech-2.8-hd',
+    audioEstimateStatus: 'idle',
+    audioEstimatePoints: null
+  })
+  refreshAudioEstimate({ ...node, audioTierCode: tier?.value || value, audioModelCode: tier?.modelCode || node.audioModelCode })
+}
+
+function syncAudioNodeSettings(node) {
+  const ability = findAudioAbilityOption(node?.audioAbilityType || fallbackAudioAbilityOptions[0].id)
+  const tierCode = ability?.tiers?.some((tier) => tier.id === node.audioTierCode) ? node.audioTierCode : ability?.defaultTier || ability?.tiers?.[0]?.id || 'hd'
+  const tier = (ability?.tiers || []).find((item) => item.id === tierCode) || ability?.tiers?.[0]
+  updateDirectNode(node.id, {
+    audioTierCode: tierCode,
+    audioModelCode: tier?.modelCode || node.audioModelCode || 'speech-2.8-hd',
+    audioEstimateStatus: 'idle',
+    audioEstimatePoints: null
+  })
+  refreshAudioEstimate({ ...node, audioTierCode: tierCode, audioModelCode: tier?.modelCode || node.audioModelCode })
+}
+
+function syncAudioVoiceSource(node) {
+  const voice = audioVoiceOptions.value.find((item) => item.voiceId === node.audioVoiceId)
+  updateDirectNode(node.id, { audioVoiceSourceType: voice?.sourceType || 'system' })
+}
+
+function getAudioVoiceLabel(node) {
+  const voice = audioVoiceOptions.value.find((item) => item.voiceId === node?.audioVoiceId)
+  return voice?.label || node?.audioVoiceId || '选择音色'
+}
+
+function getAudioVoiceLanguageLabel(node) {
+  const voice = audioVoiceOptions.value.find((item) => item.voiceId === node?.audioVoiceId)
+  return voice?.categoryLabel || '中文(普通话)'
+}
+
+function getActiveAudioVoiceId() {
+  const node = directNodes.value.find((item) => item.id === audioVoicePicker.nodeId)
+  return node?.audioVoiceId || ''
+}
+
+function isAudioVoiceMine(voice) {
+  return String(voice?.sourceType || '').toLowerCase() !== 'system'
+}
+
+function isAudioVoiceFavorite(voice) {
+  const voiceId = String(voice?.voiceId || '').trim()
+  return Boolean(voiceId && (audioFavoriteVoiceIds.value.has(voiceId) || voice?.isFavorite))
+}
+
+function loadAudioVoiceFavorites() {
+  if (typeof window === 'undefined') return
+  try {
+    const raw = window.localStorage.getItem(AUDIO_VOICE_FAVORITES_STORAGE_KEY)
+    const ids = JSON.parse(raw || '[]')
+    audioFavoriteVoiceIds.value = new Set(Array.isArray(ids) ? ids.map((item) => String(item).trim()).filter(Boolean) : [])
+  } catch {
+    audioFavoriteVoiceIds.value = new Set()
+  }
+}
+
+function saveAudioVoiceFavorites() {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(AUDIO_VOICE_FAVORITES_STORAGE_KEY, JSON.stringify([...audioFavoriteVoiceIds.value]))
+}
+
+function toggleAudioVoiceFavorite(voice) {
+  const voiceId = String(voice?.voiceId || '').trim()
+  if (!voiceId) return
+  const next = new Set(audioFavoriteVoiceIds.value)
+  if (next.has(voiceId)) {
+    next.delete(voiceId)
+  } else {
+    next.add(voiceId)
+  }
+  audioFavoriteVoiceIds.value = next
+  saveAudioVoiceFavorites()
+}
+
+function openAudioVoicePicker(node) {
+  if (!audioVoiceOptions.value.length) {
+    loadAudioVoiceAssets()
+  }
+  audioVoicePicker.visible = true
+  audioVoicePicker.nodeId = node.id
+  updateDirectNode(node.id, { audioSettingsOpen: true })
+  audioVoicePicker.tab = 'library'
+  audioVoicePicker.query = ''
+}
+
+function closeAudioVoicePicker() {
+  audioVoicePicker.visible = false
+  audioVoicePicker.nodeId = ''
+  audioVoicePicker.query = ''
+}
+
+function selectAudioVoice(voice) {
+  if (!audioVoicePicker.nodeId || !voice?.voiceId) return
+  updateDirectNode(audioVoicePicker.nodeId, {
+    audioVoiceId: voice.voiceId,
+    audioVoiceSourceType: voice.sourceType || 'system'
+  })
+  const node = directNodes.value.find((item) => item.id === audioVoicePicker.nodeId)
+  if (node) refreshAudioEstimate({ ...node, audioVoiceId: voice.voiceId, audioVoiceSourceType: voice.sourceType || 'system' })
+  closeAudioVoicePicker()
+  showToast(`已选择${voice.label || '音色'}`)
+}
+
+function toggleAudioSettingsPanel(node) {
+  updateDirectNode(node.id, { audioSettingsOpen: !node.audioSettingsOpen })
+}
+
+function resetAudioNodeSettings(node) {
+  updateDirectNode(node.id, {
+    audioSpeed: 1,
+    audioPitch: 0,
+    audioVolume: 1,
+    audioEmotion: '',
+    audioLanguageBoost: 'none',
+    audioFormat: 'mp3',
+    audioSampleRate: 32000,
+    audioBitrate: 128000,
+    audioChannelCount: 1
+  })
+}
+
+function isAudioEmotionSupported(node) {
+  return (node?.audioAbilityType || fallbackAudioAbilityOptions[0].id) === 'realtime_dubbing'
+}
+
+function isAudioLanguageBoostSupported(node) {
+  return (node?.audioAbilityType || fallbackAudioAbilityOptions[0].id) === 'long_narration'
+}
+
+function formatAudioNumber(value, digits = 1) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return digits === 0 ? '0' : '1.0'
+  return digits === 0 ? String(Math.round(number)) : number.toFixed(digits)
+}
+
+function toggleAudioLanguageBoost(node) {
+  const next = node.audioLanguageBoost === 'auto' ? 'none' : 'auto'
+  updateDirectNode(node.id, { audioLanguageBoost: next })
+  showToast(next === 'auto' ? '已开启语言增强' : '已关闭语言增强')
+}
+
+function insertAudioPromptToken(nodeId, value, label, tokenKind = 'tag', event = null) {
+  closeAudioTokenMenu(event)
+  const token = {
+    type: 'audio_token',
+    id: `audio-token-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+    value,
+    label,
+    tokenKind
+  }
+  const editor = directPromptEditorElements.get(nodeId)
+  rememberHistory()
+  if (!editor) {
+    const node = directNodes.value.find((item) => item.id === nodeId)
+    const segments = [...normalizePromptSegments(node?.promptSegments, node), token]
+    updateDirectNode(nodeId, {
+      promptSegments: segments,
+      prompt: getPromptTextFromSegments(segments)
+    })
+    scheduleCanvasSave(180)
+    return
+  }
+  focusDirectPromptEditor(nodeId)
+  insertAudioTokenAtSelection(editor, token)
+  handleDirectPromptInput(nodeId, { currentTarget: editor })
+  scheduleCanvasSave(180)
+}
+
+function closeAudioTokenMenu(event = null) {
+  const details = event?.currentTarget?.closest?.('details')
+  if (details) details.open = false
+}
+
+function insertAudioTokenAtSelection(editor, tokenData) {
+  const selection = window.getSelection?.()
+  if (!selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  range.deleteContents()
+  const token = createPromptAudioToken(tokenData)
+  range.insertNode(token)
+  const afterRange = document.createRange()
+  afterRange.setStartAfter(token)
+  afterRange.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(afterRange)
+}
+
+function calculateAudioBillingCharacters(text) {
+  return Array.from(String(text || '')).reduce((total, char) => {
+    return total + (/[\u4e00-\u9fff]/.test(char) ? 2 : 1)
+  }, 0)
+}
+
+function getAudioCharacterLabel(node) {
+  return `${calculateAudioBillingCharacters(node?.prompt || '')}/50000`
+}
+
+function estimateAudioPointsLocally(node) {
+  const chars = Math.max(1, calculateAudioBillingCharacters(node?.prompt || ''))
+  const tier = getAudioTierOption(node)
+  const pointsPer10k = Number(tier?.pointsPer10k || (String(tier?.modelCode || '').includes('turbo') ? 30 : 53))
+  return Math.max(1, Math.ceil(chars / (10000 / pointsPer10k)))
+}
+
+function isAudioEstimatePending(node) {
+  return node?.audioEstimateStatus === 'pending'
+}
+
+function getAudioGenerationPoints(node) {
+  const exact = Number(node?.audioEstimatePoints)
+  if (Number.isFinite(exact) && exact > 0) return exact
+  return null
+}
+
+function getAudioGenerationPointsButtonLabel(node) {
+  if (node?.audioEstimateStatus === 'pending') return '估算中'
+  const points = getAudioGenerationPoints(node)
+  return Number.isFinite(points) ? points : '--'
+}
+
+function getAudioGenerationBlocker(node) {
+  const characters = calculateAudioBillingCharacters(node?.prompt || '')
+  if (!String(node?.audioVoiceId || '').trim()) return '请先在设置里选择音色'
+  if (characters > 50000) return '配音文本不能超过 50000 字符'
+  return ''
+}
+
+function buildDirectAudioPayload(node, patch = {}) {
+  const tier = getAudioTierOption(node)
+  const voice = audioVoiceOptions.value.find((item) => item.voiceId === node?.audioVoiceId)
+  const payload = {
+    ownership_mode: 'standalone',
+    ability_type: node?.audioAbilityType || fallbackAudioAbilityOptions[0].id,
+    tier_code: node?.audioTierCode || tier?.value || tier?.id || 'hd',
+    model_code: node?.audioModelCode || tier?.modelCode || 'speech-2.8-hd',
+    voice_id: node?.audioVoiceId || voice?.voiceId || '',
+    voice_source_type: node?.audioVoiceSourceType || voice?.sourceType || 'system',
+    script_text: patch.prompt ?? node?.prompt ?? '',
+    emotion: isAudioEmotionSupported(node) ? node?.audioEmotion || undefined : undefined,
+    speed: node?.audioSpeed ?? undefined,
+    volume: node?.audioVolume ?? undefined,
+    pitch: node?.audioPitch ?? undefined,
+    audio_format: node?.audioFormat || 'mp3',
+    sample_rate: Number(node?.audioSampleRate || 32000),
+    bitrate: Number(node?.audioBitrate || 128000),
+    channel_count: Number(node?.audioChannelCount || 1),
+    language_boost: isAudioLanguageBoostSupported(node) ? node?.audioLanguageBoost || undefined : undefined,
+    submit_mode: 'generate'
+  }
+  Object.keys(payload).forEach((key) => {
+    if (payload[key] === undefined || payload[key] === '') delete payload[key]
+  })
+  return payload
+}
+
+function refreshAudioEstimate(node) {
+  if (!node?.id) return
+  const existing = audioEstimateTimers.get(node.id)
+  if (existing) window.clearTimeout(existing)
+  if (!String(node.prompt || '').trim() || getAudioGenerationBlocker(node)) {
+    updateDirectNode(node.id, {
+      audioEstimateStatus: 'idle',
+      audioEstimatePoints: null
+    })
+    return
+  }
+  updateDirectNode(node.id, { audioEstimateStatus: 'pending', audioEstimatePoints: null })
+  const timer = window.setTimeout(() => estimateDirectAudioNode(node.id), 360)
+  audioEstimateTimers.set(node.id, timer)
+}
+
+function extractAudioEstimatePoints(response) {
+  const directCandidates = [
+    response?.estimate_points,
+    response?.estimatePoints,
+    response?.data?.estimate_points,
+    response?.data?.estimatePoints,
+    response?.data?.price?.sell_price_points,
+    response?.data?.price?.sellPricePoints,
+    response?.price?.sell_price_points,
+    response?.price?.sellPricePoints,
+    response?.resolved?.sell_price_points,
+    response?.resolved?.sellPricePoints
+  ]
+  for (const candidate of directCandidates) {
+    const points = Number(candidate)
+    if (Number.isFinite(points) && points > 0) return points
+  }
+
+  const breakdown = Array.isArray(response?.breakdown)
+    ? response.breakdown
+    : Array.isArray(response?.data?.breakdown)
+      ? response.data.breakdown
+      : []
+  const total = breakdown.reduce((sum, item) => {
+    const points = Number(item?.sell_price_points ?? item?.sellPricePoints ?? item?.points)
+    return Number.isFinite(points) && points > 0 ? sum + points : sum
+  }, 0)
+  return total > 0 ? total : null
+}
+
+async function estimateDirectAudioNode(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!node) return
+  audioEstimateTimers.delete(nodeId)
+  if (getAudioGenerationBlocker(node)) {
+    updateDirectNode(nodeId, {
+      audioEstimateStatus: 'idle',
+      audioEstimatePoints: null
+    })
+    return
+  }
+  try {
+    const response = await estimateCreativeAudio(buildDirectAudioPayload(node))
+    if (response?.success === false) throw new Error(response.message || response.error || '音频估算失败')
+    const points = extractAudioEstimatePoints(response)
+    if (!Number.isFinite(points)) throw new Error('音频估算结果缺少灵感值')
+    updateDirectNode(nodeId, {
+      audioEstimatePoints: points,
+      audioEstimateStatus: 'success'
+    })
+  } catch (error) {
+    updateDirectNode(nodeId, {
+      audioEstimateStatus: 'error',
+      audioEstimatePoints: null,
+      generationMessage: error?.message || node.generationMessage || ''
+    })
+  }
+}
+
+async function runDirectAudioNode(node) {
+  const prompt = node.prompt.trim()
+  if (!prompt) {
+    showToast('请先输入配音文本')
+    return
+  }
+  const blocker = getAudioGenerationBlocker(node)
+  if (blocker) {
+    showToast(blocker)
+    return
+  }
+
+  rememberHistory()
+  clearAudioGenerationTimer(node.id)
+  const settings = buildDirectAudioPayload(node, { prompt })
+  updateDirectNode(node.id, {
+    audioAbilityType: settings.ability_type,
+    audioTierCode: settings.tier_code,
+    audioModelCode: settings.model_code,
+    generationStatus: 'running',
+    generationMessage: '音频生成中...',
+    generationTaskId: '',
+    generationRecordId: '',
+    generatedAudio: null
+  })
+
+  try {
+    const response = await submitCreativeAudio(settings)
+    if (response?.success === false) {
+      throw new Error(response.message || response.error || '音频生成提交失败')
+    }
+
+    const result = extractAudioGenerationResult(response)
+    const recordAudio = !result.url && result.recordId ? await fetchRecordAudioResult(result.recordId) : null
+    const directUrl = result.url || recordAudio?.url
+
+    if (directUrl) {
+      completeDirectAudioGeneration(node.id, {
+        url: directUrl,
+        prompt,
+        modelCode: settings.model_code,
+        abilityType: settings.ability_type,
+        tierCode: settings.tier_code,
+        taskId: result.taskId,
+        recordId: result.recordId || recordAudio?.recordId,
+        title: '配音结果'
+      })
+      return
+    }
+
+    if (!result.taskId) {
+      throw new Error('接口未返回任务 ID')
+    }
+
+    updateDirectNode(node.id, {
+      generationTaskId: result.taskId,
+      generationRecordId: result.recordId || '',
+      generationMessage: '音频生成中...'
+    })
+    scheduleAudioTaskPoll(node.id, result.taskId, result.recordId || '', 0)
+    showToast('音频生成任务已提交')
+  } catch (error) {
+    failDirectAudioGeneration(node.id, error?.message || '音频生成提交失败')
+  }
+}
+
+function scheduleAudioTaskPoll(nodeId, taskId, recordId = '', attempt = 0) {
+  clearAudioGenerationTimer(nodeId)
+  const delay = attempt === 0 ? 1200 : 2600
+  const timer = window.setTimeout(() => pollAudioTask(nodeId, taskId, recordId, attempt), delay)
+  audioGenerationTimers.set(nodeId, timer)
+}
+
+async function pollAudioTask(nodeId, taskId, recordId = '', attempt = 0) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  if (!node || node.generationStatus !== 'running') {
+    clearAudioGenerationTimer(nodeId)
+    return
+  }
+
+  try {
+    const task = await fetchTask(taskId)
+    if (task?.success === false) throw new Error(task.message || task.error || '音频生成失败')
+
+    const result = extractAudioGenerationResult(task)
+    const nextRecordId = result.recordId || recordId
+    const recordAudio = !result.url && nextRecordId ? await fetchRecordAudioResult(nextRecordId) : null
+    const historyAudio =
+      !result.url && !recordAudio?.url && (isFinishedTaskStatus(result.status) || (attempt + 1) % 4 === 0)
+        ? await fetchLatestMatchingAudioRecord(node.prompt, taskId, nextRecordId)
+        : null
+    const audioUrl = result.url || recordAudio?.url || historyAudio?.url
+
+    if (audioUrl) {
+      completeDirectAudioGeneration(nodeId, {
+        url: audioUrl,
+        prompt: node.prompt,
+        modelCode: node.audioModelCode,
+        abilityType: node.audioAbilityType,
+        tierCode: node.audioTierCode,
+        taskId,
+        recordId: nextRecordId || recordAudio?.recordId || historyAudio?.recordId,
+        title: '配音结果'
+      })
+      return
+    }
+
+    if (isFailedTaskStatus(result.status)) {
+      throw new Error(result.message || '音频生成失败')
+    }
+
+    if (attempt >= 90) {
+      updateDirectNode(nodeId, {
+        generationStatus: 'idle',
+        generationMessage: '音频生成时间较长，可稍后在历史记录中查看'
+      })
+      clearAudioGenerationTimer(nodeId)
+      return
+    }
+
+    updateDirectNode(nodeId, {
+      generationRecordId: nextRecordId || '',
+      generationMessage: getPollingMessage('音频生成中...', attempt + 1)
+    })
+    scheduleAudioTaskPoll(nodeId, taskId, nextRecordId, isFinishedTaskStatus(result.status) ? attempt + 2 : attempt + 1)
+  } catch (error) {
+    failDirectAudioGeneration(nodeId, error?.message || '音频生成失败')
+  }
+}
+
+async function fetchRecordAudioResult(recordId) {
+  try {
+    const record = await fetchCreativeRecord(recordId)
+    const result = extractAudioGenerationResult(record)
+    return result.url ? { ...result, recordId } : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchLatestMatchingAudioRecord(prompt, taskId = '', recordId = '') {
+  try {
+    const records = await fetchCreativeRecords({
+      record_type: 'audio',
+      ownership_mode: 'standalone',
+      sort_by: 'created_at',
+      sort_order: 'desc',
+      page: 1,
+      page_size: 8
+    })
+    const items = collectRecordItems(records)
+    const matched = items.find((item) => {
+      const itemResult = extractAudioGenerationResult(item)
+      if (!itemResult.url) return false
+      if (recordId && itemResult.recordId === recordId) return true
+      if (taskId && itemResult.taskId === taskId) return true
+      const itemPrompt = String(findFirstValueByKeys(item, ['prompt', 'input_prompt', 'raw_prompt', 'script_text']) || '')
+      return prompt && itemPrompt && itemPrompt.trim() === prompt.trim()
+    })
+    if (!matched) return null
+
+    const result = extractAudioGenerationResult(matched)
+    return result.url ? result : null
+  } catch {
+    return null
+  }
+}
+
 function collectRecordItems(payload) {
   if (Array.isArray(payload)) return payload
   const candidates = [
@@ -6245,6 +7662,21 @@ function completeDirectVideoGeneration(nodeId, video) {
   showToast('视频生成完成')
 }
 
+function completeDirectAudioGeneration(nodeId, audio) {
+  clearAudioGenerationTimer(nodeId)
+  updateDirectNode(nodeId, {
+    generationStatus: 'success',
+    generationMessage: '音频生成完成',
+    generationTaskId: audio.taskId || '',
+    generationRecordId: audio.recordId || '',
+    generatedAudio: {
+      ...audio,
+      url: normalizeDisplayAudioSrc(audio.url)
+    }
+  })
+  showToast('音频生成完成')
+}
+
 function failDirectImageGeneration(nodeId, message) {
   clearImageGenerationTimer(nodeId)
   updateDirectNode(nodeId, {
@@ -6256,6 +7688,15 @@ function failDirectImageGeneration(nodeId, message) {
 
 function failDirectVideoGeneration(nodeId, message) {
   clearVideoGenerationTimer(nodeId)
+  updateDirectNode(nodeId, {
+    generationStatus: 'error',
+    generationMessage: message
+  })
+  showToast(message)
+}
+
+function failDirectAudioGeneration(nodeId, message) {
+  clearAudioGenerationTimer(nodeId)
   updateDirectNode(nodeId, {
     generationStatus: 'error',
     generationMessage: message
@@ -6289,9 +7730,25 @@ function clearVideoGenerationTimers() {
   videoGenerationTimers.clear()
 }
 
+function clearAudioGenerationTimer(nodeId) {
+  const timer = audioGenerationTimers.get(nodeId)
+  if (timer) window.clearTimeout(timer)
+  audioGenerationTimers.delete(nodeId)
+}
+
+function clearAudioGenerationTimers() {
+  audioGenerationTimers.forEach((timer) => window.clearTimeout(timer))
+  audioGenerationTimers.clear()
+}
+
 function clearVideoEstimateTimers() {
   videoEstimateTimers.forEach((timer) => window.clearTimeout(timer))
   videoEstimateTimers.clear()
+}
+
+function clearAudioEstimateTimers() {
+  audioEstimateTimers.forEach((timer) => window.clearTimeout(timer))
+  audioEstimateTimers.clear()
 }
 
 function getDirectImageReferenceUrls(nodeId) {
@@ -6320,6 +7777,16 @@ function extractVideoGenerationResult(payload) {
     message: findFirstValueByKeys(payload, ['message', 'error', 'detail']),
     url: findFirstVideoOutputUrl(payload),
     thumbnailUrl: findFirstImageUrl(payload, { thumbnail: true }) || findFirstImageUrl(payload, { thumbnail: false })
+  }
+}
+
+function extractAudioGenerationResult(payload) {
+  return {
+    taskId: findFirstValueByKeys(payload, ['taskId', 'task_id', 'id']),
+    recordId: findFirstExternalRecordId(payload),
+    status: String(findFirstValueByKeys(payload, ['status', 'state', 'task_status']) || '').toLowerCase(),
+    message: findFirstValueByKeys(payload, ['message', 'error', 'detail']),
+    url: findFirstAudioOutputUrl(payload)
   }
 }
 
@@ -6501,6 +7968,64 @@ function findFirstVideoOutputUrl(value, depth = 0) {
   return ''
 }
 
+function findFirstAudioOutputUrl(value, depth = 0) {
+  if (!value || depth > 7) return ''
+  if (typeof value === 'string') return isLikelyAudioUrl(value) ? normalizeDisplayAudioSrc(value) : ''
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findFirstAudioOutputUrl(item, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  if (typeof value !== 'object') return ''
+
+  const priorityKeys = [
+    'preview_url',
+    'previewUrl',
+    'audio_url',
+    'audioUrl',
+    'output_url',
+    'outputUrl',
+    'result_url',
+    'resultUrl',
+    'media_url',
+    'mediaUrl',
+    'file_url',
+    'fileUrl',
+    'url'
+  ]
+  for (const key of priorityKeys) {
+    const candidate = value[key]
+    if (typeof candidate === 'string' && isPotentialAudioOutputUrl(candidate, value)) return normalizeDisplayAudioSrc(candidate)
+  }
+  const skippedKeys = new Set([
+    'params',
+    'internal_request',
+    'request_payload',
+    'thumbnail_url',
+    'thumbnailUrl',
+    'cover_url',
+    'coverUrl',
+    'image_url',
+    'imageUrl',
+    'video_url',
+    'videoUrl',
+    'reference_images',
+    'referenceImages',
+    'image_refs',
+    'imageRefs',
+    'video_refs',
+    'videoRefs'
+  ])
+  for (const [key, item] of Object.entries(value)) {
+    if (skippedKeys.has(key)) continue
+    const found = findFirstAudioOutputUrl(item, depth + 1)
+    if (found) return found
+  }
+  return ''
+}
+
 function isLikelyVideoUrl(value) {
   const source = String(value || '').trim()
   if (!source || /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(source)) return false
@@ -6511,6 +8036,20 @@ function isPotentialVideoOutputUrl(value) {
   const source = String(value || '').trim()
   if (!source || /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(source)) return false
   return /^(https?:\/\/|\/|blob:)/i.test(source)
+}
+
+function isLikelyAudioUrl(value) {
+  const source = String(value || '').trim()
+  if (!source || /\.(png|jpe?g|webp|gif|avif|mp4|webm|mov|m3u8)(\?|$)/i.test(source)) return false
+  return /^(data:audio\/|blob:)/i.test(source) || /^\/.+(\.mp3|\.wav|\.m4a|\.ogg|audio|oss|cos|cdn)/i.test(source) || /^https?:\/\/.+(\.mp3|\.wav|\.m4a|\.ogg|audio|oss|cos|cdn)/i.test(source)
+}
+
+function isPotentialAudioOutputUrl(value, owner = null) {
+  const source = String(value || '').trim()
+  if (!source || /\.(png|jpe?g|webp|gif|avif|mp4|webm|mov|m3u8)(\?|$)/i.test(source)) return false
+  if (isLikelyAudioUrl(source)) return true
+  const recordType = String(owner?.record_type || owner?.recordType || '').toLowerCase()
+  return recordType === 'audio' && /^(https?:\/\/|\/|blob:)/i.test(source)
 }
 
 function isFinishedTaskStatus(status) {
@@ -6554,6 +8093,8 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     prompt: patch.prompt || '',
     promptSegments: normalizePromptSegments(patch.promptSegments, patch),
     promptPlaceholder: patch.promptPlaceholder || getDirectNodePrompt(type),
+    groupId: patch.groupId || '',
+    groupTitle: patch.groupTitle || '',
     media: patch.media || null,
     upload: patch.upload || null,
     imageModelId: patch.imageModelId || fallbackImageModelOptions[0].id,
@@ -6569,6 +8110,23 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     videoWebSearch: Boolean(patch.videoWebSearch),
     videoEstimatePoints: Number.isFinite(Number(patch.videoEstimatePoints)) ? Number(patch.videoEstimatePoints) : null,
     videoEstimateStatus: patch.videoEstimateStatus || 'idle',
+    audioAbilityType: patch.audioAbilityType || fallbackAudioAbilityOptions[0].id,
+    audioTierCode: patch.audioTierCode || fallbackAudioAbilityOptions[0].defaultTier,
+    audioModelCode: patch.audioModelCode || fallbackAudioAbilityOptions[0].tiers[0].modelCode,
+    audioVoiceId: patch.audioVoiceId || audioVoiceOptions.value[0]?.voiceId || '',
+    audioVoiceSourceType: patch.audioVoiceSourceType || audioVoiceOptions.value[0]?.sourceType || 'system',
+    audioEmotion: patch.audioEmotion || '',
+    audioSpeed: patch.audioSpeed ?? 1,
+    audioVolume: patch.audioVolume ?? 1,
+    audioPitch: patch.audioPitch ?? 0,
+    audioFormat: patch.audioFormat || 'mp3',
+    audioSampleRate: Number(patch.audioSampleRate || 32000),
+    audioBitrate: Number(patch.audioBitrate || 128000),
+    audioChannelCount: Number(patch.audioChannelCount || 1),
+    audioLanguageBoost: patch.audioLanguageBoost || 'none',
+    audioSettingsOpen: Boolean(patch.audioSettingsOpen),
+    audioEstimatePoints: Number.isFinite(Number(patch.audioEstimatePoints)) ? Number(patch.audioEstimatePoints) : null,
+    audioEstimateStatus: patch.audioEstimateStatus || 'idle',
     aspectRatio: patch.aspectRatio || fallbackImageAspectRatioOptions[0],
     referenceImages: normalizeManualReferenceImages(patch.referenceImages),
     referenceOrder: Array.isArray(patch.referenceOrder) ? patch.referenceOrder : [],
@@ -6578,7 +8136,8 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     generationTaskId: patch.generationTaskId || '',
     generationRecordId: patch.generationRecordId || '',
     generatedImage: patch.generatedImage || null,
-    generatedVideo: patch.generatedVideo || null
+    generatedVideo: patch.generatedVideo || null,
+    generatedAudio: patch.generatedAudio || null
   }
 
   directNodes.value = [...directNodes.value, node]
@@ -6645,6 +8204,7 @@ function getDirectNodeSize(type) {
   if (isCompactCanvas.value) return { width: 320, height: type === 'uploaded_asset' ? 470 : 520 }
   if (type === 'uploaded_asset') return { width: 410, height: 594 }
   if (type === 'image_unit') return { width: 860, height: 690 }
+  if (type === 'audio_unit') return { width: 660, height: 620 }
   if (type === 'video_unit' || type === 'media_board') return { width: 620, height: 690 }
   return { width: 500, height: 690 }
 }
@@ -6921,6 +8481,8 @@ function deleteDirectNodesByIds(ids) {
     releaseUploadSignature(id)
     directNodeElements.delete(id)
     clearImageGenerationTimer(id)
+    clearVideoGenerationTimer(id)
+    clearAudioGenerationTimer(id)
   })
   selectedDirectNodeIds.value = selectedDirectNodeIds.value.filter((id) => !idSet.has(id))
   if (idSet.has(focusedDirectNodeId.value)) focusedDirectNodeId.value = ''
@@ -7023,6 +8585,15 @@ function duplicateSelection() {
 }
 
 function groupSelection() {
+  if (selectedDirectGroupId.value) {
+    ungroupSelectedDirectNodes()
+    return
+  }
+  if (selectedDirectNodes.value.length >= 2) {
+    groupSelectedDirectNodes()
+    return
+  }
+
   const selectedIds = new Set(canvasStore.selectedNodeIds)
   const selectedNodes = nodes.value.filter((node) => selectedIds.has(node.id) && node.data?.kind !== 'group')
   if (selectedNodes.length < 2) {
