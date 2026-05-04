@@ -3198,6 +3198,47 @@ button {
   color: rgba(229, 200, 137, 0.82);
 }
 
+.direct-group-frame__port {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid rgba(229, 200, 137, 0.82);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 249, 230, 0.24), transparent 58%),
+    rgba(18, 15, 10, 0.96);
+  color: rgba(255, 241, 199, 0.92);
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translate(var(--magnet-x, 0), calc(-50% + var(--magnet-y, 0px))) scale(var(--magnet-scale, 1));
+  box-shadow:
+    0 0 0 4px rgba(7, 6, 4, 0.72),
+    0 10px 24px rgba(0, 0, 0, 0.34),
+    0 0 24px rgba(214, 181, 109, 0.2);
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.direct-group-frame__port--left {
+  left: -21px;
+}
+
+.direct-group-frame__port--right {
+  right: -21px;
+}
+
+.direct-group-frame__port:hover {
+  border-color: rgba(255, 241, 199, 0.96);
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 249, 230, 0.32), transparent 58%),
+    rgba(43, 32, 14, 0.98);
+  color: #fff8e6;
+  transform: translate(var(--magnet-x, 0), calc(-50% + var(--magnet-y, 0px))) scale(calc(var(--magnet-scale, 1) * 1.05));
+}
+
 .direct-edge path,
 .direct-edge__draft {
   fill: none;

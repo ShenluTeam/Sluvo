@@ -3,7 +3,7 @@
     <p class="add-node-menu__title">{{ title }}</p>
 
     <button
-      v-for="item in nodeItems"
+      v-for="item in filteredNodeItems"
       :key="item.id"
       class="add-node-menu__item"
       :class="{ 'is-disabled': isDisabled(item) }"
@@ -80,6 +80,10 @@ const props = defineProps({
     default: true
   },
   disabledItems: {
+    type: Array,
+    default: () => []
+  },
+  allowedItems: {
     type: Array,
     default: () => []
   },
@@ -176,6 +180,11 @@ const menuStyle = computed(() => ({
   left: `${props.position.x}px`,
   top: `${props.position.y}px`
 }))
+
+const filteredNodeItems = computed(() => {
+  if (!props.allowedItems.length) return nodeItems
+  return nodeItems.filter((item) => props.allowedItems.includes(item.id) || props.allowedItems.includes(item.type))
+})
 
 let lastSelect = { id: '', at: 0 }
 

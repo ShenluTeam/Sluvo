@@ -77,7 +77,7 @@
             pathLength="1"
           />
           <path
-            v-if="referenceMenu.visible && pendingDirectConnection.sourceId"
+            v-if="(referenceMenu.visible || addMenu.visible) && pendingDirectConnection.sourceId"
             class="direct-edge__draft"
             :d="getPendingDirectEdgePath()"
             pathLength="1"
@@ -90,9 +90,30 @@
           class="direct-group-frame"
           :class="{ 'is-selected': group.id === selectedDirectGroupId }"
           :style="getDirectGroupFrameStyle(group)"
+          @click.stop
           @pointerdown.stop="handleDirectGroupPointerDown($event, group.id)"
         >
           <div class="direct-group-frame__label">{{ group.title }}</div>
+          <button
+            class="direct-group-frame__port direct-group-frame__port--left magnetic-target"
+            type="button"
+            title="向左添加节点"
+            @click.stop
+            @pointerdown.stop.prevent="startDirectGroupConnection($event, group, 'left')"
+            @mousedown.stop.prevent="startDirectGroupConnection($event, group, 'left')"
+          >
+            <Plus :size="22" :stroke-width="2.4" />
+          </button>
+          <button
+            class="direct-group-frame__port direct-group-frame__port--right magnetic-target"
+            type="button"
+            title="向右添加节点"
+            @click.stop
+            @pointerdown.stop.prevent="startDirectGroupConnection($event, group, 'right')"
+            @mousedown.stop.prevent="startDirectGroupConnection($event, group, 'right')"
+          >
+            <Plus :size="22" :stroke-width="2.4" />
+          </button>
         </section>
 
         <article
@@ -1136,6 +1157,8 @@
       <AddNodeMenu
         v-if="addMenu.visible"
         :position="addMenu.screen"
+        :show-resources="!pendingDirectConnection.sourceId"
+        :allowed-items="getPendingConnectionAllowedMenuItems()"
         :on-select="handleMenuSelect"
         @click.stop
         @select-node="handleMenuSelect"
@@ -1873,7 +1896,12 @@ const selectionBoxStyle = computed(() => {
 const selectedDirectNodes = computed(() => directNodes.value.filter((node) => selectedDirectNodeIds.value.includes(node.id)))
 const selectedDirectGroupId = computed(() => {
   const groups = [...new Set(selectedDirectNodes.value.map((node) => node.groupId).filter(Boolean))]
-  return groups.length === 1 ? groups[0] : ''
+  if (groups.length !== 1) return ''
+  const groupId = groups[0]
+  const groupMemberIds = directNodes.value.filter((node) => node.groupId === groupId).map((node) => node.id)
+  if (groupMemberIds.length < 2) return ''
+  const selectedIds = new Set(selectedDirectNodeIds.value)
+  return groupMemberIds.every((id) => selectedIds.has(id)) ? groupId : ''
 })
 const directNodeGroups = computed(() => {
   const groups = new Map()
@@ -2196,7 +2224,7 @@ function hydrateCanvasWorkspace(workspace, options = {}) {
   directNodes.value = (workspace?.nodes || []).map(mapBackendNodeToDirectNode)
   directEdges.value = (workspace?.edges || [])
     .map(mapBackendEdgeToDirectEdge)
-    .filter((edge) => directNodes.value.some((node) => node.id === edge.sourceId) && directNodes.value.some((node) => node.id === edge.targetId))
+    .filter((edge) => isDirectEndpointAvailable(edge.sourceId) && isDirectEndpointAvailable(edge.targetId))
   const directNodeCountBeforeDedupe = directNodes.value.length
   dedupeUploadedAssetNodes({ silent: true })
   if (directNodes.value.length !== directNodeCountBeforeDedupe) saveAfterHydration.value = true
@@ -2682,8 +2710,8 @@ function mapBackendNodeToDirectNode(node) {
 function mapBackendEdgeToDirectEdge(edge) {
   return {
     id: edge.id,
-    sourceId: edge.sourceNodeId,
-    targetId: edge.targetNodeId,
+    sourceId: edge.sourceNodeId || edge.data?.sourceClientId || '',
+    targetId: edge.targetNodeId || edge.data?.targetClientId || '',
     sourcePortId: edge.sourcePortId || 'right',
     targetPortId: edge.targetPortId || 'left'
   }
@@ -4131,6 +4159,30 @@ function startDirectConnection(event, nodeId, side = 'right') {
   lastTouchedDirectNodeId.value = nodeId
 }
 
+function startDirectGroupConnection(event, group, side = 'right') {
+  if (event.pointerId !== undefined) {
+    event.target?.setPointerCapture?.(event.pointerId)
+  }
+  if (!group?.id || !group?.bounds) return
+
+  const sourceSide = side === 'left' ? 'left' : 'right'
+  const start = getDirectGroupPortFlowPosition(group, sourceSide)
+  directConnection.active = true
+  directConnection.sourceId = group.id
+  directConnection.sourceSide = sourceSide
+  directConnection.start = start
+  directConnection.current = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
+  pendingDirectConnection.sourceId = group.id
+  pendingDirectConnection.sourceSide = sourceSide
+  pendingDirectConnection.start = start
+  pendingDirectConnection.point = directConnection.current
+  selectedDirectNodeIds.value = getDirectGroupMemberIds(group.id)
+  activeDirectNodeId.value = selectedDirectNodeIds.value.at(-1) || ''
+  focusedDirectNodeId.value = activeDirectNodeId.value
+  lastTouchedDirectNodeId.value = activeDirectNodeId.value
+  canvasStore.clearSelection()
+}
+
 function finishDirectConnection(event) {
   const point = { ...directConnection.current }
   const sourceId = directConnection.sourceId
@@ -4147,8 +4199,7 @@ function finishDirectConnection(event) {
     const edgeSourceId = sourceSide === 'left' ? targetId : sourceId
     const edgeTargetId = sourceSide === 'left' ? sourceId : targetId
     directEdges.value = upsertDirectEdge(edgeSourceId, edgeTargetId)
-    pendingDirectConnection.sourceId = ''
-    pendingDirectConnection.sourceSide = 'right'
+    clearPendingDirectConnection()
     selectedDirectNodeIds.value = [targetId]
     activeDirectNodeId.value = targetId
     focusedDirectNodeId.value = targetId
@@ -4158,12 +4209,20 @@ function finishDirectConnection(event) {
     return
   }
 
-  referenceMenu.visible = true
-  referenceMenu.sourceId = ''
-  referenceMenu.sourceHandle = 'direct'
-  referenceMenu.flow = point
-  syncPendingReferenceMenuScreen()
-  addMenu.visible = false
+  if (isDirectGroupId(sourceId)) {
+    referenceMenu.visible = false
+    addMenu.visible = true
+    addMenu.screen = clampMenuPosition(flowToScreenCoordinate(point), 300, 580)
+    addMenu.originScreen = flowToScreenCoordinate(point)
+    addMenu.flow = point
+  } else {
+    referenceMenu.visible = true
+    referenceMenu.sourceId = ''
+    referenceMenu.sourceHandle = 'direct'
+    referenceMenu.flow = point
+    syncPendingReferenceMenuScreen()
+    addMenu.visible = false
+  }
   contextMenu.visible = false
 }
 
@@ -4173,11 +4232,11 @@ function findDirectConnectionTarget(event, sourceId, flowPoint = null) {
   if (point) {
     const hovered = document.elementFromPoint(point.x, point.y)
     const directNodeId = hovered?.closest?.('.direct-workflow-node')?.getAttribute('data-direct-node-id') || ''
-    if (directNodeId && directNodeId !== sourceId) return directNodeId
+    if (directNodeId && isValidDirectConnectionTarget(sourceId, directNodeId)) return directNodeId
   }
 
   const targetNode = directNodes.value.find((node) => {
-    if (node.id === sourceId) return false
+    if (!isValidDirectConnectionTarget(sourceId, node.id)) return false
     if (point) {
       const rect = getDirectNodeScreenRect(node)
       return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height
@@ -4189,6 +4248,51 @@ function findDirectConnectionTarget(event, sourceId, flowPoint = null) {
   })
 
   return targetNode?.id || ''
+}
+
+function isValidDirectConnectionTarget(sourceId, targetId) {
+  if (!targetId || targetId === sourceId) return false
+  if (isDirectGroupId(sourceId) && getDirectGroupMemberIds(sourceId).includes(targetId)) return false
+  if (isDirectImageOnlyGroup(sourceId)) {
+    const target = directNodes.value.find((node) => node.id === targetId)
+    return target?.type === 'image_unit' || target?.type === 'video_unit'
+  }
+  return true
+}
+
+function isDirectEndpointAvailable(endpointId) {
+  if (!endpointId) return false
+  return directNodes.value.some((node) => node.id === endpointId) || directNodeGroups.value.some((group) => group.id === endpointId)
+}
+
+function isDirectGroupId(groupId) {
+  return Boolean(groupId && directNodes.value.some((node) => node.groupId === groupId))
+}
+
+function getDirectGroupMemberIds(groupId) {
+  if (!groupId) return []
+  return directNodes.value.filter((node) => node.groupId === groupId).map((node) => node.id)
+}
+
+function getDirectGroupMembers(groupId) {
+  if (!groupId) return []
+  return directNodes.value.filter((node) => node.groupId === groupId)
+}
+
+function isDirectImageReferenceSource(node) {
+  return Boolean(getDirectImageReferenceFromNode(node))
+}
+
+function isDirectImageOnlyGroup(groupId) {
+  const members = getDirectGroupMembers(groupId)
+  return members.length > 0 && members.every(isDirectImageReferenceSource)
+}
+
+function getPendingConnectionAllowedMenuItems() {
+  if (pendingDirectConnection.sourceId && isDirectImageOnlyGroup(pendingDirectConnection.sourceId)) {
+    return ['image', 'video']
+  }
+  return []
 }
 
 function upsertDirectEdge(sourceId, targetId) {
@@ -4208,11 +4312,11 @@ function upsertDirectEdge(sourceId, targetId) {
 
 function getDirectEdgePath(edge) {
   directPortLayoutRevision.value
-  const sourceNode = directNodes.value.find((node) => node.id === edge.sourceId)
-  const targetNode = directNodes.value.find((node) => node.id === edge.targetId)
-  if (!sourceNode || !targetNode) return ''
+  const sourcePosition = getDirectEndpointPortPosition(edge.sourceId, 'right')
+  const targetPosition = getDirectEndpointPortPosition(edge.targetId, 'left')
+  if (!sourcePosition || !targetPosition) return ''
 
-  return buildDirectCurvePath(getDirectNodePortPosition(sourceNode, 'right'), getDirectNodePortPosition(targetNode, 'left'))
+  return buildDirectCurvePath(sourcePosition, targetPosition)
 }
 
 function getDraftEdgePath() {
@@ -4254,6 +4358,16 @@ function getDirectNodePortPosition(node, side) {
   if (domPosition) return domPosition
 
   return getDirectNodePortFlowPosition(node, side)
+}
+
+function getDirectEndpointPortPosition(endpointId, side = 'right') {
+  const node = directNodes.value.find((item) => item.id === endpointId)
+  if (node) return getDirectNodePortPosition(node, side)
+
+  const group = directNodeGroups.value.find((item) => item.id === endpointId)
+  if (group) return getDirectGroupPortFlowPosition(group, side)
+
+  return null
 }
 
 function getDirectNodePortFlowPosition(node, side) {
@@ -4318,6 +4432,7 @@ function flowBoundsToScreenBounds(bounds) {
 function handleDirectNodePointerDown(event, nodeId) {
   if (event.button !== 0) return
   closeFloatingPanels()
+  const currentNode = directNodes.value.find((node) => node.id === nodeId)
   if (isDirectPromptEditTarget(event.target)) {
     focusedDirectNodeId.value = nodeId
     activeDirectNodeId.value = nodeId
@@ -4347,10 +4462,12 @@ function handleDirectNodePointerDown(event, nodeId) {
     return
   }
 
-  if (!selectedDirectNodeIds.value.includes(nodeId)) {
-    selectedDirectNodeIds.value = getDirectNodeGroupMembers(nodeId)
+  if (currentNode?.groupId) {
+    selectedDirectNodeIds.value = [nodeId]
+  } else if (!selectedDirectNodeIds.value.includes(nodeId)) {
+    selectedDirectNodeIds.value = [nodeId]
   } else {
-    selectedDirectNodeIds.value = getDirectNodeGroupSelection(nodeId)
+    selectedDirectNodeIds.value = [nodeId]
   }
   canvasStore.clearSelection()
   directDrag.active = true
@@ -4461,16 +4578,36 @@ function getSelectedDirectScreenBounds() {
 }
 
 function getDirectGroupFrameStyle(group) {
+  const frame = getDirectGroupFrameFlowBounds(group)
+  if (!frame) return {}
+  return {
+    left: `${frame.x}px`,
+    top: `${frame.y}px`,
+    width: `${frame.width}px`,
+    height: `${frame.height}px`
+  }
+}
+
+function getDirectGroupFrameFlowBounds(group) {
   const bounds = group?.bounds
-  if (!bounds) return {}
-  const paddingX = 34
+  if (!bounds) return null
+  const paddingX = 70
   const paddingTop = 54
   const paddingBottom = 28
   return {
-    left: `${bounds.x - paddingX}px`,
-    top: `${bounds.y - paddingTop}px`,
-    width: `${bounds.width + paddingX * 2}px`,
-    height: `${bounds.height + paddingTop + paddingBottom}px`
+    x: bounds.x - paddingX,
+    y: bounds.y - paddingTop,
+    width: bounds.width + paddingX * 2,
+    height: bounds.height + paddingTop + paddingBottom
+  }
+}
+
+function getDirectGroupPortFlowPosition(group, side = 'right') {
+  const frame = getDirectGroupFrameFlowBounds(group)
+  if (!frame) return { x: 0, y: 0 }
+  return {
+    x: side === 'left' ? frame.x : frame.x + frame.width,
+    y: frame.y + frame.height / 2
   }
 }
 
@@ -4500,6 +4637,7 @@ function ungroupSelectedDirectNodes() {
   rememberHistory()
   const releasedIds = directNodes.value.filter((node) => groupIds.has(node.groupId)).map((node) => node.id)
   directNodes.value = directNodes.value.map((node) => (groupIds.has(node.groupId) ? { ...node, groupId: '', groupTitle: '' } : node))
+  directEdges.value = directEdges.value.filter((edge) => !groupIds.has(edge.sourceId) && !groupIds.has(edge.targetId))
   selectedDirectNodeIds.value = releasedIds
   activeDirectNodeId.value = releasedIds.at(-1) || ''
   focusedDirectNodeId.value = activeDirectNodeId.value
@@ -4668,12 +4806,16 @@ function closeFloatingPanels(clearPendingConnection = true) {
   if (audioVoicePicker.visible) closeAudioVoicePicker()
   activeRailPanel.value = ''
   if (clearPendingConnection) {
-    pendingDirectConnection.sourceId = ''
-    pendingDirectConnection.sourceSide = 'right'
-    pendingDirectConnection.start = { x: 0, y: 0 }
-    pendingDirectConnection.point = { x: 0, y: 0 }
+    clearPendingDirectConnection()
   }
   nextTick(() => flushDeferredInteractionSave())
+}
+
+function clearPendingDirectConnection() {
+  pendingDirectConnection.sourceId = ''
+  pendingDirectConnection.sourceSide = 'right'
+  pendingDirectConnection.start = { x: 0, y: 0 }
+  pendingDirectConnection.point = { x: 0, y: 0 }
 }
 
 function closeAddMenu() {
@@ -4700,6 +4842,11 @@ function handleStarterSelect(type) {
 
 function handleMenuSelect(selection) {
   const item = normalizeMenuSelection(selection)
+  if (pendingDirectConnection.sourceId) {
+    createDirectNodeFromPendingConnection(item)
+    return
+  }
+
   const flowPosition = getAvailableDirectNodePosition(addMenu.flow)
 
   if (item.id === 'upload') {
@@ -4723,28 +4870,29 @@ function handleMenuSelect(selection) {
   showToast('\u5df2\u6dfb\u52a0\u8282\u70b9')
 }
 
+function createDirectNodeFromPendingConnection(item) {
+  canvasActivated.value = true
+  rememberHistory()
+  closeFloatingPanels(false)
+  const createdPosition = getDirectNodePositionFromPortAnchor(
+    item.type,
+    pendingDirectConnection.point,
+    pendingDirectConnection.sourceSide === 'left' ? 'right' : 'left'
+  )
+  const createdNode = createDirectNodeAtFlow(item.type, createdPosition, item.patch)
+  if (pendingDirectConnection.sourceSide === 'left') {
+    directEdges.value = upsertDirectEdge(createdNode.id, pendingDirectConnection.sourceId)
+  } else {
+    directEdges.value = upsertDirectEdge(pendingDirectConnection.sourceId, createdNode.id)
+  }
+  clearPendingDirectConnection()
+  showToast('\u5df2\u8fde\u63a5\u8282\u70b9')
+}
+
 function handleReferenceSelect(selection) {
   const item = normalizeMenuSelection(selection)
   if (pendingDirectConnection.sourceId) {
-    canvasActivated.value = true
-    rememberHistory()
-    closeFloatingPanels(false)
-    const createdPosition = getDirectNodePositionFromPortAnchor(
-      item.type,
-      pendingDirectConnection.point,
-      pendingDirectConnection.sourceSide === 'left' ? 'right' : 'left'
-    )
-    const createdNode = createDirectNodeAtFlow(item.type, createdPosition, item.patch)
-    if (pendingDirectConnection.sourceSide === 'left') {
-      directEdges.value = upsertDirectEdge(createdNode.id, pendingDirectConnection.sourceId)
-    } else {
-      directEdges.value = upsertDirectEdge(pendingDirectConnection.sourceId, createdNode.id)
-    }
-    pendingDirectConnection.sourceId = ''
-    pendingDirectConnection.sourceSide = 'right'
-    pendingDirectConnection.start = { x: 0, y: 0 }
-    pendingDirectConnection.point = { x: 0, y: 0 }
-    showToast('\u5df2\u8fde\u63a5\u8282\u70b9')
+    createDirectNodeFromPendingConnection(item)
     return
   }
 
@@ -6403,30 +6551,7 @@ function getDirectImageReferenceItems(nodeId) {
   const node = directNodes.value.find((item) => item.id === nodeId)
   const connected = directEdges.value
     .filter((edge) => edge.targetId === nodeId)
-    .map((edge) => {
-      const source = directNodes.value.find((item) => item.id === edge.sourceId)
-      const url = source?.generatedImage?.url || source?.media?.url || ''
-      const previewUrl =
-        source?.generatedImage?.url ||
-        (source?.type === 'uploaded_asset' ? getUploadedImageSrc(source) : '') ||
-        source?.media?.previewUrl ||
-        source?.media?.thumbnailUrl ||
-        url
-      if (!previewUrl && !url) return null
-      return {
-        id: `edge:${edge.sourceId}`,
-        source: 'edge',
-        url,
-        previewUrl,
-        name: source?.title || source?.media?.name || '连线参考图',
-        status: 'success',
-        kind: 'image',
-        progress: 100,
-        width: Number(source?.generatedImage?.width || source?.media?.width || 0),
-        height: Number(source?.generatedImage?.height || source?.media?.height || 0)
-      }
-    })
-    .filter(Boolean)
+    .flatMap((edge) => getDirectImageReferencesFromEndpoint(edge.sourceId))
   const manual = normalizeManualReferenceImages(node?.referenceImages).filter((reference) => getReferenceKind(reference) === 'image')
   const items = [...connected, ...manual]
   const order = Array.isArray(node?.referenceOrder) ? node.referenceOrder : []
@@ -6436,6 +6561,44 @@ function getDirectImageReferenceItems(nodeId) {
   const ordered = order.map((id) => itemMap.get(id)).filter(Boolean)
   const orderedIds = new Set(ordered.map((item) => item.id))
   return [...ordered, ...items.filter((item) => !orderedIds.has(item.id))]
+}
+
+function getDirectImageReferencesFromEndpoint(endpointId) {
+  if (isDirectGroupId(endpointId)) {
+    return getDirectGroupMembers(endpointId)
+      .map((node) => getDirectImageReferenceFromNode(node, `edge:${endpointId}:${node.id}`))
+      .filter(Boolean)
+  }
+
+  const source = directNodes.value.find((item) => item.id === endpointId)
+  const reference = getDirectImageReferenceFromNode(source, `edge:${endpointId}`)
+  return reference ? [reference] : []
+}
+
+function getDirectImageReferenceFromNode(source, id = '') {
+  if (!source) return null
+  const url = source.generatedImage?.url || source.media?.url || ''
+  const previewUrl =
+    source.generatedImage?.url ||
+    (source.type === 'uploaded_asset' ? getUploadedImageSrc(source) : '') ||
+    source.media?.previewUrl ||
+    source.media?.thumbnailUrl ||
+    url
+  if (!previewUrl && !url) return null
+  if (source.media?.kind && getReferenceKind({ kind: source.media.kind, url, previewUrl, name: source.media.name }) !== 'image') return null
+
+  return {
+    id: id || `edge:${source.id}`,
+    source: 'edge',
+    url,
+    previewUrl,
+    name: source.title || source.media?.name || '连线参考图',
+    status: 'success',
+    kind: 'image',
+    progress: 100,
+    width: Number(source.generatedImage?.width || source.media?.width || 0),
+    height: Number(source.generatedImage?.height || source.media?.height || 0)
+  }
 }
 
 function getDirectVisualReferenceItems(nodeId) {
@@ -8834,6 +8997,7 @@ function deleteSelection() {
     directEdges.value = directEdges.value.filter(
       (edge) => !selectedDirectIds.has(edge.sourceId) && !selectedDirectIds.has(edge.targetId)
     )
+    directEdges.value = directEdges.value.filter((edge) => isDirectEndpointAvailable(edge.sourceId) && isDirectEndpointAvailable(edge.targetId))
     selectedDirectIds.forEach((id) => directNodeElements.delete(id))
   }
   edges.value = edges.value.filter(
@@ -8861,6 +9025,7 @@ function deleteDirectNodesByIds(ids) {
   const nextDirectNodes = directNodes.value.filter((node) => !idSet.has(node.id))
   directNodes.value = nextDirectNodes
   directEdges.value = directEdges.value.filter((edge) => !idSet.has(edge.sourceId) && !idSet.has(edge.targetId))
+  directEdges.value = directEdges.value.filter((edge) => isDirectEndpointAvailable(edge.sourceId) && isDirectEndpointAvailable(edge.targetId))
   idSet.forEach((id) => {
     revokeLocalPreviewForNode(id)
     uploadFileMap.delete(id)

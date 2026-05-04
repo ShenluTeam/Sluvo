@@ -29,6 +29,11 @@ const router = createRouter({
       component: LoginView
     },
     {
+      path: '/register',
+      name: 'register',
+      component: LoginView
+    },
+    {
       path: '/projects/:projectId/canvas',
       name: 'canvas',
       component: CanvasWorkspaceView,

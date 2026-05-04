@@ -11,10 +11,16 @@
           </span>
         </button>
 
-        <button class="login-nav__ghost" type="button" @click="goHome">
-          <ArrowLeft :size="16" />
-          返回首页
-        </button>
+        <div class="login-nav__actions">
+          <button class="login-nav__ghost" type="button" @click="toggleAuthMode">
+            <component :is="isRegisterMode ? LogIn : UserPlus" :size="16" />
+            {{ isRegisterMode ? '账号登录' : '注册账号' }}
+          </button>
+          <button class="login-nav__ghost" type="button" @click="goHome">
+            <ArrowLeft :size="16" />
+            返回首页
+          </button>
+        </div>
       </nav>
 
       <div class="login-hero__content">
@@ -22,8 +28,10 @@
           <Sparkles :size="16" />
           Creator Access
         </p>
-        <h1>登录 Sluvo</h1>
-        <p class="login-copy">进入无限画布，继续管理剧本、角色、分镜和生成任务。</p>
+        <h1>{{ isRegisterMode ? '注册 Sluvo' : '登录 Sluvo' }}</h1>
+        <p class="login-copy">
+          {{ isRegisterMode ? '创建神鹿账号，领取创作空间并开始搭建你的第一条生成链路。' : '进入无限画布，继续管理剧本、角色、分镜和生成任务。' }}
+        </p>
       </div>
 
       <div class="login-particles" aria-hidden="true">
@@ -45,19 +53,19 @@
       </div>
     </section>
 
-    <section class="login-panel" aria-label="登录表单">
+    <section class="login-panel" :aria-label="isRegisterMode ? '注册表单' : '登录表单'">
       <div class="login-card">
         <div class="login-panel__heading">
           <span class="login-panel__mark">
-            <LockKeyhole :size="22" />
+            <component :is="isRegisterMode ? UserPlus : LockKeyhole" :size="22" />
           </span>
           <div>
-            <h2>账号登录</h2>
-            <p>使用神鹿账号进入 Sluvo</p>
+            <h2>{{ isRegisterMode ? '账号注册' : '账号登录' }}</h2>
+            <p>{{ isRegisterMode ? '使用邮箱创建你的 Sluvo 账号' : '使用神鹿账号进入 Sluvo' }}</p>
           </div>
         </div>
 
-        <form class="login-form" @submit.prevent="submitLogin">
+        <form v-if="!isRegisterMode" class="login-form" @submit.prevent="submitLogin">
           <label class="field">
             <span>邮箱</span>
             <div class="field-control">
@@ -119,6 +127,158 @@
             <LogIn v-else :size="19" />
             {{ isSubmitting ? '登录中' : '登录并进入 Sluvo' }}
           </button>
+
+          <button class="secondary-button" type="button" @click="goRegister">
+            <UserPlus :size="18" />
+            没有账号，立即注册
+          </button>
+        </form>
+
+        <form v-else class="login-form register-form" @submit.prevent="submitRegister">
+          <label class="field">
+            <span>邮箱</span>
+            <div class="field-control">
+              <Mail :size="19" />
+              <input
+                v-model.trim="registerForm.email"
+                autocomplete="email"
+                autocapitalize="none"
+                autocorrect="off"
+                spellcheck="false"
+                name="register-email"
+                placeholder="name@shenlu.top"
+                type="email"
+                required
+              />
+            </div>
+          </label>
+
+          <label class="field">
+            <span>昵称</span>
+            <div class="field-control">
+              <UserRound :size="19" />
+              <input
+                v-model.trim="registerForm.nickname"
+                autocomplete="nickname"
+                name="nickname"
+                placeholder="可选"
+                type="text"
+              />
+            </div>
+          </label>
+
+          <label class="field">
+            <span>密码</span>
+            <div class="field-control">
+              <LockKeyhole :size="19" />
+              <input
+                v-model="registerForm.password"
+                :type="showRegisterPassword ? 'text' : 'password'"
+                autocomplete="new-password"
+                autocapitalize="none"
+                autocorrect="off"
+                spellcheck="false"
+                name="register-password"
+                placeholder="设置登录密码"
+                required
+              />
+              <button
+                class="password-toggle"
+                type="button"
+                :aria-label="showRegisterPassword ? '隐藏密码' : '显示密码'"
+                @click="showRegisterPassword = !showRegisterPassword"
+              >
+                <component :is="showRegisterPassword ? EyeOff : Eye" :size="18" />
+              </button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>确认密码</span>
+            <div class="field-control">
+              <LockKeyhole :size="19" />
+              <input
+                v-model="registerForm.confirmPassword"
+                :type="showRegisterPassword ? 'text' : 'password'"
+                autocomplete="new-password"
+                autocapitalize="none"
+                autocorrect="off"
+                spellcheck="false"
+                name="register-confirm-password"
+                placeholder="再次输入密码"
+                required
+              />
+            </div>
+          </label>
+
+          <label class="field">
+            <span>图形验证码</span>
+            <div class="captcha-control">
+              <div class="field-control">
+                <ShieldCheck :size="19" />
+                <input
+                  v-model.trim="registerForm.captchaCode"
+                  autocomplete="off"
+                  autocapitalize="characters"
+                  autocorrect="off"
+                  spellcheck="false"
+                  name="captcha-code"
+                  placeholder="输入图形码"
+                  type="text"
+                  required
+                />
+              </div>
+              <button
+                class="captcha-image"
+                type="button"
+                title="刷新图形验证码"
+                :disabled="isLoadingCaptcha"
+                @click="loadCaptcha"
+              >
+                <LoaderCircle v-if="isLoadingCaptcha" class="spin" :size="18" />
+                <img v-else-if="registerForm.captchaImage" :src="registerForm.captchaImage" alt="" />
+                <RefreshCw v-else :size="18" />
+              </button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>邮箱验证码</span>
+            <div class="code-control">
+              <div class="field-control">
+                <BadgeCheck :size="19" />
+                <input
+                  v-model.trim="registerForm.emailCode"
+                  autocomplete="one-time-code"
+                  inputmode="numeric"
+                  name="email-code"
+                  placeholder="6 位验证码"
+                  type="text"
+                  required
+                />
+              </div>
+              <button class="code-button" type="button" :disabled="!canSendCode" @click="requestEmailCode">
+                <LoaderCircle v-if="isSendingCode" class="spin" :size="17" />
+                <Mail v-else :size="17" />
+                {{ codeCooldown > 0 ? `${codeCooldown}s` : '发送验证码' }}
+              </button>
+            </div>
+          </label>
+
+          <p v-if="feedback.message" class="feedback" :class="`is-${feedback.type}`">
+            {{ feedback.message }}
+          </p>
+
+          <button class="submit-button" type="submit" :disabled="isSubmitting">
+            <LoaderCircle v-if="isSubmitting" class="spin" :size="19" />
+            <UserPlus v-else :size="19" />
+            {{ isSubmitting ? '注册中' : '注册并进入 Sluvo' }}
+          </button>
+
+          <button class="secondary-button" type="button" @click="goLogin">
+            <LogIn :size="18" />
+            已有账号，返回登录
+          </button>
         </form>
 
         <div class="login-card__meta">
@@ -132,18 +292,24 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
+  BadgeCheck,
   Eye,
   EyeOff,
   LoaderCircle,
   LockKeyhole,
   LogIn,
   Mail,
-  Sparkles
+  RefreshCw,
+  ShieldCheck,
+  Sparkles,
+  UserPlus,
+  UserRound
 } from 'lucide-vue-next'
+import { fetchCaptcha, registerWithEmail, sendEmailCode } from '../api/authApi'
 import { useAuthStore } from '../stores/authStore'
 import logoUrl from '../../LOGO.png'
 
@@ -155,14 +321,35 @@ const form = reactive({
   email: window.localStorage.getItem('shenlu_email') || '',
   password: ''
 })
+const registerForm = reactive({
+  email: window.localStorage.getItem('shenlu_email') || '',
+  nickname: '',
+  password: '',
+  confirmPassword: '',
+  captchaId: '',
+  captchaCode: '',
+  captchaImage: '',
+  emailCode: ''
+})
 const rememberAccount = ref(Boolean(form.email))
 const showPassword = ref(false)
+const showRegisterPassword = ref(false)
 const isSubmitting = ref(false)
+const isLoadingCaptcha = ref(false)
+const isSendingCode = ref(false)
+const codeCooldown = ref(0)
+let cooldownTimer = 0
 const feedback = reactive({
   type: 'idle',
   message: ''
 })
 const particleDots = Array.from({ length: 24 }, (_, index) => index)
+const isRegisterMode = computed(() => route.name === 'register')
+const canSendCode = computed(() => (
+  Boolean(registerForm.email && registerForm.captchaCode && registerForm.captchaId)
+  && !isSendingCode.value
+  && codeCooldown.value === 0
+))
 
 const redirectPath = computed(() => {
   const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
@@ -170,6 +357,20 @@ const redirectPath = computed(() => {
     return '/'
   }
   return target
+})
+
+watch(isRegisterMode, (active) => {
+  feedback.message = ''
+  if (active) {
+    registerForm.email = registerForm.email || form.email
+    if (!registerForm.captchaImage) loadCaptcha()
+  } else {
+    form.email = form.email || registerForm.email
+  }
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  if (cooldownTimer) window.clearInterval(cooldownTimer)
 })
 
 async function submitLogin() {
@@ -201,8 +402,128 @@ async function submitLogin() {
   }
 }
 
+async function requestEmailCode() {
+  feedback.message = ''
+
+  if (!registerForm.email || !registerForm.captchaCode || !registerForm.captchaId) {
+    feedback.type = 'error'
+    feedback.message = '请输入邮箱和图形验证码'
+    return
+  }
+
+  isSendingCode.value = true
+  try {
+    await sendEmailCode({
+      email: registerForm.email,
+      captchaId: registerForm.captchaId,
+      captchaCode: registerForm.captchaCode
+    })
+    feedback.type = 'success'
+    feedback.message = '邮箱验证码已发送，请查收'
+    startCodeCooldown()
+  } catch (error) {
+    feedback.type = 'error'
+    feedback.message = error instanceof Error ? error.message : '验证码发送失败，请刷新后重试'
+    await loadCaptcha()
+  } finally {
+    isSendingCode.value = false
+  }
+}
+
+async function submitRegister() {
+  feedback.message = ''
+
+  if (!registerForm.email || !registerForm.password || !registerForm.confirmPassword || !registerForm.emailCode) {
+    feedback.type = 'error'
+    feedback.message = '请完整填写注册信息'
+    return
+  }
+
+  if (registerForm.password.length < 6) {
+    feedback.type = 'error'
+    feedback.message = '密码至少需要 6 位'
+    return
+  }
+
+  if (registerForm.password !== registerForm.confirmPassword) {
+    feedback.type = 'error'
+    feedback.message = '两次输入的密码不一致'
+    return
+  }
+
+  isSubmitting.value = true
+  try {
+    await registerWithEmail({
+      email: registerForm.email,
+      password: registerForm.password,
+      emailCode: registerForm.emailCode,
+      nickname: registerForm.nickname
+    })
+    await authStore.login(
+      {
+        email: registerForm.email,
+        password: registerForm.password
+      },
+      { rememberEmail: true }
+    )
+    feedback.type = 'success'
+    feedback.message = '注册成功，正在进入工作台'
+    await router.replace(redirectPath.value)
+  } catch (error) {
+    feedback.type = 'error'
+    feedback.message = error instanceof Error ? error.message : '注册失败，请稍后重试'
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+async function loadCaptcha() {
+  isLoadingCaptcha.value = true
+  try {
+    const payload = await fetchCaptcha()
+    registerForm.captchaId = payload.captcha_id || payload.captchaId || ''
+    registerForm.captchaImage = payload.image || ''
+    registerForm.captchaCode = ''
+  } catch (error) {
+    feedback.type = 'error'
+    feedback.message = error instanceof Error ? error.message : '图形验证码加载失败'
+  } finally {
+    isLoadingCaptcha.value = false
+  }
+}
+
+function startCodeCooldown() {
+  codeCooldown.value = 60
+  if (cooldownTimer) window.clearInterval(cooldownTimer)
+  cooldownTimer = window.setInterval(() => {
+    codeCooldown.value = Math.max(0, codeCooldown.value - 1)
+    if (codeCooldown.value === 0 && cooldownTimer) {
+      window.clearInterval(cooldownTimer)
+      cooldownTimer = 0
+    }
+  }, 1000)
+}
+
 function goHome() {
   router.push('/')
+}
+
+function goRegister() {
+  registerForm.email = registerForm.email || form.email
+  router.push({ name: 'register', query: route.query })
+}
+
+function goLogin() {
+  form.email = form.email || registerForm.email
+  router.push({ name: 'login', query: route.query })
+}
+
+function toggleAuthMode() {
+  if (isRegisterMode.value) {
+    goLogin()
+  } else {
+    goRegister()
+  }
 }
 
 function openReset() {
@@ -268,10 +589,20 @@ function openReset() {
   gap: 18px;
 }
 
+.login-nav__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .login-brand,
 .login-nav__ghost,
 .link-button,
-.password-toggle {
+.password-toggle,
+.captcha-image,
+.code-button,
+.secondary-button {
   border: 0;
   background: transparent;
   color: inherit;
@@ -618,6 +949,11 @@ function openReset() {
   margin-top: 42px;
 }
 
+.register-form {
+  gap: 18px;
+  margin-top: 34px;
+}
+
 .field {
   display: grid;
   gap: 10px;
@@ -625,7 +961,9 @@ function openReset() {
 
 .field > span,
 .remember,
-.link-button {
+.link-button,
+.code-button,
+.secondary-button {
   color: rgba(249, 241, 220, 0.68);
   font-size: 16px;
   font-weight: 800;
@@ -738,6 +1076,60 @@ function openReset() {
   color: #d6b56d;
 }
 
+.captcha-control,
+.code-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.captcha-image,
+.code-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 76px;
+  border: 1px solid rgba(255, 241, 199, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 241, 199, 0.72);
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.captcha-image {
+  width: 142px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.captcha-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.code-button {
+  gap: 8px;
+  min-width: 132px;
+  padding: 0 16px;
+  color: #d6b56d;
+}
+
+.captcha-image:hover:not(:disabled),
+.code-button:hover:not(:disabled) {
+  border-color: rgba(214, 181, 109, 0.5);
+  background: rgba(214, 181, 109, 0.08);
+  color: #fff1c7;
+}
+
+.captcha-image:disabled,
+.code-button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
 .feedback {
   margin: 0;
   padding: 11px 12px;
@@ -776,6 +1168,19 @@ function openReset() {
   transition: transform 160ms ease, filter 160ms ease;
 }
 
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 54px;
+  border: 1px solid rgba(255, 241, 199, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 248, 230, 0.78);
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
 .login-card__meta {
   display: flex;
   flex-wrap: wrap;
@@ -797,6 +1202,12 @@ function openReset() {
 .submit-button:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.04);
+}
+
+.secondary-button:hover {
+  border-color: rgba(214, 181, 109, 0.42);
+  background: rgba(214, 181, 109, 0.08);
+  color: #fff1c7;
 }
 
 .submit-button:disabled {
@@ -934,6 +1345,11 @@ function openReset() {
     align-items: flex-start;
   }
 
+  .login-nav__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
   .login-hero {
     grid-template-rows: auto auto minmax(92px, 20vh);
   }
@@ -954,6 +1370,17 @@ function openReset() {
     min-height: 60px;
     gap: 10px;
     padding: 0 14px;
+  }
+
+  .captcha-control,
+  .code-control {
+    grid-template-columns: 1fr;
+  }
+
+  .captcha-image,
+  .code-button {
+    width: 100%;
+    min-height: 54px;
   }
 
   .field-control input,
