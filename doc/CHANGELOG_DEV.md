@@ -1,5 +1,20 @@
 # Sluvo Development Changelog
 
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/CommunityCanvasView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the community canvas detail preview from a cropped full-size node view to a fit-to-frame panoramic canvas preview.
+- Added ResizeObserver-based preview sizing so the read-only canvas scales to show all nodes across desktop and mobile widths.
+- Changed image nodes in the community preview to use contain-fit media rendering so published images are not cropped inside the preview card.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
 ## 2026-05-03
 
 Changed files:
