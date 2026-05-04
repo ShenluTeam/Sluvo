@@ -882,6 +882,85 @@
         @support="handleSupport"
       />
 
+      <button
+        class="canvas-agent-trigger"
+        type="button"
+        :class="{ 'is-active': agentPanel.visible }"
+        title="Canvas Agent"
+        @click.stop="toggleAgentPanel"
+      >
+        <Bot :size="20" />
+        Agent
+      </button>
+
+      <aside v-if="agentPanel.visible" class="canvas-agent-panel" @click.stop @pointerdown.stop @contextmenu.prevent.stop>
+        <header class="canvas-agent-panel__header">
+          <div>
+            <span>Canvas Agent</span>
+            <h2>创作协作者</h2>
+          </div>
+          <button type="button" aria-label="关闭 Agent 面板" @click="agentPanel.visible = false">
+            <X :size="22" />
+          </button>
+        </header>
+
+        <section class="canvas-agent-panel__controls">
+          <label>
+            Agent
+            <select v-model="agentPanel.profile">
+              <option v-for="profile in agentProfiles" :key="profile.id" :value="profile.id">{{ profile.label }}</option>
+            </select>
+          </label>
+          <label>
+            模型
+            <select v-model="agentPanel.modelCode">
+              <option v-for="model in agentModelOptions" :key="model.id" :value="model.id">{{ model.label }}</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="canvas-agent-panel__context">
+          <strong>当前上下文</strong>
+          <span>已选 {{ selectedDirectNodeIds.length }} 个节点</span>
+          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请分析当前选区，并给出下一步创作建议。')">分析选区</button>
+          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请根据当前选区生成下游分镜、首帧和视频生成链路。')">生成下游</button>
+          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请检查当前选区的角色、场景和风格一致性。')">检查一致性</button>
+        </section>
+
+        <section class="canvas-agent-panel__messages">
+          <article v-for="message in agentPanel.messages" :key="message.id" :class="`is-${message.role}`">
+            <span>{{ message.role === 'user' ? '你' : 'Agent' }}</span>
+            <p>{{ message.content }}</p>
+          </article>
+          <p v-if="agentPanel.messages.length === 0" class="canvas-agent-panel__empty">选择 Agent 和模型后，可以让它读取画布并生成可批准的提案。</p>
+        </section>
+
+        <section v-if="agentPanel.pendingAction" class="canvas-agent-action">
+          <div>
+            <strong>{{ agentPanel.pendingAction.summary || agentPanel.pendingAction.actionType }}</strong>
+            <span>{{ getAgentActionStats(agentPanel.pendingAction) }}</span>
+          </div>
+          <footer>
+            <button type="button" :disabled="agentPanel.busy" @click="cancelAgentAction">
+              <X :size="16" />
+              取消
+            </button>
+            <button class="canvas-agent-action__primary" type="button" :disabled="agentPanel.busy" @click="approveAgentAction">
+              <Check :size="16" />
+              批准写入
+            </button>
+          </footer>
+        </section>
+
+        <form class="canvas-agent-panel__composer" @submit.prevent="sendAgentPrompt">
+          <textarea v-model="agentPanel.input" rows="3" placeholder="例如：把这段故事拆成 6 个分镜，并为每个镜头生成首帧提示词。" />
+          <button type="submit" :disabled="agentPanel.busy || !agentPanel.input.trim()">
+            <Send :size="17" />
+          </button>
+        </form>
+        <p v-if="agentPanel.error" class="canvas-agent-panel__error">{{ agentPanel.error }}</p>
+      </aside>
+
       <StarterSkillStrip v-if="showStarterStrip" @select-node="handleStarterSelect" />
 
       <CanvasBottomControls
@@ -1056,6 +1135,9 @@
 
       <div v-if="contextMenu.visible" class="canvas-context-menu" :style="contextMenuStyle" @click.stop>
         <button type="button" @click="handleContextUpload">上传</button>
+        <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="handleContextAgentAnalyze">让 Agent 分析</button>
+        <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="handleContextAgentDownstream">生成下游节点</button>
+        <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="handleContextAgentConsistency">检查一致性</button>
         <button type="button" :disabled="!canUndo" @click="handleContextUndo">
           <span>撤销</span>
           <kbd>Ctrl Z</kbd>
@@ -1213,7 +1295,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { ArrowUp, ArrowUpDown, AudioWaveform, ChevronDown, Download, Eye, Languages, ListChecks, Minus, Music2, Plus, SlidersHorizontal, Star, Upload, X } from 'lucide-vue-next'
+import { ArrowUp, ArrowUpDown, AudioWaveform, Bot, Check, ChevronDown, Download, Eye, Languages, ListChecks, Minus, Music2, Plus, Send, SlidersHorizontal, Star, Upload, X } from 'lucide-vue-next'
 import CommandBar from '../components/layout/CommandBar.vue'
 import AddNodeMenu from '../components/canvas/AddNodeMenu.vue'
 import CanvasBottomControls from '../components/canvas/CanvasBottomControls.vue'
@@ -1236,9 +1318,13 @@ import {
   submitCreativeVideo
 } from '../api/creativeApi'
 import {
+  approveSluvoAgentAction,
+  cancelSluvoAgentAction,
+  createSluvoAgentSession,
   fetchSluvoProjectCanvas,
   publishSluvoProjectToCommunity,
   saveSluvoCanvasBatch,
+  sendSluvoAgentMessage,
   SluvoRevisionConflictError,
   unpublishSluvoCommunityCanvas,
   uploadSluvoCanvasAsset
@@ -1377,6 +1463,14 @@ const nodeMeta = {
     title: '\u89c6\u9891\u5408\u6210',
     body: '\u6c47\u603b\u591a\u4e2a\u7d20\u6750\u548c\u7247\u6bb5\uff0c\u5f62\u6210\u53ef\u9884\u89c8\u3001\u53ef\u5bfc\u51fa\u7684\u6210\u7247\u7ed3\u679c\u3002',
     action: '\u5f00\u59cb\u5408\u6210'
+  },
+  agent_node: {
+    label: 'Agent',
+    accent: '#c9f36f',
+    icon: '智',
+    title: 'Agent 节点',
+    body: '读取连接的文本、素材和生成节点，提出可审阅、可批准、可撤销的画布创作建议。',
+    action: '运行 Agent'
   }
 }
 
@@ -1401,6 +1495,29 @@ const publishDialog = reactive({
   submitting: false,
   error: '',
   publicationId: ''
+})
+const agentProfiles = [
+  { id: 'canvas_agent', label: '画布协作 Agent' },
+  { id: 'story_director', label: '故事发展 Agent' },
+  { id: 'storyboard_director', label: '分镜导演 Agent' },
+  { id: 'prompt_polisher', label: 'Prompt 精修 Agent' },
+  { id: 'consistency_checker', label: '一致性检查 Agent' },
+  { id: 'production_planner', label: '制片调度 Agent' }
+]
+const agentModelOptions = [
+  { id: 'deepseek-v4-flash', label: 'DeepSeek v4 Flash' },
+  { id: 'deepseek-v4-pro', label: 'DeepSeek v4 Pro' }
+]
+const agentPanel = reactive({
+  visible: false,
+  profile: 'canvas_agent',
+  modelCode: 'deepseek-v4-flash',
+  sessionId: '',
+  input: '',
+  busy: false,
+  error: '',
+  pendingAction: null,
+  messages: []
 })
 const referenceUploadAccept = ref('image/*')
 const referenceUploadTargetSlot = ref('')
@@ -1918,6 +2035,14 @@ watch(projectTitle, () => {
 })
 
 watch(
+  () => [agentPanel.profile, agentPanel.modelCode],
+  () => {
+    agentPanel.sessionId = ''
+    agentPanel.pendingAction = null
+  }
+)
+
+watch(
   () => route.params.projectId,
   () => {
     loadProjectCanvas()
@@ -2109,6 +2234,170 @@ async function publishCurrentCanvas() {
   }
 }
 
+function toggleAgentPanel() {
+  agentPanel.visible = !agentPanel.visible
+  if (agentPanel.visible) {
+    addMenu.visible = false
+    referenceMenu.visible = false
+    contextMenu.visible = false
+  }
+}
+
+function buildAgentContextSnapshot() {
+  const selectedIds = new Set(selectedDirectNodeIds.value)
+  const selectedNodes = directNodes.value
+    .filter((node) => selectedIds.has(node.id))
+    .map((node) => ({
+      id: node.id,
+      title: node.title,
+      nodeType: mapDirectTypeToBackendType(node.type),
+      directType: node.type,
+      position: { x: node.x, y: node.y },
+      prompt: node.prompt || '',
+      status: node.generationStatus || 'idle',
+      media: node.media ? { kind: node.media.kind, name: node.media.name, url: node.media.url } : null
+    }))
+  const selectedEdgeIds = new Set(directEdges.value
+    .filter((edge) => selectedIds.has(edge.sourceId) || selectedIds.has(edge.targetId))
+    .map((edge) => edge.id))
+  const relatedEdges = directEdges.value
+    .filter((edge) => selectedEdgeIds.has(edge.id))
+    .map((edge) => ({
+      id: edge.id,
+      sourceNodeId: edge.sourceId,
+      targetNodeId: edge.targetId,
+      sourcePortId: edge.sourcePortId,
+      targetPortId: edge.targetPortId
+    }))
+  return {
+    project: {
+      id: projectStore.activeProject?.id || String(route.params.projectId || ''),
+      title: projectTitle.value
+    },
+    canvas: {
+      id: activeCanvas.value?.id || '',
+      revision: activeCanvas.value?.revision || 1
+    },
+    selectedNodes,
+    relatedEdges,
+    modelCode: agentPanel.modelCode,
+    agentModelCode: agentPanel.modelCode
+  }
+}
+
+async function ensureAgentSession() {
+  if (agentPanel.sessionId) return agentPanel.sessionId
+  const projectId = projectStore.activeProject?.id || String(route.params.projectId || '')
+  if (!projectId) throw new Error('缺少项目 ID')
+  const response = await createSluvoAgentSession(projectId, {
+    canvasId: activeCanvas.value?.id || null,
+    title: 'Canvas Agent',
+    agentProfile: agentPanel.profile,
+    modelCode: agentPanel.modelCode,
+    mode: 'semi_auto',
+    contextSnapshot: buildAgentContextSnapshot()
+  })
+  agentPanel.sessionId = response?.session?.id || ''
+  return agentPanel.sessionId
+}
+
+async function sendAgentPrompt() {
+  const content = agentPanel.input.trim()
+  if (!content || agentPanel.busy) return
+  await runAgentPrompt(content)
+}
+
+async function startAgentWithSelection(content) {
+  agentPanel.input = content
+  await runAgentPrompt(content)
+}
+
+async function runAgentPrompt(content) {
+  agentPanel.visible = true
+  agentPanel.busy = true
+  agentPanel.error = ''
+  try {
+    await saveCanvasNow()
+    const sessionId = await ensureAgentSession()
+    const localMessageId = `user-${Date.now()}`
+    agentPanel.messages.push({ id: localMessageId, role: 'user', content })
+    const response = await sendSluvoAgentMessage(sessionId, {
+      content,
+      payload: {
+        contextSnapshot: buildAgentContextSnapshot(),
+        modelCode: agentPanel.modelCode
+      },
+      turnId: `turn-${Date.now()}`
+    })
+    const agentContent = response?.agentEvent?.payload?.content || 'Agent 已生成一条可审阅提案。'
+    agentPanel.messages.push({ id: response?.agentEvent?.id || `agent-${Date.now()}`, role: 'agent', content: agentContent })
+    agentPanel.pendingAction = normalizeAgentAction(response?.action)
+    agentPanel.input = ''
+  } catch (error) {
+    agentPanel.error = error instanceof Error ? error.message : 'Agent 提案生成失败'
+    if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
+  } finally {
+    agentPanel.busy = false
+  }
+}
+
+function normalizeAgentAction(action) {
+  if (!action) return null
+  return {
+    ...action,
+    summary: action.result?.summary || action.input?.contextSummary?.profile || getAgentActionSummary(action.actionType)
+  }
+}
+
+function getAgentActionSummary(actionType) {
+  const map = {
+    'agent.report': '生成检查报告节点',
+    'prompt.rewrite': '生成精修提示词节点',
+    'workflow.plan': '生成创作链路',
+    'canvas.patch': '生成画布建议'
+  }
+  return map[actionType] || '生成画布建议'
+}
+
+function getAgentActionStats(action) {
+  const patch = action?.patch || {}
+  const nodeCount = Array.isArray(patch.nodes) ? patch.nodes.length : 0
+  const edgeCount = Array.isArray(patch.edges) ? patch.edges.length : 0
+  return `${nodeCount} 个节点 · ${edgeCount} 条连线 · 待批准`
+}
+
+async function approveAgentAction() {
+  if (!agentPanel.pendingAction?.id || agentPanel.busy) return
+  agentPanel.busy = true
+  agentPanel.error = ''
+  try {
+    await approveSluvoAgentAction(agentPanel.pendingAction.id)
+    agentPanel.messages.push({ id: `approved-${Date.now()}`, role: 'agent', content: '提案已写入画布。' })
+    agentPanel.pendingAction = null
+    await loadProjectCanvas()
+    showToast('Agent 提案已写入画布')
+  } catch (error) {
+    agentPanel.error = error instanceof Error ? error.message : '批准失败，请刷新后重试'
+  } finally {
+    agentPanel.busy = false
+  }
+}
+
+async function cancelAgentAction() {
+  if (!agentPanel.pendingAction?.id || agentPanel.busy) return
+  agentPanel.busy = true
+  agentPanel.error = ''
+  try {
+    await cancelSluvoAgentAction(agentPanel.pendingAction.id)
+    agentPanel.messages.push({ id: `cancelled-${Date.now()}`, role: 'agent', content: '提案已取消，画布未改变。' })
+    agentPanel.pendingAction = null
+  } catch (error) {
+    agentPanel.error = error instanceof Error ? error.message : '取消失败'
+  } finally {
+    agentPanel.busy = false
+  }
+}
+
 async function unpublishCurrentCanvas() {
   if (!publishDialog.publicationId || publishDialog.submitting) return
   publishDialog.submitting = true
@@ -2290,6 +2579,9 @@ function mapBackendNodeToDirectNode(node) {
     audioSettingsOpen: Boolean(data.audioSettingsOpen),
     audioEstimatePoints: Number.isFinite(Number(data.audioEstimatePoints)) ? Number(data.audioEstimatePoints) : null,
     audioEstimateStatus: data.audioEstimateStatus || 'idle',
+    agentProfile: data.agentProfile || 'canvas_agent',
+    agentModelCode: data.modelCode || data.agentModelCode || 'deepseek-v4-flash',
+    agentLastProposal: data.lastProposal || '',
     aspectRatio: data.aspectRatio || fallbackImageAspectRatioOptions[0],
     referenceImages: normalizeManualReferenceImages(data.referenceImages),
     referenceOrder: Array.isArray(data.referenceOrder) ? data.referenceOrder : [],
@@ -2316,7 +2608,7 @@ function mapBackendEdgeToDirectEdge(edge) {
 }
 
 function normalizeBackendDirectType(nodeType, directType = '') {
-  const directTypes = new Set(['prompt_note', 'image_unit', 'video_unit', 'audio_unit', 'uploaded_asset', 'script_episode', 'asset_table', 'storyboard_table', 'media_board'])
+  const directTypes = new Set(['prompt_note', 'image_unit', 'video_unit', 'audio_unit', 'uploaded_asset', 'script_episode', 'asset_table', 'storyboard_table', 'media_board', 'agent_node'])
   if (directTypes.has(directType)) return directType
   const map = {
     text: 'prompt_note',
@@ -2326,7 +2618,8 @@ function normalizeBackendDirectType(nodeType, directType = '') {
     video: 'video_unit',
     audio: 'audio_unit',
     upload: 'uploaded_asset',
-    group: 'media_board'
+    group: 'media_board',
+    agent: 'agent_node'
   }
   return map[nodeType] || 'prompt_note'
 }
@@ -2984,6 +3277,10 @@ function serializeDirectNodeForSave(node, index = 0) {
       audioSettingsOpen: Boolean(node.audioSettingsOpen),
       audioEstimatePoints: node.audioEstimatePoints ?? null,
       audioEstimateStatus: node.audioEstimateStatus || 'idle',
+      agentProfile: node.agentProfile || '',
+      agentModelCode: node.agentModelCode || '',
+      modelCode: node.agentModelCode || '',
+      lastProposal: node.agentLastProposal || '',
       aspectRatio: node.aspectRatio || '',
       referenceImages: normalizeManualReferenceImages(node.referenceImages)
         .filter((item) => item.status !== 'uploading')
@@ -3142,7 +3439,8 @@ function mapDirectTypeToBackendType(type) {
     media_board: 'group',
     script_episode: 'text',
     asset_table: 'note',
-    storyboard_table: 'note'
+    storyboard_table: 'note',
+    agent_node: 'agent'
   }
   return map[type] || 'note'
 }
@@ -3562,7 +3860,7 @@ function handleFramePointerDown(event) {
   const target = event.target instanceof Element ? event.target : null
   if (
     target?.closest(
-      '.direct-workflow-node, .direct-group-frame, .direct-group-toolbar, .direct-selection-frame, .vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .publish-overlay, .audio-voice-overlay'
+      '.direct-workflow-node, .direct-group-frame, .direct-group-toolbar, .direct-selection-frame, .vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .publish-overlay, .audio-voice-overlay, .canvas-agent-panel, .canvas-agent-trigger'
     )
   ) {
     return
@@ -3632,7 +3930,7 @@ function isCanvasWheelPanTarget(target) {
   const element = target instanceof Element ? target : null
   if (!element) return true
   return !element.closest(
-    '.libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .add-node-menu, .publish-overlay'
+    '.libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .add-node-menu, .publish-overlay, .canvas-agent-panel, .canvas-agent-trigger'
   )
 }
 
@@ -4206,7 +4504,9 @@ function isCanvasContextMenuTarget(target) {
       '.canvas-help-panel',
       '.canvas-context-menu',
       '.image-preview-overlay',
-      '.publish-overlay'
+      '.publish-overlay',
+      '.canvas-agent-panel',
+      '.canvas-agent-trigger'
     ].join(', ')
   )
 }
@@ -4244,7 +4544,7 @@ function handleCanvasDoubleClick(event) {
   const target = event.target instanceof Element ? event.target : null
   if (
     target?.closest(
-      '.vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .publish-overlay'
+      '.vue-flow__node, .add-node-menu, .libtv-topbar, .canvas-tool-rail, .canvas-bottom-controls, .canvas-minimap, .rail-panel, .history-overlay, .library-picker-overlay, .starter-strip, .canvas-help-panel, .canvas-context-menu, .publish-overlay, .canvas-agent-panel, .canvas-agent-trigger'
     )
   ) {
     return
@@ -8203,6 +8503,7 @@ function isDirectNodePortBlocked(position) {
 function getDirectNodeSize(type) {
   if (isCompactCanvas.value) return { width: 320, height: type === 'uploaded_asset' ? 470 : 520 }
   if (type === 'uploaded_asset') return { width: 410, height: 594 }
+  if (type === 'agent_node') return { width: 500, height: 560 }
   if (type === 'image_unit') return { width: 860, height: 690 }
   if (type === 'audio_unit') return { width: 660, height: 620 }
   if (type === 'video_unit' || type === 'media_board') return { width: 620, height: 690 }
@@ -8218,7 +8519,8 @@ function getDirectNodeIcon(type) {
     uploaded_asset: '▧',
     audio_unit: '≋',
     script_episode: '▰',
-    asset_table: '↥'
+    asset_table: '↥',
+    agent_node: '智'
   }
   return icons[type] || '▤'
 }
@@ -8232,7 +8534,8 @@ function getDirectNodeActions(type) {
     uploaded_asset: [],
     audio_unit: ['音效', '配音', '音乐'],
     script_episode: ['创意脚本', '生成故事板', '分镜拆解'],
-    asset_table: ['上传图片', '上传视频', '上传音频']
+    asset_table: ['上传图片', '上传视频', '上传音频'],
+    agent_node: ['分析选区', '生成下游', '检查一致性']
   }
   return actions[type] || actions.prompt_note
 }
@@ -8251,7 +8554,8 @@ function getDirectNodePrompt(type) {
     uploaded_asset: '',
     audio_unit: '描述音效、配音语气或音乐氛围。',
     script_episode: '输入创意方向，生成故事脚本、分镜节拍和创作链路。',
-    asset_table: '上传图片、视频、音频文件，整理可复用素材。'
+    asset_table: '上传图片、视频、音频文件，整理可复用素材。',
+    agent_node: '描述你希望 Agent 完成的创作任务。'
   }
   return prompts[type] || prompts.prompt_note
 }
@@ -8566,6 +8870,23 @@ function handleContextUpload() {
   replacingUploadNodeId.value = ''
   contextMenu.visible = false
   openUploadDialog()
+}
+
+function handleContextAgentAnalyze() {
+  contextMenu.visible = false
+  startAgentWithSelection('请分析当前选区，并给出下一步创作建议。')
+}
+
+function handleContextAgentDownstream() {
+  contextMenu.visible = false
+  agentPanel.profile = 'storyboard_director'
+  startAgentWithSelection('请根据当前选区生成下游分镜、首帧和视频生成链路。')
+}
+
+function handleContextAgentConsistency() {
+  contextMenu.visible = false
+  agentPanel.profile = 'consistency_checker'
+  startAgentWithSelection('请检查当前选区的角色、场景、道具和风格一致性。')
 }
 
 function handleContextUndo() {

@@ -117,6 +117,10 @@ The logged-in home keeps projects in a single horizontal recent-project row with
 
 Community canvas cards are visible on the public and logged-in home. Guests can browse cards but must log in before opening detail or forking. Logged-in users can open the read-only community detail view and fork a publication into a new editable Sluvo project.
 
+Canvas Agent controls live inside `CanvasWorkspaceView.vue` for the MVP. The view creates Agent sessions, sends selected-node context, shows proposed actions, and approves/cancels them through `src/api/sluvoApi.js`.
+
+The initial Agent model selector exposes `deepseek-v4-flash` and `deepseek-v4-pro`; future model additions should be driven by the backend model/catalog policy.
+
 ## 6. Canvas State Rule
 
 Canvas state has two categories.
@@ -128,6 +132,7 @@ Backend persisted through `/api/sluvo/*`:
 - node/edge data, ports, style, and Agent config
 - canvas snapshot JSON
 - project members and Agent action audit records
+- user Agent templates and community Agent publication snapshots
 
 Current persistence behavior:
 - Canvas pages load from `GET /api/sluvo/projects/{projectId}/canvas`.

@@ -97,6 +97,78 @@ export function unpublishSluvoCommunityCanvas(publicationId) {
   })
 }
 
+export async function fetchSluvoAgents() {
+  const payload = await apiFetch('/api/sluvo/agents')
+  return Array.isArray(payload?.items) ? payload.items : []
+}
+
+export function createSluvoAgent(payload) {
+  return apiFetch('/api/sluvo/agents', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function updateSluvoAgent(agentId, payload) {
+  return apiFetch(`/api/sluvo/agents/${agentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function deleteSluvoAgent(agentId) {
+  return apiFetch(`/api/sluvo/agents/${agentId}`, {
+    method: 'DELETE'
+  })
+}
+
+export async function fetchSluvoCommunityAgents({ limit = 12, sort = 'latest' } = {}) {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  if (sort) params.set('sort', sort)
+  const payload = await apiFetch(`/api/sluvo/community/agents?${params.toString()}`)
+  return Array.isArray(payload?.items) ? payload.items : []
+}
+
+export function forkSluvoCommunityAgent(publicationId) {
+  return apiFetch(`/api/sluvo/community/agents/${publicationId}/fork`, {
+    method: 'POST'
+  })
+}
+
+export function publishSluvoAgentToCommunity(agentId, payload) {
+  return apiFetch(`/api/sluvo/agents/${agentId}/community/publish`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function createSluvoAgentSession(projectId, payload) {
+  return apiFetch(`/api/sluvo/projects/${projectId}/agent/sessions`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function sendSluvoAgentMessage(sessionId, payload) {
+  return apiFetch(`/api/sluvo/agent/sessions/${sessionId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function approveSluvoAgentAction(actionId) {
+  return apiFetch(`/api/sluvo/agent/actions/${actionId}/approve`, {
+    method: 'POST'
+  })
+}
+
+export function cancelSluvoAgentAction(actionId) {
+  return apiFetch(`/api/sluvo/agent/actions/${actionId}/cancel`, {
+    method: 'POST'
+  })
+}
+
 export async function saveSluvoCanvasBatch(canvasId, payload) {
   try {
     return await apiFetch(`/api/sluvo/canvases/${canvasId}/batch`, {

@@ -83,6 +83,13 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | Send Agent message/proposed action | POST | `/api/sluvo/agent/sessions/{session_id}/messages` |
 | Approve Agent action | POST | `/api/sluvo/agent/actions/{action_id}/approve` |
 | Cancel Agent action | POST | `/api/sluvo/agent/actions/{action_id}/cancel` |
+| List/create user Agent templates | GET/POST | `/api/sluvo/agents` |
+| Read/update/delete user Agent template | GET/PATCH/DELETE | `/api/sluvo/agents/{agent_id}` |
+| Publish Agent to community | POST | `/api/sluvo/agents/{agent_id}/community/publish` |
+| List community Agents | GET | `/api/sluvo/community/agents` |
+| Read community Agent detail | GET | `/api/sluvo/community/agents/{publication_id}` |
+| Fork community Agent | POST | `/api/sluvo/community/agents/{publication_id}/fork` |
+| Unpublish community Agent | POST | `/api/sluvo/community/agents/{publication_id}/unpublish` |
 | List community canvases | GET | `/api/sluvo/community/canvases` |
 | Read community canvas detail | GET | `/api/sluvo/community/canvases/{publication_id}` |
 | Publish project to community | POST | `/api/sluvo/projects/{project_id}/community/publish` |
@@ -102,7 +109,8 @@ Frontend write mapping:
 - Upload nodes persist media through `SluvoCanvasAsset` and existing `storage_object`; `blob:` preview URLs are never valid backend truth.
 - Uploaded Sluvo media is stored in OSS by user namespace and Sluvo project: `users/{namespace}/sluvo/projects/{project}/canvases/{canvas}/{images|videos|audio}/...`.
 - Sluvo uploads enforce the existing user storage quota path; the default free-user capacity is `5GB`. Duplicate uploads in the same user/project scope can reuse an existing OSS object by `sha256 + user_id + project_id`.
-- Agent endpoints exist in the contract but are not called by the current frontend milestone.
+- Canvas Agent endpoints are called by the current canvas milestone. Messages create proposed actions; approving an action applies its batch-compatible `patch` through the existing canvas save path and records `SluvoCanvasMutation` with Agent session/action IDs.
+- Agent model choices currently allow `deepseek-v4-flash` and `deepseek-v4-pro`. Unknown values normalize to `deepseek-v4-flash`; when `DEEPSEEK_API_KEY` exists, the selected model is used to draft proposal content, with deterministic fallback on failure. Future models should be added server-side before exposing them in the frontend.
 
 ## 5. Legacy Project Workspace APIs
 
@@ -137,6 +145,8 @@ Sluvo standalone product terms map to new `sluvo_*` backend models.
 | Canvas edge | `SluvoCanvasEdge` |
 | Canvas asset | `SluvoCanvasAsset` |
 | Community canvas publication | `SluvoCommunityCanvas` |
+| User Agent template | `SluvoAgentTemplate` |
+| Community Agent publication | `SluvoCommunityAgent` |
 | Agent session | `SluvoAgentSession` |
 | Agent event | `SluvoAgentEvent` |
 | Agent action | `SluvoAgentAction` |

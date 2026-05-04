@@ -196,6 +196,8 @@ Edge types:
 ### P1: Production Beta
 
 - Node templates and workflow templates.
+- Canvas Agent panel and Agent nodes that read selected canvas context, propose batch-compatible canvas changes, and require user approval before writing.
+- User-created no-code Agent templates with selectable DeepSeek v4 Flash / v4 Pro model choice.
 - Branch run: execute selected downstream graph.
 - Output comparison board for image and video variants.
 - Prompt library and reusable style packs.
@@ -209,6 +211,7 @@ Edge types:
 
 - Public template gallery.
 - Forkable community canvases.
+- Community Agent gallery where users can publish sanitized Agent template snapshots and other creators can fork them.
 - Team permission roles for edit, run, comment, and export.
 - Real-time collaboration with presence and patch sync.
 - Workflow API for external agents.

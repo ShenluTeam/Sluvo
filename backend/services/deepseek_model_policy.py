@@ -8,6 +8,7 @@ from typing import Any, Dict, Tuple
 logger = logging.getLogger(__name__)
 
 DEEPSEEK_V4_FLASH_MODEL = "deepseek-v4-flash"
+DEEPSEEK_V4_PRO_MODEL = "deepseek-v4-pro"
 LEGACY_CHAT_MODEL = "deepseek-chat"
 LEGACY_REASONER_MODEL = "deepseek-reasoner"
 
@@ -28,6 +29,8 @@ def normalize_deepseek_model(model: Any, *, thinking_enabled: bool = False) -> T
         logger.warning("%s is deprecated; using %s with thinking enabled", LEGACY_REASONER_MODEL, DEEPSEEK_V4_FLASH_MODEL)
         return DEEPSEEK_V4_FLASH_MODEL, True
     if normalized.startswith("deepseek-"):
+        if normalized in {DEEPSEEK_V4_FLASH_MODEL, DEEPSEEK_V4_PRO_MODEL}:
+            return normalized, requested_thinking
         if normalized != DEEPSEEK_V4_FLASH_MODEL:
             logger.warning("%s is not part of the default Shenlu V4 flash policy; using %s", raw_model, DEEPSEEK_V4_FLASH_MODEL)
         return DEEPSEEK_V4_FLASH_MODEL, requested_thinking

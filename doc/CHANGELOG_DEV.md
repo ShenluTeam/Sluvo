@@ -3,6 +3,37 @@
 ## 2026-05-04
 
 Changed files:
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/components/canvas/AddNodeMenu.vue`
+- `apps/sluvo-web/src/canvas/nodes/WorkflowNode.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/models.py`
+- `backend/database.py`
+- `backend/schemas.py`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `backend/services/deepseek_model_policy.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added the first Sluvo Canvas Agent MVP: a canvas-side Agent panel, Agent node type, selected-node context actions, and approve/cancel proposal flow.
+- Added backend Agent runtime proposals that create `SluvoAgentAction` records and apply approved patches through the existing canvas batch/mutation audit path.
+- Added user Agent templates and community Agent publication/fork/unpublish contracts.
+- Added selectable Agent model codes for `deepseek-v4-flash` and `deepseek-v4-pro`; when a DeepSeek API key is configured, Canvas Agent proposals use the selected model and fall back to rule-based proposals if the call fails.
+
+Verification:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/services/deepseek_model_policy.py backend/routers/sluvo.py backend/models.py backend/schemas.py backend/database.py`
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
 - `apps/sluvo-web/index.html`
 - `apps/sluvo-web/public/favicon.png`
 - `doc/CHANGELOG_DEV.md`

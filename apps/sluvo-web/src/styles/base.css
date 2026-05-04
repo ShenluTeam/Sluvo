@@ -18,6 +18,220 @@ body {
   overflow-y: auto;
 }
 
+.canvas-agent-trigger {
+  position: fixed;
+  right: 24px;
+  top: 86px;
+  z-index: 42;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(205, 244, 124, 0.34);
+  border-radius: 8px;
+  color: #edf7d0;
+  background: rgba(27, 31, 26, 0.9);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.24);
+  font-weight: 700;
+}
+
+.canvas-agent-trigger.is-active {
+  color: #151812;
+  background: #cdf47c;
+}
+
+.canvas-agent-panel {
+  position: fixed;
+  right: 24px;
+  top: 136px;
+  z-index: 43;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, calc(100vw - 48px));
+  max-height: calc(100vh - 168px);
+  overflow: hidden;
+  border: 1px solid rgba(233, 233, 233, 0.14);
+  border-radius: 10px;
+  color: #f2f2ea;
+  background: rgba(18, 20, 18, 0.95);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(16px);
+}
+
+.canvas-agent-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.canvas-agent-panel__header span {
+  color: #cdf47c;
+  font-size: 12px;
+}
+
+.canvas-agent-panel__header h2 {
+  margin: 2px 0 0;
+  font-size: 18px;
+}
+
+.canvas-agent-panel__header button,
+.canvas-agent-panel__composer button,
+.canvas-agent-action button {
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-panel__controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 16px 14px;
+}
+
+.canvas-agent-panel__controls label,
+.canvas-agent-panel__context {
+  display: grid;
+  gap: 7px;
+  color: rgba(242, 242, 234, 0.7);
+  font-size: 12px;
+}
+
+.canvas-agent-panel__controls select {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f6f6ef;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-panel__context,
+.canvas-agent-action,
+.canvas-agent-panel__composer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-panel__context {
+  grid-template-columns: 1fr 1fr;
+  padding: 12px 16px;
+}
+
+.canvas-agent-panel__context strong,
+.canvas-agent-panel__context span {
+  grid-column: 1 / -1;
+}
+
+.canvas-agent-panel__context button {
+  min-height: 32px;
+  border: 1px solid rgba(205, 244, 124, 0.18);
+  border-radius: 8px;
+  color: #edf7d0;
+  background: rgba(205, 244, 124, 0.08);
+}
+
+.canvas-agent-panel__messages {
+  display: grid;
+  gap: 10px;
+  min-height: 120px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 14px 16px;
+}
+
+.canvas-agent-panel__messages article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.canvas-agent-panel__messages article.is-user {
+  background: rgba(205, 244, 124, 0.12);
+}
+
+.canvas-agent-panel__messages span,
+.canvas-agent-panel__empty,
+.canvas-agent-panel__error {
+  color: rgba(242, 242, 234, 0.62);
+  font-size: 12px;
+}
+
+.canvas-agent-panel__messages p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.canvas-agent-action {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  background: rgba(205, 244, 124, 0.08);
+}
+
+.canvas-agent-action div {
+  display: grid;
+  gap: 4px;
+}
+
+.canvas-agent-action span {
+  color: rgba(242, 242, 234, 0.68);
+  font-size: 12px;
+}
+
+.canvas-agent-action footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.canvas-agent-action button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.canvas-agent-action__primary {
+  color: #151812 !important;
+  background: #cdf47c !important;
+}
+
+.canvas-agent-panel__composer {
+  display: grid;
+  grid-template-columns: 1fr 40px;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.canvas-agent-panel__composer textarea {
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 10px;
+  color: #f6f6ef;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-panel__composer button {
+  height: 40px;
+  align-self: end;
+  color: #151812;
+  background: #cdf47c;
+}
+
+.canvas-agent-panel__error {
+  margin: 0;
+  padding: 0 16px 14px;
+  color: #ffb0a5;
+}
+
 button,
 input,
 textarea,

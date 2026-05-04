@@ -1107,6 +1107,54 @@ class SluvoCommunityCanvas(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 
+class SluvoAgentTemplate(SQLModel, table=True):
+    __tablename__ = "sluvo_agent_template"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_user_id: int = Field(foreign_key="user.id", index=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    name: str = Field(sa_column=Column(String(255), nullable=False, index=True))
+    description: Optional[str] = Field(default=None, sa_column=Column(LONGTEXT))
+    avatar_url: Optional[str] = Field(default=None, sa_column=Column(LONGTEXT))
+    cover_url: Optional[str] = Field(default=None, sa_column=Column(LONGTEXT))
+    profile_key: str = Field(default="custom_agent", sa_column=Column(String(64), nullable=False, index=True))
+    model_code: str = Field(default="deepseek-v4-flash", sa_column=Column(String(64), nullable=False, index=True))
+    role_prompt: str = Field(default="", sa_column=Column(LONGTEXT))
+    use_cases_json: str = Field(default="[]", sa_column=Column(LONGTEXT))
+    input_types_json: str = Field(default="[]", sa_column=Column(LONGTEXT))
+    output_types_json: str = Field(default="[]", sa_column=Column(LONGTEXT))
+    tools_json: str = Field(default="[]", sa_column=Column(LONGTEXT))
+    approval_policy_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    examples_json: str = Field(default="[]", sa_column=Column(LONGTEXT))
+    memory_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    status: str = Field(default="active", sa_column=Column(String(32), nullable=False, index=True))
+    forked_from_publication_id: Optional[int] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    deleted_at: Optional[datetime] = Field(default=None, index=True)
+
+
+class SluvoCommunityAgent(SQLModel, table=True):
+    __tablename__ = "sluvo_community_agent"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_agent_id: int = Field(foreign_key="sluvo_agent_template.id", index=True)
+    owner_user_id: int = Field(foreign_key="user.id", index=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    title: str = Field(sa_column=Column(String(255), nullable=False, index=True))
+    description: Optional[str] = Field(default=None, sa_column=Column(LONGTEXT))
+    cover_url: Optional[str] = Field(default=None, sa_column=Column(LONGTEXT))
+    tags_json: str = Field(default="[]", sa_column=Column(LONGTEXT))
+    template_snapshot_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    status: str = Field(default="published", sa_column=Column(String(32), nullable=False, index=True))
+    view_count: int = Field(default=0, sa_column=Column(Integer, nullable=False, default=0))
+    fork_count: int = Field(default=0, sa_column=Column(Integer, nullable=False, default=0))
+    published_at: Optional[datetime] = Field(default=None, index=True)
+    unpublished_at: Optional[datetime] = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
 class SluvoAgentSession(SQLModel, table=True):
     __tablename__ = "sluvo_agent_session"
 

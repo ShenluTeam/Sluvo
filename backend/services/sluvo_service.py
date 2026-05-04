@@ -7,17 +7,20 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from core.config import settings
 from core.security import decode_id, encode_id
 from models import (
     RoleEnum,
     SluvoAgentAction,
     SluvoAgentEvent,
     SluvoAgentSession,
+    SluvoAgentTemplate,
     SluvoCanvas,
     SluvoCanvasAsset,
     SluvoCanvasEdge,
     SluvoCanvasMutation,
     SluvoCanvasNode,
+    SluvoCommunityAgent,
     SluvoCommunityCanvas,
     SluvoProject,
     SluvoProjectMember,
@@ -26,15 +29,21 @@ from models import (
     TeamMemberLink,
     User,
 )
+from services.agents.llm_client import chat_json
 from schemas import (
     SLUVO_MEMBER_ROLE_EDITOR,
     SLUVO_MEMBER_ROLE_OWNER,
     SLUVO_MEMBER_ROLE_VIEWER,
     SLUVO_COMMUNITY_CANVAS_STATUS_PUBLISHED,
     SLUVO_COMMUNITY_CANVAS_STATUS_UNPUBLISHED,
+    SLUVO_COMMUNITY_AGENT_STATUS_PUBLISHED,
+    SLUVO_COMMUNITY_AGENT_STATUS_UNPUBLISHED,
     SLUVO_PROJECT_STATUS_ACTIVE,
     SLUVO_PROJECT_STATUS_DELETED,
+    SluvoAgentTemplateCreateRequest,
+    SluvoAgentTemplateUpdateRequest,
     SluvoCanvasBatchRequest,
+    SluvoCommunityAgentPublishRequest,
     SluvoCommunityCanvasPublishRequest,
     SluvoCanvasEdgeCreateRequest,
     SluvoCanvasEdgeUpdateRequest,
@@ -46,6 +55,7 @@ from schemas import (
     SluvoProjectMemberUpdateRequest,
     SluvoProjectUpdateRequest,
     normalize_sluvo_edge_type,
+    normalize_sluvo_agent_model_code,
     normalize_sluvo_member_role,
     normalize_sluvo_node_type,
     normalize_sluvo_project_status,
@@ -75,6 +85,39 @@ SLUVO_UPLOAD_MIME_TYPES = {
     "audio/aac",
     "audio/ogg",
     "audio/webm",
+}
+
+SLUVO_OFFICIAL_AGENT_PROFILES = {
+    "canvas_agent": {
+        "name": "画布协作 Agent",
+        "description": "读取选区和上下文，生成可审阅的画布提案。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "story_director": {
+        "name": "故事发展 Agent",
+        "description": "把创意扩写为故事结构、人物关系和冲突节奏。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "storyboard_director": {
+        "name": "分镜导演 Agent",
+        "description": "把剧本或文本节点拆成镜头节点和生成链路。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "prompt_polisher": {
+        "name": "Prompt 精修 Agent",
+        "description": "把口语化描述改写为适合生成节点的提示词。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "consistency_checker": {
+        "name": "一致性检查 Agent",
+        "description": "检查角色、场景、道具和风格是否在画布中漂移。",
+        "tools": ["read_canvas", "propose_report"],
+    },
+    "production_planner": {
+        "name": "制片调度 Agent",
+        "description": "整理缺失输入、可运行节点、失败任务和下一步计划。",
+        "tools": ["read_canvas", "propose_report"],
+    },
 }
 
 _ROLE_PERMISSIONS = {
@@ -355,6 +398,31 @@ def _normalize_community_tags(tags: List[Any]) -> List[str]:
     return result
 
 
+def _normalize_agent_tools(tools: List[Any]) -> List[str]:
+    allowed = {
+        "read_canvas",
+        "propose_canvas_patch",
+        "propose_report",
+        "rewrite_prompt",
+        "plan_workflow",
+        "run_generation_with_approval",
+    }
+    result: List[str] = []
+    for item in tools or []:
+        value = str(item or "").strip()
+        if value in allowed and value not in result:
+            result.append(value)
+    return result or ["read_canvas", "propose_canvas_patch"]
+
+
+def _public_agent_snapshot(item: SluvoAgentTemplate) -> Dict[str, Any]:
+    data = serialize_sluvo_agent_template(item)
+    data.pop("memory", None)
+    data.pop("ownerUserId", None)
+    data.pop("teamId", None)
+    return data
+
+
 def serialize_sluvo_community_canvas(item: SluvoCommunityCanvas, *, detail: bool = False) -> Dict[str, Any]:
     owner = None
     # The session-backed detail serializer below can fill this; keep this helper safe for tests.
@@ -462,6 +530,62 @@ def serialize_sluvo_agent_action(action: SluvoAgentAction) -> Dict[str, Any]:
         "createdAt": action.created_at.isoformat() if action.created_at else None,
         "updatedAt": action.updated_at.isoformat() if action.updated_at else None,
     }
+
+
+def serialize_sluvo_agent_template(template: SluvoAgentTemplate) -> Dict[str, Any]:
+    return {
+        "id": encode_id(template.id),
+        "ownerUserId": encode_id(template.owner_user_id),
+        "teamId": encode_id(template.team_id),
+        "name": template.name,
+        "description": template.description,
+        "avatarUrl": template.avatar_url,
+        "coverUrl": template.cover_url,
+        "profileKey": template.profile_key,
+        "modelCode": normalize_sluvo_agent_model_code(template.model_code),
+        "rolePrompt": template.role_prompt,
+        "useCases": _json_load(template.use_cases_json, []),
+        "inputTypes": _json_load(template.input_types_json, []),
+        "outputTypes": _json_load(template.output_types_json, []),
+        "tools": _json_load(template.tools_json, []),
+        "approvalPolicy": _json_load(template.approval_policy_json, {}),
+        "examples": _json_load(template.examples_json, []),
+        "memory": _json_load(template.memory_json, {}),
+        "status": template.status,
+        "forkedFromPublicationId": encode_id(template.forked_from_publication_id) if template.forked_from_publication_id else None,
+        "createdAt": template.created_at.isoformat() if template.created_at else None,
+        "updatedAt": template.updated_at.isoformat() if template.updated_at else None,
+    }
+
+
+def serialize_sluvo_community_agent_with_session(
+    session: Session,
+    item: SluvoCommunityAgent,
+    *,
+    detail: bool = False,
+) -> Dict[str, Any]:
+    owner = session.get(User, item.owner_user_id)
+    payload = {
+        "id": encode_id(item.id),
+        "sourceAgentId": encode_id(item.source_agent_id),
+        "title": item.title,
+        "description": item.description,
+        "coverUrl": item.cover_url,
+        "tags": _json_load(item.tags_json, []),
+        "status": item.status,
+        "author": {
+            "id": encode_id(owner.id),
+            "nickname": owner.nickname,
+            "avatarUrl": owner.avatar_url,
+        } if owner else None,
+        "viewCount": int(item.view_count or 0),
+        "forkCount": int(item.fork_count or 0),
+        "publishedAt": item.published_at.isoformat() if item.published_at else None,
+        "updatedAt": item.updated_at.isoformat() if item.updated_at else None,
+    }
+    if detail:
+        payload["template"] = _json_load(item.template_snapshot_json, {})
+    return payload
 
 
 def get_project_member(session: Session, project_id: int, user_id: int) -> Optional[SluvoProjectMember]:
@@ -603,6 +727,239 @@ def list_sluvo_community_canvases(session: Session, *, limit: int = 24, sort: st
         .limit(limit)
     ).all()
     return [serialize_sluvo_community_canvas_with_session(session, item) for item in items]
+
+
+def list_sluvo_agent_templates(session: Session, *, user: User, team: Team) -> List[Dict[str, Any]]:
+    items = session.exec(
+        select(SluvoAgentTemplate)
+        .where(
+            SluvoAgentTemplate.team_id == team.id,
+            SluvoAgentTemplate.owner_user_id == user.id,
+            SluvoAgentTemplate.deleted_at == None,
+        )
+        .order_by(SluvoAgentTemplate.updated_at.desc(), SluvoAgentTemplate.id.desc())
+    ).all()
+    return [serialize_sluvo_agent_template(item) for item in items]
+
+
+def create_sluvo_agent_template(
+    session: Session,
+    *,
+    user: User,
+    team: Team,
+    payload: SluvoAgentTemplateCreateRequest,
+) -> SluvoAgentTemplate:
+    now = _utc_now()
+    item = SluvoAgentTemplate(
+        owner_user_id=user.id,
+        team_id=team.id,
+        name=str(payload.name or "").strip()[:255] or "未命名 Agent",
+        description=payload.description,
+        avatar_url=payload.avatarUrl,
+        cover_url=payload.coverUrl,
+        profile_key=str(payload.profileKey or "custom_agent").strip()[:64] or "custom_agent",
+        model_code=normalize_sluvo_agent_model_code(payload.modelCode),
+        role_prompt=str(payload.rolePrompt or ""),
+        use_cases_json=_json_dump(payload.useCases, []),
+        input_types_json=_json_dump(payload.inputTypes, []),
+        output_types_json=_json_dump(payload.outputTypes, []),
+        tools_json=_json_dump(_normalize_agent_tools(payload.tools), []),
+        approval_policy_json=_json_dump(payload.approvalPolicy, {}),
+        examples_json=_json_dump(payload.examples, []),
+        memory_json="{}",
+        status="active",
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+def require_sluvo_agent_template(session: Session, agent_id: str) -> SluvoAgentTemplate:
+    item = session.get(SluvoAgentTemplate, decode_id(agent_id))
+    if not item or item.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Sluvo Agent 模板不存在")
+    return item
+
+
+def update_sluvo_agent_template(
+    session: Session,
+    *,
+    item: SluvoAgentTemplate,
+    payload: SluvoAgentTemplateUpdateRequest,
+) -> SluvoAgentTemplate:
+    if payload.name is not None:
+        item.name = str(payload.name or "").strip()[:255] or item.name
+    if payload.description is not None:
+        item.description = payload.description
+    if payload.avatarUrl is not None:
+        item.avatar_url = payload.avatarUrl
+    if payload.coverUrl is not None:
+        item.cover_url = payload.coverUrl
+    if payload.profileKey is not None:
+        item.profile_key = str(payload.profileKey or "custom_agent").strip()[:64] or "custom_agent"
+    if payload.modelCode is not None:
+        item.model_code = normalize_sluvo_agent_model_code(payload.modelCode)
+    if payload.rolePrompt is not None:
+        item.role_prompt = payload.rolePrompt
+    if payload.useCases is not None:
+        item.use_cases_json = _json_dump(payload.useCases, [])
+    if payload.inputTypes is not None:
+        item.input_types_json = _json_dump(payload.inputTypes, [])
+    if payload.outputTypes is not None:
+        item.output_types_json = _json_dump(payload.outputTypes, [])
+    if payload.tools is not None:
+        item.tools_json = _json_dump(_normalize_agent_tools(payload.tools), [])
+    if payload.approvalPolicy is not None:
+        item.approval_policy_json = _json_dump(payload.approvalPolicy, {})
+    if payload.examples is not None:
+        item.examples_json = _json_dump(payload.examples, [])
+    if payload.memory is not None:
+        item.memory_json = _json_dump(payload.memory, {})
+    item.updated_at = _utc_now()
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+def delete_sluvo_agent_template(session: Session, *, item: SluvoAgentTemplate) -> None:
+    item.deleted_at = _utc_now()
+    item.status = "deleted"
+    item.updated_at = item.deleted_at
+    session.add(item)
+    session.commit()
+
+
+def list_sluvo_community_agents(session: Session, *, limit: int = 24, sort: str = "latest") -> List[Dict[str, Any]]:
+    limit = max(1, min(int(limit or 24), 60))
+    order_by = SluvoCommunityAgent.fork_count.desc() if str(sort or "").lower() == "popular" else SluvoCommunityAgent.published_at.desc()
+    items = session.exec(
+        select(SluvoCommunityAgent)
+        .where(SluvoCommunityAgent.status == SLUVO_COMMUNITY_AGENT_STATUS_PUBLISHED)
+        .order_by(order_by, SluvoCommunityAgent.id.desc())
+        .limit(limit)
+    ).all()
+    return [serialize_sluvo_community_agent_with_session(session, item) for item in items]
+
+
+def require_sluvo_community_agent(
+    session: Session,
+    publication_id: str,
+    *,
+    include_unpublished: bool = False,
+) -> SluvoCommunityAgent:
+    item = session.get(SluvoCommunityAgent, decode_id(publication_id))
+    if not item or (not include_unpublished and item.status != SLUVO_COMMUNITY_AGENT_STATUS_PUBLISHED):
+        raise HTTPException(status_code=404, detail="社区 Agent 不存在")
+    return item
+
+
+def get_sluvo_community_agent_detail(session: Session, item: SluvoCommunityAgent) -> Dict[str, Any]:
+    item.view_count = int(item.view_count or 0) + 1
+    item.updated_at = _utc_now()
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return {"publication": serialize_sluvo_community_agent_with_session(session, item, detail=True)}
+
+
+def publish_sluvo_agent_to_community(
+    session: Session,
+    *,
+    item: SluvoAgentTemplate,
+    user: User,
+    team: Team,
+    payload: SluvoCommunityAgentPublishRequest,
+) -> Dict[str, Any]:
+    now = _utc_now()
+    title = str(payload.title or item.name or "").strip()[:255] or item.name or "未命名 Agent"
+    snapshot = _public_agent_snapshot(item)
+    publication = session.exec(
+        select(SluvoCommunityAgent).where(SluvoCommunityAgent.source_agent_id == item.id)
+    ).first()
+    if not publication:
+        publication = SluvoCommunityAgent(
+            source_agent_id=item.id,
+            owner_user_id=user.id,
+            team_id=team.id,
+            created_at=now,
+        )
+    publication.owner_user_id = user.id
+    publication.team_id = team.id
+    publication.title = title
+    publication.description = str(payload.description if payload.description is not None else item.description or "").strip()
+    publication.cover_url = str(payload.coverUrl or "").strip() or item.cover_url or item.avatar_url
+    publication.tags_json = _json_dump(_normalize_community_tags(payload.tags), [])
+    publication.template_snapshot_json = _json_dump(snapshot, {})
+    publication.status = SLUVO_COMMUNITY_AGENT_STATUS_PUBLISHED
+    publication.unpublished_at = None
+    publication.published_at = publication.published_at or now
+    publication.updated_at = now
+    session.add(publication)
+    session.commit()
+    session.refresh(publication)
+    return {"publication": serialize_sluvo_community_agent_with_session(session, publication, detail=True)}
+
+
+def fork_sluvo_community_agent(
+    session: Session,
+    *,
+    item: SluvoCommunityAgent,
+    user: User,
+    team: Team,
+) -> Dict[str, Any]:
+    snapshot = _json_load(item.template_snapshot_json, {})
+    now = _utc_now()
+    template = SluvoAgentTemplate(
+        owner_user_id=user.id,
+        team_id=team.id,
+        name=f"Fork 自 {item.title}"[:255],
+        description=snapshot.get("description") or item.description,
+        avatar_url=snapshot.get("avatarUrl"),
+        cover_url=item.cover_url or snapshot.get("coverUrl"),
+        profile_key=snapshot.get("profileKey") or "custom_agent",
+        model_code=normalize_sluvo_agent_model_code(snapshot.get("modelCode")),
+        role_prompt=snapshot.get("rolePrompt") or "",
+        use_cases_json=_json_dump(snapshot.get("useCases") or [], []),
+        input_types_json=_json_dump(snapshot.get("inputTypes") or [], []),
+        output_types_json=_json_dump(snapshot.get("outputTypes") or [], []),
+        tools_json=_json_dump(_normalize_agent_tools(snapshot.get("tools") or []), []),
+        approval_policy_json=_json_dump(snapshot.get("approvalPolicy") or {}, {}),
+        examples_json=_json_dump(snapshot.get("examples") or [], []),
+        memory_json="{}",
+        status="active",
+        forked_from_publication_id=item.id,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(template)
+    item.fork_count = int(item.fork_count or 0) + 1
+    item.updated_at = now
+    session.add(item)
+    session.commit()
+    session.refresh(template)
+    return {"agent": serialize_sluvo_agent_template(template)}
+
+
+def unpublish_sluvo_community_agent(
+    session: Session,
+    *,
+    item: SluvoCommunityAgent,
+    user: User,
+    team_member: TeamMemberLink,
+) -> Dict[str, Any]:
+    is_team_admin = item.team_id == team_member.team_id and _has_team_manage_role(team_member.role)
+    if item.owner_user_id != user.id and not is_team_admin:
+        raise HTTPException(status_code=403, detail="只有发布者或团队管理员可以取消发布")
+    item.status = SLUVO_COMMUNITY_AGENT_STATUS_UNPUBLISHED
+    item.unpublished_at = _utc_now()
+    item.updated_at = item.unpublished_at
+    session.add(item)
+    session.commit()
+    return {"status": "success", "publicationId": encode_id(item.id)}
 
 
 def require_sluvo_community_canvas(
@@ -1538,6 +1895,7 @@ def create_sluvo_agent_session(
     target_node_id: Optional[int],
     title: Optional[str],
     agent_profile: str,
+    model_code: str,
     mode: str,
     context_snapshot: Dict[str, Any],
 ) -> SluvoAgentSession:
@@ -1547,6 +1905,10 @@ def create_sluvo_agent_session(
     if target_node_id:
         node = _require_node(session, target_node_id)
         _assert_same_canvas(node.canvas_id, canvas.id, "目标节点")
+    normalized_context = {
+        **(context_snapshot or {}),
+        "modelCode": normalize_sluvo_agent_model_code(model_code or (context_snapshot or {}).get("modelCode")),
+    }
     item = SluvoAgentSession(
         project_id=project.id,
         canvas_id=canvas.id,
@@ -1557,7 +1919,7 @@ def create_sluvo_agent_session(
         agent_profile=agent_profile or "canvas_agent",
         mode=mode or "semi_auto",
         status="active",
-        context_snapshot_json=_json_dump(context_snapshot),
+        context_snapshot_json=_json_dump(normalized_context),
         created_at=_utc_now(),
         updated_at=_utc_now(),
     )
@@ -1602,6 +1964,432 @@ def append_sluvo_agent_event(
     session.commit()
     session.refresh(event)
     return event
+
+
+def process_sluvo_agent_message(
+    session: Session,
+    *,
+    agent_session: SluvoAgentSession,
+    content: Optional[str],
+    payload: Dict[str, Any],
+    turn_id: Optional[str] = None,
+    proposed_action: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    user_event = append_sluvo_agent_event(
+        session,
+        agent_session=agent_session,
+        role="user",
+        event_type="message",
+        payload={"content": content, **(payload or {})},
+        turn_id=turn_id,
+    )
+    if proposed_action:
+        action = create_sluvo_agent_action(session, agent_session=agent_session, action_payload=proposed_action)
+        agent_event = append_sluvo_agent_event(
+            session,
+            agent_session=agent_session,
+            role="agent",
+            event_type="proposal",
+            payload={
+                "content": "已收到一条外部 Agent 提案，请审阅后决定是否写入画布。",
+                "actionId": encode_id(action.id),
+            },
+            turn_id=turn_id,
+        )
+        return {"event": user_event, "agentEvent": agent_event, "action": action}
+
+    action_payload, reply = build_sluvo_agent_action_payload(
+        session,
+        agent_session=agent_session,
+        content=content,
+        payload=payload or {},
+    )
+    action = create_sluvo_agent_action(session, agent_session=agent_session, action_payload=action_payload)
+    agent_event = append_sluvo_agent_event(
+        session,
+        agent_session=agent_session,
+        role="agent",
+        event_type="proposal",
+        payload={**reply, "actionId": encode_id(action.id)},
+        turn_id=turn_id,
+    )
+    return {"event": user_event, "agentEvent": agent_event, "action": action}
+
+
+def build_sluvo_agent_action_payload(
+    session: Session,
+    *,
+    agent_session: SluvoAgentSession,
+    content: Optional[str],
+    payload: Dict[str, Any],
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    canvas = _require_canvas(session, agent_session.canvas_id)
+    context = payload.get("contextSnapshot") if isinstance(payload.get("contextSnapshot"), dict) else _json_load(agent_session.context_snapshot_json, {})
+    selected_nodes = context.get("selectedNodes") if isinstance(context.get("selectedNodes"), list) else []
+    profile_key = _resolve_agent_profile_key(session, agent_session.agent_profile)
+    model_code = normalize_sluvo_agent_model_code(context.get("modelCode") or payload.get("modelCode") or context.get("agentModelCode"))
+    prompt = str(content or payload.get("content") or "").strip()
+    action_type = _infer_agent_action_type(profile_key, prompt)
+    llm_payload = _try_deepseek_canvas_agent_payload(
+        model_code=model_code,
+        profile_key=profile_key,
+        action_type=action_type,
+        prompt=prompt,
+        selected_nodes=selected_nodes,
+    )
+    if isinstance(llm_payload, dict):
+        action_type = str(llm_payload.get("actionType") or action_type)
+    patch = _build_agent_canvas_patch(
+        canvas=canvas,
+        action_type=action_type,
+        profile_key=profile_key,
+        model_code=model_code,
+        prompt=prompt,
+        selected_nodes=selected_nodes,
+        llm_payload=llm_payload,
+    )
+    profile_label = _agent_profile_label(session, agent_session.agent_profile, profile_key)
+    node_count = len(patch.get("nodes") or [])
+    edge_count = len(patch.get("edges") or [])
+    reply = {
+        "content": f"{profile_label} 已基于当前画布生成 {node_count} 个节点、{edge_count} 条连线的提案。",
+        "modelCode": model_code,
+        "profile": profile_key,
+        "requiresApproval": True,
+        "summary": _agent_action_summary(action_type),
+        "llmUsed": bool(llm_payload),
+    }
+    return {
+        "actionType": action_type,
+        "input": {
+            "content": prompt,
+            "contextSummary": {
+                "selectedNodeCount": len(selected_nodes),
+                "modelCode": model_code,
+                "profile": profile_key,
+            },
+        },
+        "patch": patch,
+    }, reply
+
+
+def _resolve_agent_profile_key(session: Session, agent_profile: str) -> str:
+    value = str(agent_profile or "canvas_agent").strip()
+    if value in SLUVO_OFFICIAL_AGENT_PROFILES:
+        return value
+    try:
+        template = session.get(SluvoAgentTemplate, decode_id(value))
+        if template and template.deleted_at is None:
+            return template.profile_key or "custom_agent"
+    except Exception:
+        pass
+    return "custom_agent" if value else "canvas_agent"
+
+
+def _agent_profile_label(session: Session, agent_profile: str, profile_key: str) -> str:
+    official = SLUVO_OFFICIAL_AGENT_PROFILES.get(profile_key)
+    if official:
+        return official["name"]
+    try:
+        template = session.get(SluvoAgentTemplate, decode_id(str(agent_profile or "")))
+        if template:
+            return template.name
+    except Exception:
+        pass
+    return "自定义 Agent"
+
+
+def _infer_agent_action_type(profile_key: str, prompt: str) -> str:
+    text = prompt.lower()
+    if profile_key == "consistency_checker" or "检查" in prompt or "一致" in prompt:
+        return "agent.report"
+    if profile_key == "prompt_polisher" or "prompt" in text or "提示词" in prompt:
+        return "prompt.rewrite"
+    if profile_key in {"storyboard_director", "production_planner"} or "分镜" in prompt or "下游" in prompt:
+        return "workflow.plan"
+    return "canvas.patch"
+
+
+def _try_deepseek_canvas_agent_payload(
+    *,
+    model_code: str,
+    profile_key: str,
+    action_type: str,
+    prompt: str,
+    selected_nodes: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not settings.DEEPSEEK_API_KEY:
+        return None
+    try:
+        payload = chat_json(
+            model=model_code,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 Sluvo 无限画布创作 Agent。请只输出 JSON 对象，字段包括 "
+                        "actionType、outputTitle、outputPrompt。actionType 只能是 "
+                        "canvas.patch、agent.report、prompt.rewrite、workflow.plan 之一。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": _build_deepseek_agent_prompt(
+                        profile_key=profile_key,
+                        action_type=action_type,
+                        prompt=prompt,
+                        selected_nodes=selected_nodes,
+                    ),
+                },
+            ],
+            thinking_enabled=model_code == "deepseek-v4-pro",
+            max_tokens=900,
+            temperature=0.2,
+            route_tag="sluvo_canvas_agent",
+        )
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    safe_action = str(payload.get("actionType") or action_type)
+    if safe_action not in {"canvas.patch", "agent.report", "prompt.rewrite", "workflow.plan"}:
+        safe_action = action_type
+    return {
+        "actionType": safe_action,
+        "outputTitle": str(payload.get("outputTitle") or "").strip()[:80],
+        "outputPrompt": str(payload.get("outputPrompt") or "").strip(),
+    }
+
+
+def _build_deepseek_agent_prompt(
+    *,
+    profile_key: str,
+    action_type: str,
+    prompt: str,
+    selected_nodes: List[Dict[str, Any]],
+) -> str:
+    node_brief = [
+        {
+            "title": item.get("title"),
+            "type": item.get("directType") or item.get("nodeType"),
+            "prompt": str(item.get("prompt") or "")[:500],
+        }
+        for item in selected_nodes[:8]
+        if isinstance(item, dict)
+    ]
+    return _json_dump(
+        {
+            "agentProfile": profile_key,
+            "preferredActionType": action_type,
+            "userRequest": prompt,
+            "selectedNodes": node_brief,
+            "task": "生成一个适合写入 Sluvo 画布的新节点标题和正文，正文要能直接给创作者审阅。",
+        },
+        {},
+    )
+
+
+def _agent_action_summary(action_type: str) -> str:
+    return {
+        "agent.report": "生成检查报告节点",
+        "prompt.rewrite": "生成精修提示词节点",
+        "workflow.plan": "生成可继续执行的创作链路",
+        "canvas.patch": "生成画布创作建议",
+    }.get(action_type, "生成画布创作建议")
+
+
+def _build_agent_canvas_patch(
+    *,
+    canvas: SluvoCanvas,
+    action_type: str,
+    profile_key: str,
+    model_code: str,
+    prompt: str,
+    selected_nodes: List[Dict[str, Any]],
+    llm_payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    base_x, base_y = _agent_patch_origin(selected_nodes)
+    safe_prompt = prompt or "请基于当前画布继续创作。"
+    agent_client_id = f"agent-{profile_key}-{int(_utc_now().timestamp() * 1000)}"
+    agent_node = _agent_patch_node(
+        client_id=agent_client_id,
+        node_type="agent",
+        direct_type="agent_node",
+        title=_agent_profile_label_from_key(profile_key),
+        icon="智",
+        position={"x": base_x, "y": base_y},
+        prompt=safe_prompt,
+        data={
+            "agentProfile": profile_key,
+            "modelCode": model_code,
+            "lastProposal": _agent_action_summary(action_type),
+            "generationStatus": "idle",
+        },
+    )
+    output_client_id = f"{agent_client_id}-output"
+    llm_title = str((llm_payload or {}).get("outputTitle") or "").strip()
+    llm_prompt = str((llm_payload or {}).get("outputPrompt") or "").strip()
+    if action_type == "agent.report":
+        output = _agent_patch_node(
+            client_id=output_client_id,
+            node_type="note",
+            direct_type="prompt_note",
+            title=llm_title or "Agent 一致性检查报告",
+            icon="检",
+            position={"x": base_x + 360, "y": base_y},
+            prompt=llm_prompt or _build_consistency_report(safe_prompt, selected_nodes, model_code),
+        )
+    elif action_type == "prompt.rewrite":
+        output = _agent_patch_node(
+            client_id=output_client_id,
+            node_type="note",
+            direct_type="prompt_note",
+            title=llm_title or "精修提示词",
+            icon="词",
+            position={"x": base_x + 360, "y": base_y},
+            prompt=llm_prompt or _build_polished_prompt(safe_prompt, selected_nodes),
+        )
+    elif action_type == "workflow.plan":
+        output = _agent_patch_node(
+            client_id=output_client_id,
+            node_type="note",
+            direct_type="script_episode",
+            title=llm_title or "Agent 分镜计划",
+            icon="镜",
+            position={"x": base_x + 360, "y": base_y - 90},
+            prompt=llm_prompt or _build_workflow_plan(safe_prompt, selected_nodes, model_code),
+        )
+        image_client_id = f"{agent_client_id}-image"
+        video_client_id = f"{agent_client_id}-video"
+        return {
+            "expectedRevision": canvas.revision,
+            "nodes": [
+                agent_node,
+                output,
+                _agent_patch_node(
+                    client_id=image_client_id,
+                    node_type="image",
+                    direct_type="image_unit",
+                    title="分镜首帧生成",
+                    icon="图",
+                    position={"x": base_x + 720, "y": base_y - 120},
+                    prompt="根据分镜计划生成关键首帧，保持角色、服装和场景连续。",
+                ),
+                _agent_patch_node(
+                    client_id=video_client_id,
+                    node_type="video",
+                    direct_type="video_unit",
+                    title="镜头视频生成",
+                    icon="视",
+                    position={"x": base_x + 1080, "y": base_y - 120},
+                    prompt="基于首帧生成 5 秒镜头，强调镜头运动、角色动作和情绪节奏。",
+                ),
+            ],
+            "edges": [
+                _agent_patch_edge(agent_client_id, output_client_id, "generation", "提案"),
+                _agent_patch_edge(output_client_id, image_client_id, "dependency", "分镜"),
+                _agent_patch_edge(image_client_id, video_client_id, "generation", "首帧"),
+            ],
+        }
+    else:
+        output = _agent_patch_node(
+            client_id=output_client_id,
+            node_type="note",
+            direct_type="prompt_note",
+            title=llm_title or "Agent 创作建议",
+            icon="案",
+            position={"x": base_x + 360, "y": base_y},
+            prompt=llm_prompt or _build_canvas_suggestion(safe_prompt, selected_nodes, model_code),
+        )
+    return {
+        "expectedRevision": canvas.revision,
+        "nodes": [agent_node, output],
+        "edges": [_agent_patch_edge(agent_client_id, output_client_id, "generation", "提案")],
+    }
+
+
+def _agent_profile_label_from_key(profile_key: str) -> str:
+    return SLUVO_OFFICIAL_AGENT_PROFILES.get(profile_key, {}).get("name") or "自定义 Agent"
+
+
+def _agent_patch_origin(selected_nodes: List[Dict[str, Any]]) -> tuple[float, float]:
+    positions = [item.get("position") or {} for item in selected_nodes if isinstance(item, dict)]
+    xs = [float(pos.get("x", 0)) for pos in positions if isinstance(pos, dict)]
+    ys = [float(pos.get("y", 0)) for pos in positions if isinstance(pos, dict)]
+    if xs and ys:
+        return max(xs) + 420, min(ys)
+    return 180.0, 180.0
+
+
+def _agent_patch_node(
+    *,
+    client_id: str,
+    node_type: str,
+    direct_type: str,
+    title: str,
+    icon: str,
+    position: Dict[str, float],
+    prompt: str,
+    data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return {
+        "clientId": client_id,
+        "nodeType": node_type,
+        "title": title,
+        "position": position,
+        "size": {"width": 320, "height": 220},
+        "status": "idle",
+        "data": {
+            "clientId": client_id,
+            "directType": direct_type,
+            "title": title,
+            "icon": icon,
+            "prompt": prompt,
+            "body": prompt,
+            "actions": ["审阅", "继续生成"],
+            "generationStatus": "idle",
+            **(data or {}),
+        },
+        "ports": {"left": True, "right": True},
+        "style": {},
+    }
+
+
+def _agent_patch_edge(source_client_id: str, target_client_id: str, edge_type: str, label: str) -> Dict[str, Any]:
+    return {
+        "sourceNodeId": None,
+        "targetNodeId": None,
+        "sourcePortId": "right",
+        "targetPortId": "left",
+        "edgeType": edge_type,
+        "label": label,
+        "data": {
+            "sourceClientId": source_client_id,
+            "targetClientId": target_client_id,
+        },
+    }
+
+
+def _selected_node_titles(selected_nodes: List[Dict[str, Any]]) -> str:
+    titles = [str(item.get("title") or (item.get("data") or {}).get("title") or "").strip() for item in selected_nodes if isinstance(item, dict)]
+    titles = [item for item in titles if item]
+    return "、".join(titles[:6]) or "当前画布"
+
+
+def _build_canvas_suggestion(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:
+    return f"基于「{_selected_node_titles(selected_nodes)}」的创作建议：\n1. 明确故事目标和主要情绪。\n2. 把可复用角色、场景、风格拆成独立参考节点。\n3. 从关键镜头开始生成图片，再连接视频节点。\n\n用户需求：{prompt}\n模型：{model_code}"
+
+
+def _build_consistency_report(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:
+    return f"一致性检查报告：\n- 检查对象：{_selected_node_titles(selected_nodes)}。\n- 建议固定角色外观、服装、道具和光线风格。\n- 后续生成前，请把角色参考图连接到每个图片/视频节点。\n\n检查要求：{prompt}\n模型：{model_code}"
+
+
+def _build_polished_prompt(prompt: str, selected_nodes: List[Dict[str, Any]]) -> str:
+    return f"精修提示词：{prompt}。画面需要主体清晰、角色一致、光线有层次、镜头语言明确，保留「{_selected_node_titles(selected_nodes)}」中的关键设定。"
+
+
+def _build_workflow_plan(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:
+    return f"分镜工作流计划：\n1. 从需求中提取场景目标和角色动作。\n2. 生成 3-5 个关键镜头，每个镜头保留景别、动作、情绪和画面提示词。\n3. 先生成首帧图片，再接视频生成节点。\n\n需求：{prompt}\n来源：{_selected_node_titles(selected_nodes)}\n模型：{model_code}"
 
 
 def create_sluvo_agent_action(

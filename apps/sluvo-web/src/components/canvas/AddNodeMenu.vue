@@ -60,7 +60,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { AudioLines, Clapperboard, FileText, ImagePlus, Library, Scissors, Upload, Video } from 'lucide-vue-next'
+import { AudioLines, Bot, Clapperboard, FileText, ImagePlus, Library, Scissors, Upload, Video } from 'lucide-vue-next'
 
 const props = defineProps({
   position: {
@@ -141,6 +141,15 @@ const nodeItems = [
     icon: Clapperboard,
     badge: 'Beta',
     patch: { title: '脚本节点', kindLabel: '脚本', numberedTitle: true }
+  },
+  {
+    id: 'agent',
+    label: 'Agent',
+    description: '读取上下文并提出画布改动',
+    type: 'agent_node',
+    icon: Bot,
+    badge: 'Beta',
+    patch: { title: 'Agent 节点', kindLabel: 'Agent', numberedTitle: true }
   }
 ]
 

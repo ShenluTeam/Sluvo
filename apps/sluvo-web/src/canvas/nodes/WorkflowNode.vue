@@ -75,6 +75,7 @@ import { computed } from 'vue'
 import {
   ArrowUp,
   AudioLines,
+  Bot,
   Clapperboard,
   FileText,
   Image,
@@ -194,6 +195,18 @@ const configs = {
       { label: '合并片段', icon: Scissors },
       { label: '从历史选择', icon: Library },
       { label: '导出预览', icon: Video }
+    ]
+  },
+  agent_node: {
+    icon: Bot,
+    hero: 'compose',
+    prompt: '读取连接的节点，生成可审阅、可批准、可撤销的画布创作建议。',
+    model: 'DeepSeek v4',
+    chips: ['选区', '提案', '审批'],
+    suggestions: [
+      { label: '分析选区', icon: Bot },
+      { label: '生成下游', icon: Clapperboard },
+      { label: '检查一致性', icon: Sparkles }
     ]
   }
 }

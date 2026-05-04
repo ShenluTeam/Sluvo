@@ -197,6 +197,8 @@ Standalone Sluvo:
 | Upload persistent canvas asset as base64 | `POST /api/sluvo/canvases/{canvas_id}/assets/upload/base64` |
 | Manage project members | `/api/sluvo/projects/{project_id}/members` |
 | Canvas Agent persistence | `/api/sluvo/projects/{project_id}/agent/sessions`, `/api/sluvo/agent/*` |
+| My Agent templates | `GET/POST /api/sluvo/agents`, `GET/PATCH/DELETE /api/sluvo/agents/{agent_id}` |
+| Agent community templates | `GET /api/sluvo/community/agents`, publish/fork/unpublish under `/api/sluvo/*/agents/*` |
 | Community canvas list/detail | `GET /api/sluvo/community/canvases`, `GET /api/sluvo/community/canvases/{publication_id}` |
 | Community publish/fork/unpublish | `POST /api/sluvo/projects/{project_id}/community/publish`, `POST /api/sluvo/community/canvases/{publication_id}/fork`, `POST /api/sluvo/community/canvases/{publication_id}/unpublish` |
 
@@ -209,6 +211,9 @@ Frontend implementation note:
 - Canvas uploads use instant local preview, then persist to OSS through Sluvo upload endpoints. Files up to `5MB` use base64 JSON; files over `5MB` and up to `20MB` use multipart upload with progress. Returned OSS URLs are written back to the upload node and `sluvo_canvas_asset`.
 - Sluvo upload objects are stored under the existing per-user OSS namespace, then grouped by Sluvo project and canvas: `users/{namespace}/sluvo/projects/{project}/canvases/{canvas}/{mediaType}/...`. Sluvo upload quota uses the existing storage accounting system and enforces the current `5GB` free-user quota for this upload path.
 - Community canvas list is public card metadata; detail and fork require login. Forked projects reuse original OSS media URLs for v1.
+- Canvas Agent sessions support selectable model codes `deepseek-v4-flash` and `deepseek-v4-pro`. The frontend sends the selected model in session creation and message context; the backend normalizes unknown values to `deepseek-v4-flash`. If `DEEPSEEK_API_KEY` is configured, proposals use the selected DeepSeek model and safely fall back to deterministic canvas proposals on model/API failure.
+- Canvas Agent messages create proposed `SluvoAgentAction` records. Approved actions apply `patch` payloads through the existing canvas batch endpoint semantics and write an Agent-linked mutation audit record.
+- User-created Agent templates are no-code prompt/config packages. Community Agent publications are sanitized snapshots and do not include private memory.
 
 For the complete `api.shenlu.top` inventory and Sluvo suitability notes, read `doc/API_SHENLU_TOP.md`.
 

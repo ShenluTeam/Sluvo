@@ -1230,8 +1230,11 @@ VALID_SLUVO_MEMBER_ROLES = {
 VALID_SLUVO_NODE_TYPES = {"text", "image", "video", "audio", "upload", "generation", "agent", "group", "note"}
 VALID_SLUVO_EDGE_TYPES = {"reference", "dependency", "generation", "sequence", "group", "custom"}
 VALID_SLUVO_AGENT_ACTION_STATUSES = {"proposed", "approved", "running", "succeeded", "failed", "cancelled"}
+VALID_SLUVO_AGENT_MODEL_CODES = {"deepseek-v4-flash", "deepseek-v4-pro"}
 SLUVO_COMMUNITY_CANVAS_STATUS_PUBLISHED = "published"
 SLUVO_COMMUNITY_CANVAS_STATUS_UNPUBLISHED = "unpublished"
+SLUVO_COMMUNITY_AGENT_STATUS_PUBLISHED = "published"
+SLUVO_COMMUNITY_AGENT_STATUS_UNPUBLISHED = "unpublished"
 
 
 def normalize_sluvo_project_status(value: Optional[str]) -> str:
@@ -1259,6 +1262,11 @@ def normalize_sluvo_edge_type(value: Optional[str]) -> str:
     return text if text in VALID_SLUVO_EDGE_TYPES else "custom"
 
 
+def normalize_sluvo_agent_model_code(value: Optional[str]) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in VALID_SLUVO_AGENT_MODEL_CODES else "deepseek-v4-flash"
+
+
 class SluvoProjectCreateRequest(BaseModel):
     title: str
     description: Optional[str] = None
@@ -1277,6 +1285,46 @@ class SluvoProjectUpdateRequest(BaseModel):
 
 
 class SluvoCommunityCanvasPublishRequest(BaseModel):
+    title: str
+    description: Optional[str] = None
+    tags: List[str] = PydanticField(default_factory=list)
+    coverUrl: Optional[str] = None
+
+
+class SluvoAgentTemplateCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    avatarUrl: Optional[str] = None
+    coverUrl: Optional[str] = None
+    profileKey: str = "custom_agent"
+    modelCode: str = "deepseek-v4-flash"
+    rolePrompt: str = ""
+    useCases: List[str] = PydanticField(default_factory=list)
+    inputTypes: List[str] = PydanticField(default_factory=list)
+    outputTypes: List[str] = PydanticField(default_factory=list)
+    tools: List[str] = PydanticField(default_factory=list)
+    approvalPolicy: Dict[str, Any] = PydanticField(default_factory=dict)
+    examples: List[Dict[str, Any]] = PydanticField(default_factory=list)
+
+
+class SluvoAgentTemplateUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    avatarUrl: Optional[str] = None
+    coverUrl: Optional[str] = None
+    profileKey: Optional[str] = None
+    modelCode: Optional[str] = None
+    rolePrompt: Optional[str] = None
+    useCases: Optional[List[str]] = None
+    inputTypes: Optional[List[str]] = None
+    outputTypes: Optional[List[str]] = None
+    tools: Optional[List[str]] = None
+    approvalPolicy: Optional[Dict[str, Any]] = None
+    examples: Optional[List[Dict[str, Any]]] = None
+    memory: Optional[Dict[str, Any]] = None
+
+
+class SluvoCommunityAgentPublishRequest(BaseModel):
     title: str
     description: Optional[str] = None
     tags: List[str] = PydanticField(default_factory=list)
@@ -1393,6 +1441,7 @@ class SluvoAgentSessionCreateRequest(BaseModel):
     targetNodeId: Optional[str] = None
     title: Optional[str] = None
     agentProfile: str = "canvas_agent"
+    modelCode: str = "deepseek-v4-flash"
     mode: str = "semi_auto"
     contextSnapshot: Dict[str, Any] = PydanticField(default_factory=dict)
 
