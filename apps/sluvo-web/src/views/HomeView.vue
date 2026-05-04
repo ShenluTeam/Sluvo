@@ -191,7 +191,9 @@
               <div class="creator-console__mascot">
                 <Sparkles :size="20" />
               </div>
-              <h1 id="creator-title">导演～今天想创作什么影视项目？</h1>
+              <h1 id="creator-title" class="creator-headline">
+                <span :key="activeCreatorHeadline">{{ activeCreatorHeadline }}</span>
+              </h1>
               <p>输入创意、粘贴剧本，或上传参考素材。Sluvo 会把它整理成可执行画布，并逐步沉淀为可复用、可分享的创作流程。</p>
 
               <form class="prompt-composer" @submit.prevent="startProjectFromPrompt()">
@@ -521,7 +523,9 @@ const promptText = ref('')
 const projectFeedback = ref('')
 const deletingProjectIds = ref(new Set())
 const activeShowcaseIndex = ref(0)
+const activeHeadlineIndex = ref(0)
 let showcaseRotationTimer = null
+let headlineRotationTimer = null
 const accountPoints = ref(0)
 const communityCanvases = ref([])
 const communityLoading = ref(false)
@@ -538,6 +542,7 @@ const visibleShowcaseItems = computed(() => {
     .filter(Boolean)
 })
 const visibleCommunityCanvases = computed(() => communityCanvases.value.slice(0, 6))
+const activeCreatorHeadline = computed(() => creatorHeadlines[activeHeadlineIndex.value] || creatorHeadlines[0])
 
 const remoteMedia = {
   character: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-character-board.webp',
@@ -734,6 +739,15 @@ const skillChips = [
   { label: '分镜到视频链路', icon: Clapperboard },
   { label: '保存为画布 Skill', icon: PackageOpen },
   { label: '社区画布灵感', icon: Expand, badge: '多模型' }
+]
+
+const creatorHeadlines = [
+  '导演～今天想创作什么影视项目？',
+  '编剧～今天想展开哪段高能剧情？',
+  '分镜师～今天想推进哪场关键戏？',
+  '美术导演～今天想定下什么视觉风格？',
+  '制片人～今天想搭建哪条漫剧生产线？',
+  'Agent 团队～今天想拆解哪条创作链路？'
 ]
 
 const ecosystemVisualCards = [
@@ -1013,6 +1027,19 @@ function startShowcaseRotation() {
   }, 4200)
 }
 
+function startHeadlineRotation() {
+  stopHeadlineRotation()
+  headlineRotationTimer = window.setInterval(() => {
+    activeHeadlineIndex.value = (activeHeadlineIndex.value + 1) % creatorHeadlines.length
+  }, 3600)
+}
+
+function stopHeadlineRotation() {
+  if (!headlineRotationTimer) return
+  window.clearInterval(headlineRotationTimer)
+  headlineRotationTimer = null
+}
+
 function stopShowcaseRotation() {
   if (!showcaseRotationTimer) return
   window.clearInterval(showcaseRotationTimer)
@@ -1092,6 +1119,7 @@ onMounted(() => {
   readAuthState()
   loadCommunityCanvases()
   startShowcaseRotation()
+  startHeadlineRotation()
   window.addEventListener('storage', handleStorage)
 })
 
@@ -1109,6 +1137,7 @@ watch(
 
 onBeforeUnmount(() => {
   stopShowcaseRotation()
+  stopHeadlineRotation()
   window.removeEventListener('storage', handleStorage)
 })
 </script>
@@ -1742,7 +1771,7 @@ onBeforeUnmount(() => {
   z-index: 3;
   display: grid;
   justify-items: center;
-  width: min(720px, 100%);
+  width: min(980px, 100%);
   padding: 24px 20px;
 }
 
@@ -1761,8 +1790,22 @@ onBeforeUnmount(() => {
 .creator-console h1 {
   margin: 0 0 10px;
   color: #fff8e6;
-  font-size: clamp(30px, 4vw, 52px);
+  font-size: 52px;
   letter-spacing: 0;
+}
+
+.creator-headline {
+  display: block;
+  width: 100%;
+  min-height: 1.18em;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.creator-headline span {
+  display: inline-block;
+  max-width: 100%;
+  animation: creator-headline-rise 0.58s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .creator-console p {
@@ -2754,6 +2797,20 @@ onBeforeUnmount(() => {
   }
 }
 
+@keyframes creator-headline-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    filter: blur(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
 @keyframes orbitPulse {
   0%,
   100% {
@@ -2850,6 +2907,10 @@ onBeforeUnmount(() => {
     min-height: 540px;
   }
 
+  .creator-console h1 {
+    font-size: 44px;
+  }
+
   .hero-media-card--agent,
   .hero-media-card--skill {
     display: none;
@@ -2936,6 +2997,10 @@ onBeforeUnmount(() => {
 
   .creator-stage {
     min-height: 520px;
+  }
+
+  .creator-console h1 {
+    font-size: 32px;
   }
 
   .creator-stage::before {
@@ -3068,6 +3133,10 @@ onBeforeUnmount(() => {
 
   .creator-console__content {
     padding: 26px 0 8px;
+  }
+
+  .creator-console h1 {
+    font-size: 22px;
   }
 
   .showcase-card {

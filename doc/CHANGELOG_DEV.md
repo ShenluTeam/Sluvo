@@ -3,6 +3,21 @@
 ## 2026-05-04
 
 Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the logged-in homepage creator headline into a single-line rotating slogan.
+- Added six director/producer/storyboard/agent-themed prompt slogans while preserving the existing headline as the first line.
+- Widened the headline content area and added responsive type sizes so the desktop title stays on one row.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
 - `apps/sluvo-web/src/views/CommunityCanvasView.vue`
 - `doc/CHANGELOG_DEV.md`
 
