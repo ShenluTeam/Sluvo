@@ -1658,6 +1658,13 @@ onBeforeUnmount(() => {
   margin-top: auto;
 }
 
+.rail-separator {
+  width: 32px;
+  height: 1px;
+  margin: 4px 0;
+  background: rgba(214, 181, 109, 0.12);
+}
+
 .workbench-main {
   min-width: 0;
   padding-bottom: 64px;
@@ -3276,6 +3283,12 @@ onBeforeUnmount(() => {
 
   .rail-logo {
     margin: 0 8px 0 0;
+  }
+
+  .rail-separator {
+    width: 1px;
+    height: 28px;
+    margin: 0 2px;
   }
 
   .rail-tool--muted {

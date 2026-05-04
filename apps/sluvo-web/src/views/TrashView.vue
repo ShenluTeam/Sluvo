@@ -5,14 +5,15 @@
         <img :src="logoUrl" alt="" />
       </button>
       <button class="rail-tool" type="button" aria-label="首页" @click="goHome">
-        <Home :size="20" />
+        <Compass :size="20" />
       </button>
       <button class="rail-tool" type="button" aria-label="全部项目" @click="goProjects">
         <FolderOpen :size="20" />
       </button>
       <button class="rail-tool" type="button" aria-label="开放社区" @click="goCommunity">
-        <Compass :size="20" />
+        <Image :size="20" />
       </button>
+      <span class="rail-separator" />
       <button class="rail-tool rail-tool--muted is-active" type="button" aria-label="回收站">
         <Trash2 :size="19" />
       </button>
@@ -21,7 +22,9 @@
     <section class="trash-main">
       <header class="trash-topbar">
         <button class="trash-brand" type="button" @click="goHome">
-          <img :src="logoUrl" alt="" />
+          <span class="trash-brand__mark">
+            <img :src="logoUrl" alt="" />
+          </span>
           <strong>Sluvo</strong>
         </button>
         <label class="trash-search">
@@ -83,7 +86,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Compass, FolderOpen, Home, Loader2, RotateCcw, Search, Trash2 } from 'lucide-vue-next'
+import { Compass, FolderOpen, Image, Loader2, RotateCcw, Search, Trash2 } from 'lucide-vue-next'
 import logoUrl from '../../LOGO.png'
 import { useAuthStore } from '../stores/authStore'
 import { fetchSluvoProjects, permanentlyDeleteSluvoProject, restoreSluvoProject } from '../api/sluvoApi'
@@ -241,43 +244,64 @@ function formatTrashMeta(project) {
   width: 76px;
   height: 100vh;
   padding: 18px 12px;
-  background: rgba(13, 13, 13, 0.96);
+  border-right: 1px solid rgba(214, 181, 109, 0.12);
+  background: rgba(13, 11, 7, 0.96);
 }
 
 .rail-logo,
+.trash-brand__mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 2px;
+  border: 1px solid rgba(214, 181, 109, 0.32);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(255, 241, 199, 0.16), rgba(214, 181, 109, 0.08)),
+    #0e0b06;
+  color: #ffe7a4;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.rail-logo {
+  margin-bottom: 18px;
+}
+
+.rail-logo img,
+.trash-brand__mark img {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
 .rail-tool {
   display: grid;
   place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 12px;
-  color: rgba(249, 241, 220, 0.72);
-}
-
-.rail-logo {
-  overflow: hidden;
-  border: 1px solid rgba(214, 181, 109, 0.32);
   border-radius: 8px;
-}
-
-.rail-logo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.rail-tool {
-  background: rgba(255, 255, 255, 0.04);
+  background: transparent;
+  color: rgba(249, 241, 220, 0.7);
 }
 
 .rail-tool:hover,
 .rail-tool.is-active {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff8e6;
+  background: rgba(214, 181, 109, 0.16);
+  color: #fff5d7;
 }
 
 .rail-tool--muted {
   margin-top: auto;
+}
+
+.rail-separator {
+  width: 32px;
+  height: 1px;
+  margin: 4px 0;
+  background: rgba(214, 181, 109, 0.12);
 }
 
 .trash-main {
@@ -297,16 +321,12 @@ function formatTrashMeta(project) {
 .trash-brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
+  padding: 0;
+  background: transparent;
   color: #fff8e6;
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 900;
-}
-
-.trash-brand img {
-  width: 34px;
-  height: 34px;
-  border-radius: 7px;
 }
 
 .trash-search {
@@ -493,7 +513,20 @@ function formatTrashMeta(project) {
     flex-direction: row;
     width: 100%;
     height: 64px;
+    padding: 10px 14px;
     overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid rgba(214, 181, 109, 0.12);
+  }
+
+  .rail-logo {
+    margin: 0 8px 0 0;
+  }
+
+  .rail-separator {
+    width: 1px;
+    height: 28px;
+    margin: 0 2px;
   }
 
   .rail-tool--muted {

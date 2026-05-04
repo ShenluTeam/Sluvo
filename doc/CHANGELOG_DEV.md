@@ -6,6 +6,22 @@ Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
 - `apps/sluvo-web/src/views/ProjectListView.vue`
 - `apps/sluvo-web/src/views/TrashView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Aligned the full project space and recycle-bin navigation rail with the logged-in homepage rail.
+- Unified rail logo sizing, dark gold background, active/hover states, icon order, separator styling, and topbar brand logo framing across the logged-in pages.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/src/views/ProjectListView.vue`
+- `apps/sluvo-web/src/views/TrashView.vue`
 - `doc/UI_REQUIREMENTS.md`
 - `doc/CHANGELOG_DEV.md`
 
