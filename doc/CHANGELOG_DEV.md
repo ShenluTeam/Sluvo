@@ -3,6 +3,20 @@
 ## 2026-05-04
 
 Changed files:
+- `apps/sluvo-web/index.html`
+- `apps/sluvo-web/public/favicon.png`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added the Sluvo logo as the website favicon and Apple touch icon so browser tabs and shortcuts show the product logo instead of the default browser icon.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
 - `backend/services/sluvo_service.py`
 - `doc/CHANGELOG_DEV.md`
 
