@@ -19,6 +19,8 @@ The logged-in homepage must expose a clear logout action near the account contro
 
 On the logged-in homepage, the recent creation grid must place the new-project card first. Existing project cards should use the project's own first uploaded image as the cover when available; projects without images should render as no-cover cards instead of falling back to sample or decorative media.
 
+After the logged-in homepage prompt composer, the first lower module should prioritize creation: a prominent new-canvas card, recent projects, and only lightweight platform highlights beside or below them. Showcase, community, and ecosystem education modules should come after this creation start area.
+
 The open canvas community should feel like a creator gallery, not an admin table. Guests may browse community cards, but detail and fork actions must lead through login. Community detail is read-only; reuse happens by forking into a new editable project.
 
 Design tone:

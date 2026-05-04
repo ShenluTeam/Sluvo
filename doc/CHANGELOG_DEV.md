@@ -4,6 +4,22 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Reordered the logged-in homepage lower area so the creation start module appears before inspiration samples and community content.
+- Added a creation-first two-column section with a prominent new-canvas card, up to four recent projects, empty-state guidance, and lightweight platform highlights.
+- Merged the open ecosystem and Agent capability blocks into one lower explanatory section to reduce page weight while preserving platform positioning.
+
+Verification:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-04
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:

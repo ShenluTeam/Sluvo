@@ -227,6 +227,121 @@
           </div>
         </section>
 
+        <section ref="projectsSection" class="home-section creation-start" aria-labelledby="creation-title">
+          <div class="creation-start__main">
+            <div class="section-heading section-heading--stacked">
+              <h2 id="creation-title">
+                <Sparkles :size="22" />
+                开始创作
+              </h2>
+              <p>新建一张画布，或继续最近的漫剧项目。</p>
+            </div>
+
+            <p v-if="projectStore.error" class="home-section__error">{{ projectStore.error }}</p>
+
+            <div v-if="projectStore.loadingProjects" class="project-grid project-grid--focused">
+              <article v-for="item in 3" :key="item" class="project-card project-card--loading">
+                <span class="project-card__preview project-card__preview--empty" />
+                <strong>加载中</strong>
+                <small>正在同步 Sluvo 项目</small>
+              </article>
+            </div>
+
+            <div v-else class="project-grid project-grid--focused">
+              <button
+                class="project-card project-card--empty project-card--create-primary"
+                type="button"
+                :disabled="isCreatingProject"
+                @click="startProjectFromPrompt()"
+              >
+                <span class="project-card__preview project-card__preview--empty">
+                  <span class="project-card__create-icon">
+                    <Plus :size="28" />
+                  </span>
+                </span>
+                <strong>新建画布</strong>
+                <small>从一个创意、剧本、角色或分镜目标开始</small>
+              </button>
+              <article
+                v-for="project in visibleRecentProjects"
+                :key="project.id"
+                class="project-card"
+                tabindex="0"
+                @click="openProject(project.id)"
+                @keydown.enter.prevent="openProject(project.id)"
+                @keydown.space.prevent="openProject(project.id)"
+              >
+                <span
+                  class="project-card__preview"
+                  :class="getProjectCover(project) ? 'project-card__preview--media' : 'project-card__preview--no-cover'"
+                >
+                  <img
+                    v-if="getProjectCover(project)"
+                    :src="getProjectCover(project)"
+                    :alt="project.title || '未命名画布'"
+                    loading="lazy"
+                  />
+                  <span v-else class="project-card__no-cover">无封面</span>
+                </span>
+                <button
+                  class="project-card__delete"
+                  type="button"
+                  :disabled="deletingProjectIds.has(project.id)"
+                  :title="`删除 ${project.title || '未命名画布'}`"
+                  aria-label="删除项目"
+                  @click.stop="deleteProject(project)"
+                >
+                  <Trash2 :size="16" />
+                </button>
+                <strong>{{ project.title || '未命名画布' }}</strong>
+                <small>{{ formatProjectMeta(project) }}</small>
+              </article>
+              <article v-if="projectStore.projects.length === 0" class="project-card project-card--hint">
+                <span class="project-card__hint-icon">
+                  <Film :size="20" />
+                </span>
+                <strong>从样片开始</strong>
+                <small>向下挑一个风格，自动拆成你的下一张画布。</small>
+              </article>
+              <article v-if="projectStore.projects.length === 0" class="project-card project-card--hint">
+                <span class="project-card__hint-icon">
+                  <GitFork :size="20" />
+                </span>
+                <strong>Fork 社区画布</strong>
+                <small>复用其他创作者的节点结构和素材链路。</small>
+              </article>
+            </div>
+          </div>
+
+          <aside class="platform-highlights" aria-label="Sluvo 平台亮点">
+            <div class="platform-highlights__heading">
+              <span>Sluvo 正在构建</span>
+              <strong>把个人创作变成可复用资产</strong>
+            </div>
+            <article>
+              <span><Share2 :size="18" /></span>
+              <div>
+                <strong>开放画布</strong>
+                <p>创作过程可以发布、Fork，并成为社区资产。</p>
+              </div>
+            </article>
+            <article>
+              <span><UsersRound :size="18" /></span>
+              <div>
+                <strong>Agent 团队</strong>
+                <p>把导演、编剧、分镜、美术组织成可复用团队。</p>
+              </div>
+            </article>
+            <article>
+              <span><PackageOpen :size="18" /></span>
+              <div>
+                <strong>画布 Skill</strong>
+                <p>把高频工作流沉淀成可安装的创作方法。</p>
+              </div>
+            </article>
+          </aside>
+        </section>
+
         <section class="home-section showcase-section" aria-labelledby="showcase-title">
           <div class="section-heading section-heading--stacked">
             <h2 id="showcase-title">
@@ -323,151 +438,73 @@
           </div>
         </section>
 
-        <section ref="projectsSection" class="home-section recent-projects" aria-labelledby="recent-title">
-          <div class="section-heading section-heading--stacked">
-            <h2 id="recent-title">
-              <Sparkles :size="22" />
-              最近创作
-            </h2>
-            <p>继续你的画布，或把一次创作过程沉淀为可分享资产。</p>
-          </div>
-
-          <p v-if="projectStore.error" class="home-section__error">{{ projectStore.error }}</p>
-
-          <div v-if="projectStore.loadingProjects" class="project-grid">
-            <article v-for="item in 3" :key="item" class="project-card project-card--loading">
-              <span class="project-card__preview project-card__preview--empty" />
-              <strong>加载中</strong>
-              <small>正在同步 Sluvo 项目</small>
-            </article>
-          </div>
-
-          <div v-else class="project-grid">
-            <button
-              class="project-card project-card--empty"
-              type="button"
-              :disabled="isCreatingProject"
-              @click="startProjectFromPrompt()"
-            >
-              <span class="project-card__preview project-card__preview--empty">
-                <span class="project-card__create-icon">
-                  <Plus :size="24" />
-                </span>
-              </span>
-              <strong>新建项目</strong>
-              <small>创建一个 Sluvo 画布</small>
-            </button>
-            <article
-              v-for="project in projectStore.projects"
-              :key="project.id"
-              class="project-card"
-              tabindex="0"
-              @click="openProject(project.id)"
-              @keydown.enter.prevent="openProject(project.id)"
-              @keydown.space.prevent="openProject(project.id)"
-            >
-              <span
-                class="project-card__preview"
-                :class="getProjectCover(project) ? 'project-card__preview--media' : 'project-card__preview--no-cover'"
-              >
-                <img
-                  v-if="getProjectCover(project)"
-                  :src="getProjectCover(project)"
-                  :alt="project.title || '未命名画布'"
-                  loading="lazy"
-                />
-                <span v-else class="project-card__no-cover">无封面</span>
-              </span>
-              <button
-                class="project-card__delete"
-                type="button"
-                :disabled="deletingProjectIds.has(project.id)"
-                :title="`删除 ${project.title || '未命名画布'}`"
-                aria-label="删除项目"
-                @click.stop="deleteProject(project)"
-              >
-                <Trash2 :size="16" />
-              </button>
-              <strong>{{ project.title || '未命名画布' }}</strong>
-              <small>{{ formatProjectMeta(project) }}</small>
-            </article>
-          </div>
-        </section>
-
-        <section class="home-section open-ecosystem" aria-labelledby="ecosystem-title">
+        <section class="home-section ecosystem-agent-section" aria-labelledby="ecosystem-title">
           <div class="section-heading section-heading--stacked">
             <h2 id="ecosystem-title">
               <Sparkles :size="22" />
-              开放生态目标
+              开放生态与 Agent 能力
             </h2>
-            <p>Sluvo 会把个人创作升级为可复用的社区资产。</p>
+            <p>Sluvo 会把个人创作升级为可复用的社区资产，并让 Agent 参与画布上下文协作。</p>
           </div>
 
-          <div class="open-ecosystem-grid">
-            <article v-for="item in ecosystemVisualCards" :key="item.title" class="open-ecosystem-card">
-              <span class="open-ecosystem-card__visual">
-                <video
-                  v-if="item.videoUrl"
-                  muted
-                  loop
-                  playsinline
-                  preload="metadata"
-                  :poster="item.posterUrl || item.imageUrl"
-                  @mouseenter="playPreviewVideo"
-                  @mouseleave="pausePreviewVideo"
-                  @focusin="playPreviewVideo"
-                  @focusout="pausePreviewVideo"
-                >
-                  <source :src="item.videoUrl" type="video/mp4" />
-                </video>
-                <img v-else :src="item.imageUrl" :alt="item.title" loading="lazy" />
-              </span>
-              <span class="open-ecosystem-card__icon">
-                <component :is="item.icon" :size="20" />
-              </span>
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.description }}</p>
-            </article>
+          <div class="ecosystem-agent-layout">
+            <div class="open-ecosystem-grid open-ecosystem-grid--compact">
+              <article v-for="item in ecosystemVisualCards" :key="item.title" class="open-ecosystem-card">
+                <span class="open-ecosystem-card__visual">
+                  <video
+                    v-if="item.videoUrl"
+                    muted
+                    loop
+                    playsinline
+                    preload="metadata"
+                    :poster="item.posterUrl || item.imageUrl"
+                    @mouseenter="playPreviewVideo"
+                    @mouseleave="pausePreviewVideo"
+                    @focusin="playPreviewVideo"
+                    @focusout="pausePreviewVideo"
+                  >
+                    <source :src="item.videoUrl" type="video/mp4" />
+                  </video>
+                  <img v-else :src="item.imageUrl" :alt="item.title" loading="lazy" />
+                </span>
+                <span class="open-ecosystem-card__icon">
+                  <component :is="item.icon" :size="20" />
+                </span>
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.description }}</p>
+              </article>
+            </div>
+
+            <div class="agent-panel agent-panel--compact">
+              <article class="agent-primary">
+                <span class="agent-primary__eyebrow">Sluvo Agent Team</span>
+                <h3>让每个创作者都能组建自己的漫剧 Agent 团队</h3>
+                <p>Sluvo 会让 Agent 读取画布上下文、理解节点关系、提出下一步动作，并把一套有效的协作方式保存为可分享的团队模板。</p>
+                <div class="agent-flow" aria-label="Agent workflow steps">
+                  <span>理解</span>
+                  <span>分工</span>
+                  <span>执行</span>
+                  <span>沉淀</span>
+                </div>
+              </article>
+
+              <div class="agent-capability-list">
+                <article v-for="item in agentCapabilities" :key="item.title" class="agent-capability">
+                  <span class="agent-capability__icon">
+                    <component :is="item.icon" :size="20" />
+                  </span>
+                  <div>
+                    <strong>{{ item.title }}</strong>
+                    <p>{{ item.description }}</p>
+                  </div>
+                </article>
+              </div>
+            </div>
           </div>
 
           <div class="open-ecosystem-cta">
             <span>从今天的每一次创作开始，积累未来可分享的创作资产。</span>
             <button type="button" :disabled="isCreatingProject" @click="startProjectFromPrompt()">创建开放画布</button>
-          </div>
-        </section>
-
-        <section class="home-section agent-section" aria-labelledby="agent-title">
-          <div class="section-heading">
-            <h2 id="agent-title">
-              <Sparkles :size="22" />
-              Agent 能力栈
-            </h2>
-          </div>
-
-          <div class="agent-panel">
-            <article class="agent-primary">
-              <span class="agent-primary__eyebrow">Sluvo Agent Team</span>
-              <h3>让每个创作者都能组建自己的漫剧 Agent 团队</h3>
-              <p>Sluvo 会让 Agent 读取画布上下文、理解节点关系、提出下一步动作，并把一套有效的协作方式保存为可分享的团队模板。</p>
-              <div class="agent-flow" aria-label="Agent workflow steps">
-                <span>理解</span>
-                <span>分工</span>
-                <span>执行</span>
-                <span>沉淀</span>
-              </div>
-            </article>
-
-            <div class="agent-capability-list">
-              <article v-for="item in agentCapabilities" :key="item.title" class="agent-capability">
-                <span class="agent-capability__icon">
-                  <component :is="item.icon" :size="20" />
-                </span>
-                <div>
-                  <strong>{{ item.title }}</strong>
-                  <p>{{ item.description }}</p>
-                </div>
-              </article>
-            </div>
           </div>
         </section>
       </div>
@@ -543,6 +580,7 @@ const visibleShowcaseItems = computed(() => {
 })
 const visibleCommunityCanvases = computed(() => communityCanvases.value.slice(0, 6))
 const activeCreatorHeadline = computed(() => creatorHeadlines[activeHeadlineIndex.value] || creatorHeadlines[0])
+const visibleRecentProjects = computed(() => projectStore.projects.slice(0, 4))
 
 const remoteMedia = {
   character: 'https://shenlu1.oss-cn-beijing.aliyuncs.com/static-repo/sluvo/home/showcase/v1/hero-character-board.webp',
@@ -2097,7 +2135,86 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-.showcase-section {
+.creation-start {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(280px, 0.9fr);
+  gap: 18px;
+  width: min(1180px, calc(100vw - 140px));
+  padding-top: 14px;
+  align-items: start;
+}
+
+.creation-start__main,
+.platform-highlights {
+  min-width: 0;
+}
+
+.platform-highlights {
+  position: sticky;
+  top: 92px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(214, 181, 109, 0.14);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(214, 181, 109, 0.16), transparent 34%),
+    rgba(255, 255, 255, 0.04);
+}
+
+.platform-highlights__heading {
+  display: grid;
+  gap: 5px;
+  padding: 4px 4px 8px;
+}
+
+.platform-highlights__heading span {
+  color: #d6b56d;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.platform-highlights__heading strong {
+  color: #fff8e6;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.platform-highlights article {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 241, 199, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.platform-highlights article > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 241, 199, 0.16);
+  border-radius: 8px;
+  background: rgba(214, 181, 109, 0.1);
+  color: #fff1c7;
+}
+
+.platform-highlights article strong {
+  color: #fff8e6;
+  font-size: 15px;
+}
+
+.platform-highlights article p {
+  margin: 5px 0 0;
+  color: rgba(249, 241, 220, 0.56);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.showcase-section,
+.ecosystem-agent-section {
   width: min(1180px, calc(100vw - 140px));
   padding-top: 8px;
 }
@@ -2232,6 +2349,10 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 
+.project-grid--focused {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .project-card {
   position: relative;
   display: grid;
@@ -2248,6 +2369,30 @@ onBeforeUnmount(() => {
     transform 0.18s ease,
     border-color 0.18s ease,
     background 0.18s ease;
+}
+
+.project-card--create-primary {
+  grid-row: span 2;
+  min-height: 100%;
+  border-color: rgba(255, 221, 151, 0.34);
+  background:
+    radial-gradient(circle at 50% 30%, rgba(214, 181, 109, 0.18), transparent 44%),
+    linear-gradient(145deg, rgba(214, 181, 109, 0.14), rgba(255, 255, 255, 0.045));
+}
+
+.project-card--create-primary .project-card__preview--empty {
+  min-height: 190px;
+}
+
+.project-card--create-primary strong {
+  font-size: 20px;
+}
+
+.project-card--create-primary small {
+  color: rgba(255, 248, 230, 0.66);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: normal;
 }
 
 .project-card--empty {
@@ -2408,6 +2553,32 @@ onBeforeUnmount(() => {
   color: #fff1c7;
 }
 
+.project-card__hint-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin: 8px 4px 4px;
+  border: 1px solid rgba(255, 241, 199, 0.18);
+  border-radius: 8px;
+  background: rgba(214, 181, 109, 0.1);
+  color: #fff1c7;
+}
+
+.project-card--hint {
+  min-height: 156px;
+  align-content: center;
+  cursor: default;
+  background:
+    linear-gradient(145deg, rgba(214, 181, 109, 0.06), transparent 62%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.project-card--hint small {
+  line-height: 1.5;
+  white-space: normal;
+}
+
 .project-card strong {
   padding: 0 4px;
   overflow: hidden;
@@ -2563,6 +2734,39 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 
+.ecosystem-agent-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.open-ecosystem-grid--compact {
+  grid-template-columns: 1fr;
+}
+
+.open-ecosystem-grid--compact .open-ecosystem-card {
+  grid-template-columns: 132px minmax(0, 1fr);
+  min-height: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+}
+
+.open-ecosystem-grid--compact .open-ecosystem-card__visual {
+  grid-row: span 3;
+  aspect-ratio: 4 / 3;
+}
+
+.open-ecosystem-grid--compact .open-ecosystem-card__icon {
+  display: none;
+}
+
+.open-ecosystem-grid--compact .open-ecosystem-card strong,
+.open-ecosystem-grid--compact .open-ecosystem-card p {
+  padding: 0;
+}
+
 .open-ecosystem-card {
   display: grid;
   align-content: start;
@@ -2654,6 +2858,18 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(min(100%, 300px), 0.8fr);
   gap: 16px;
+}
+
+.agent-panel--compact {
+  grid-template-columns: minmax(0, 1.05fr) minmax(260px, 0.82fr);
+}
+
+.agent-panel--compact .agent-primary {
+  min-height: 312px;
+}
+
+.agent-panel--compact .agent-primary h3 {
+  font-size: clamp(24px, 2.4vw, 36px);
 }
 
 .agent-primary {
@@ -2899,8 +3115,28 @@ onBeforeUnmount(() => {
 
   .creator-console,
   .home-section,
-  .showcase-section {
+  .showcase-section,
+  .creation-start,
+  .ecosystem-agent-section {
     width: min(820px, calc(100vw - 116px));
+  }
+
+  .creation-start,
+  .ecosystem-agent-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-highlights {
+    position: static;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .platform-highlights__heading {
+    grid-column: 1 / -1;
+  }
+
+  .agent-panel--compact {
+    grid-template-columns: 1fr;
   }
 
   .creator-stage {
@@ -2991,8 +3227,29 @@ onBeforeUnmount(() => {
 
   .creator-console,
   .home-section,
-  .showcase-section {
+  .showcase-section,
+  .creation-start,
+  .ecosystem-agent-section {
     width: calc(100vw - 32px);
+  }
+
+  .project-grid--focused,
+  .platform-highlights,
+  .open-ecosystem-grid--compact .open-ecosystem-card {
+    grid-template-columns: 1fr;
+  }
+
+  .project-card--create-primary {
+    grid-row: auto;
+  }
+
+  .project-card--create-primary .project-card__preview--empty {
+    min-height: 150px;
+  }
+
+  .open-ecosystem-grid--compact .open-ecosystem-card__visual {
+    grid-row: auto;
+    aspect-ratio: 16 / 9;
   }
 
   .creator-stage {
