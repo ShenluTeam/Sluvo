@@ -4,6 +4,33 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/database.py`
+- `backend/models.py`
+- `backend/schemas.py`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Aligned the right-side Agent panel with openOii's conversation shape by rendering user messages, Agent bubbles, handoff events, waiting-confirmation prompts, confirmation events, and completion/failure states above the existing artifact timeline.
+- Added persisted Sluvo Agent Run/Step/Artifact support, openOii-style event payloads, Run create/list/read/continue/confirm-cost/retry endpoints, and an SSE Run event stream at `/api/sluvo/agent/runs/{run_id}/events`.
+- Updated the default official Agent team to the openOii creative pipeline: Onboarding, Director, Scriptwriter, Character Artist, Storyboard Artist, Video Generator, Video Merger, and Review.
+- Kept typed feedback separate from explicit `继续下一步` progression; feedback is routed through Review-style revision while continue advances the next production Agent.
+
+Verification suggestions:
+- `python3 -m py_compile models.py schemas.py routers/sluvo.py services/sluvo_service.py`
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `backend/schemas.py`
 - `backend/routers/sluvo.py`
 - `backend/services/sluvo_service.py`

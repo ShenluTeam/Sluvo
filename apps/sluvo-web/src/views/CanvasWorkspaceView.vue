@@ -1142,6 +1142,28 @@
         </section>
 
         <section class="canvas-agent-run">
+          <div v-if="agentConversationMessages.length" class="canvas-agent-conversation canvas-agent-conversation--live">
+            <article
+              v-for="message in agentConversationMessages"
+              :key="message.id"
+              class="canvas-agent-message canvas-agent-message--live"
+              :class="getAgentConversationMessageClass(message)"
+            >
+              <div class="canvas-agent-message__avatar">
+                <span>{{ getAgentConversationAvatar(message) }}</span>
+              </div>
+              <div class="canvas-agent-message__bubble">
+                <header>
+                  <div>
+                    <span>{{ message.kindLabel }}</span>
+                    <strong>{{ message.agentName }}</strong>
+                  </div>
+                  <b :class="`is-${message.status || 'succeeded'}`">{{ message.statusLabel }}</b>
+                </header>
+                <p>{{ message.content }}</p>
+              </div>
+            </article>
+          </div>
           <div v-if="agentPanel.activeRun && !isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-run__status">
             <div>
               <span>{{ getAgentRunStatusLabel(agentPanel.activeRun.run.status) }}</span>
@@ -1810,91 +1832,119 @@ const publishDialog = reactive({
 })
 const agentProfiles = [
   { id: 'auto', label: '自动派发（推荐）' },
-  { id: 'canvas_agent', label: '画布协作 Agent' },
-  { id: 'story_director', label: '故事发展 Agent' },
-  { id: 'storyboard_director', label: '分镜导演 Agent' },
-  { id: 'prompt_polisher', label: 'Prompt 精修 Agent' },
-  { id: 'consistency_checker', label: '一致性检查 Agent' },
-  { id: 'production_planner', label: '制片调度 Agent' }
+  { id: 'onboarding', label: 'Onboarding Agent' },
+  { id: 'director', label: 'Director Agent' },
+  { id: 'scriptwriter', label: 'Scriptwriter Agent' },
+  { id: 'character_artist', label: 'Character Artist Agent' },
+  { id: 'storyboard_artist', label: 'Storyboard Artist Agent' },
+  { id: 'video_generator', label: 'Video Generator Agent' },
+  { id: 'video_merger', label: 'Video Merger Agent' },
+  { id: 'review', label: 'Review Agent' }
 ]
 const officialAgentCards = [
   {
-    name: '创作总监',
-    description: '识别询问、灵感或剧本；普通问题直接回答，创作输入进入接力。',
-    stepKey: 'understand_story',
+    name: 'Onboarding Agent',
+    description: '分析故事目标、输入素材和创作边界，决定是否进入完整流水线。',
+    stepKey: 'onboarding',
     stage: 'ideate',
-    profileKey: 'canvas_agent',
-    output: '意图/剧本',
-    rolePrompt: '你是 Sluvo 创作总监，负责判断用户输入是询问、灵感还是剧本。询问直接回答；灵感先扩成剧本；剧本进入角色、场景、道具和分镜接力。',
-    useCases: ['意图识别', '直接问答', '灵感扩写'],
+    profileKey: 'onboarding',
+    output: '需求分析',
+    rolePrompt: '你是 Onboarding Agent，负责理解用户创作目标、输入素材、风格偏好和边界，并把任务交给导演规划。',
+    useCases: ['需求分析', '创作边界', '输入整理'],
     inputTypes: ['text', 'image', 'canvas'],
-    outputTypes: ['answer', 'script', 'note'],
-    tools: ['read_canvas', 'route_agents', 'propose_canvas_patch']
+    outputTypes: ['brief', 'note'],
+    tools: ['read_canvas', 'route_agents']
   },
   {
-    name: '故事发展 Agent',
-    description: '把灵感扩成故事结构、冲突、人物关系和剧情节奏。',
-    stepKey: 'develop_story',
+    name: 'Director Agent',
+    description: '规划整体故事方向、风格、情绪、节奏和镜头策略。',
+    stepKey: 'director',
     stage: 'ideate',
-    profileKey: 'story_director',
-    output: '故事总览',
-    rolePrompt: '你是故事发展 Agent，负责把灵感、剧本或选区内容扩展为故事结构、冲突、角色关系、剧情节奏和可继续拆解的文本节点。',
-    useCases: ['故事扩写', '冲突设计', '剧情节奏'],
+    profileKey: 'director',
+    output: '导演规划',
+    rolePrompt: '你是 Director Agent，负责把需求转为故事方向、视听风格、节奏规划和后续 Agent 的工作边界。',
+    useCases: ['导演规划', '风格设定', '节奏设计'],
     inputTypes: ['text', 'canvas'],
-    outputTypes: ['story_outline', 'note'],
+    outputTypes: ['director_plan', 'note'],
     tools: ['read_canvas', 'propose_canvas_patch']
   },
   {
-    name: '角色场景 Agent',
-    description: '提取角色外观、场景气氛、道具和一致性锚点。',
-    stepKey: 'extract_assets',
-    stage: 'visualize',
-    profileKey: 'custom_agent',
-    output: '角色/场景',
-    rolePrompt: '你是角色场景 Agent，负责提取角色外观、服装、道具、场景、光线、色彩和连续性约束，输出可写入画布的角色与场景设定。',
-    useCases: ['角色提取', '场景设定', '道具整理'],
-    inputTypes: ['text', 'image', 'canvas'],
-    outputTypes: ['character_brief', 'scene_brief', 'note'],
-    tools: ['read_canvas', 'propose_canvas_patch']
-  },
-  {
-    name: '分镜导演 Agent',
-    description: '把故事拆成镜头、景别、动作、情绪和生成链路。',
-    stepKey: 'plan_storyboard',
-    stage: 'visualize',
-    profileKey: 'storyboard_director',
-    output: '分镜计划',
-    rolePrompt: '你是分镜导演 Agent，负责把故事或选区拆成镜号、景别、动作、情绪、画面提示词，以及首帧图片和视频生成链路。',
-    useCases: ['分镜拆解', '镜头设计', '生成链路'],
-    inputTypes: ['text', 'image', 'canvas'],
-    outputTypes: ['storyboard', 'image_prompt', 'video_prompt'],
-    tools: ['read_canvas', 'propose_canvas_patch']
-  },
-  {
-    name: 'Prompt 精修 Agent',
-    description: '把口语描述改成适合图片/视频生成的稳定提示词。',
-    stepKey: 'polish_prompt',
-    stage: 'visualize',
-    profileKey: 'prompt_polisher',
-    output: '精修 Prompt',
-    rolePrompt: '你是 Prompt 精修 Agent，负责把口语化描述、角色设定、分镜计划改写成适合图片和视频生成的稳定提示词。',
-    useCases: ['提示词润色', '首帧提示词', '视频动作描述'],
+    name: 'Scriptwriter Agent',
+    description: '创作剧本、角色关系、场景节拍和可拆分镜头结构。',
+    stepKey: 'scriptwriter',
+    stage: 'ideate',
+    profileKey: 'scriptwriter',
+    output: '剧本/镜头',
+    rolePrompt: '你是 Scriptwriter Agent，负责生成剧本、角色关系、场景节拍和分镜草案。',
+    useCases: ['剧本创作', '角色关系', '分镜草案'],
     inputTypes: ['text', 'canvas'],
-    outputTypes: ['prompt', 'note'],
+    outputTypes: ['script', 'storyboard_plan'],
     tools: ['read_canvas', 'propose_canvas_patch']
   },
   {
-    name: '制片调度 Agent',
-    description: '整理缺失输入、创建媒体占位，并等待用户确认消耗。',
-    stepKey: 'prepare_generation',
+    name: 'Character Artist Agent',
+    description: '生成角色外观、服装、道具和一致性视觉锚点。',
+    stepKey: 'character_artist',
+    stage: 'visualize',
+    profileKey: 'character_artist',
+    output: '角色图',
+    rolePrompt: '你是 Character Artist Agent，负责把角色描述转成稳定视觉设定和角色图生成计划。',
+    useCases: ['角色设定', '一致性锚点', '角色图生成'],
+    inputTypes: ['text', 'image', 'canvas'],
+    outputTypes: ['character_brief', 'image_placeholder'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: 'Storyboard Artist Agent',
+    description: '为每个镜头规划分镜首帧、构图、景别和画面提示词。',
+    stepKey: 'storyboard_artist',
+    stage: 'visualize',
+    profileKey: 'storyboard_artist',
+    output: '分镜首帧',
+    rolePrompt: '你是 Storyboard Artist Agent，负责把镜头计划转成分镜首帧、构图、景别和画面提示词。',
+    useCases: ['分镜首帧', '构图设计', '画面提示词'],
+    inputTypes: ['text', 'image', 'canvas'],
+    outputTypes: ['storyboard', 'image_prompt', 'image_placeholder'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: 'Video Generator Agent',
+    description: '基于首帧和镜头动作创建视频生成任务，并等待扣费确认。',
+    stepKey: 'video_generator',
     stage: 'animate',
-    profileKey: 'production_planner',
-    output: '生成任务',
-    rolePrompt: '你是制片调度 Agent，负责检查画布中缺失的生成输入，创建图片、视频、音频占位节点，并在任何消耗灵感值的动作前等待用户确认。',
-    useCases: ['任务排期', '媒体占位', '扣费确认'],
-    inputTypes: ['canvas', 'storyboard'],
-    outputTypes: ['image_placeholder', 'video_placeholder', 'report'],
+    profileKey: 'video_generator',
+    output: '视频任务',
+    rolePrompt: '你是 Video Generator Agent，负责根据首帧、镜头运动和动作描述创建视频生成任务；扣费媒体任务必须等待用户确认。',
+    useCases: ['图生视频', '文生视频', '扣费确认'],
+    inputTypes: ['image', 'text', 'storyboard'],
+    outputTypes: ['video_placeholder', 'media_result'],
     tools: ['read_canvas', 'propose_canvas_patch', 'estimate_cost']
+  },
+  {
+    name: 'Video Merger Agent',
+    description: '拼接视频片段，整理最终预览、导出和交付状态。',
+    stepKey: 'video_merger',
+    stage: 'deploy',
+    profileKey: 'video_merger',
+    output: '成片',
+    rolePrompt: '你是 Video Merger Agent，负责把分镜视频合成为最终成片，并整理导出与交付信息。',
+    useCases: ['视频拼接', '成片预览', '导出'],
+    inputTypes: ['video', 'canvas'],
+    outputTypes: ['media_result', 'report'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: 'Review Agent',
+    description: '处理用户反馈，判断应从哪位 Agent 重新进入流水线。',
+    stepKey: 'review',
+    stage: 'ideate',
+    profileKey: 'review',
+    output: '反馈路由',
+    rolePrompt: '你是 Review Agent，负责读取用户反馈，判断需要修改的对象和重新进入流水线的 Agent。',
+    useCases: ['反馈分析', '精准重生成', '重路由'],
+    inputTypes: ['text', 'canvas'],
+    outputTypes: ['report', 'route'],
+    tools: ['read_canvas', 'route_agents']
   }
 ]
 const agentStarterTemplates = [
@@ -1970,6 +2020,8 @@ const agentPanel = reactive({
     toolsText: 'read_canvas, propose_canvas_patch'
   }
 })
+let agentRunEventSource = null
+let agentRunEventStreamId = ''
 const textNodeComposer = reactive({
   input: '',
   modelCode: 'deepseek-v4-flash',
@@ -2287,6 +2339,7 @@ const pendingAgentActionCount = computed(() => (agentPanel.pendingAction ? 1 : 0
 const hasAgentTemplateSelection = computed(() => Boolean(getSelectedAgentTemplate()))
 const agentSessionHistory = computed(() => agentPanel.history.slice(0, 8))
 const agentRunHistory = computed(() => agentPanel.runs.slice(0, 8))
+const agentConversationMessages = computed(() => buildAgentConversationMessages(agentPanel.activeRun))
 const showStarterStrip = computed(
   () =>
     !canvasActivated.value &&
@@ -2528,6 +2581,7 @@ watch(
   () => [agentPanel.profile, agentPanel.modelCode],
   (next, previous = []) => {
     if (suppressAgentSelectionWatch) return
+    closeAgentRunEventStream()
     agentPanel.sessionId = ''
     agentPanel.runId = ''
     agentPanel.activeRun = null
@@ -2550,6 +2604,7 @@ watch(
 watch(
   () => route.params.projectId,
   () => {
+    closeAgentRunEventStream()
     loadProjectCanvas()
   }
 )
@@ -2632,6 +2687,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(textNodeEstimateTimer)
   window.clearInterval(uploadTimer)
   window.clearTimeout(clipboardPasteFallbackTimer)
+  closeAgentRunEventStream()
   window.cancelAnimationFrame(directPortLayoutRaf)
   clearLocalPreviewUrls()
   clearImageGenerationTimers()
@@ -3124,6 +3180,129 @@ function getAgentPanelSubtitle() {
   return '把目标拆成可执行画布产物'
 }
 
+function buildAgentConversationMessages(timeline) {
+  const events = Array.isArray(timeline?.events) ? timeline.events : []
+  const messages = []
+  events.forEach((event, index) => {
+    const payload = event.payload || {}
+    const eventType = event.eventType || payload.eventType || ''
+    if (eventType === 'run_started') {
+      messages.push({
+        id: event.id || `run-started-${index}`,
+        type: 'system',
+        agentName: 'Agent Team',
+        kindLabel: '开始',
+        status: 'running',
+        statusLabel: '运行中',
+        content: 'Agent Team 已进入 openOii 式协作流程。'
+      })
+      return
+    }
+    if (eventType === 'user_message') {
+      messages.push({
+        id: event.id || `user-${index}`,
+        type: 'user',
+        agentName: '你',
+        kindLabel: '用户反馈',
+        status: payload.action === 'revise' ? 'waiting_user' : 'succeeded',
+        statusLabel: payload.action === 'revise' ? '反馈' : '已发送',
+        content: payload.content || ''
+      })
+      return
+    }
+    if (eventType === 'run_message') {
+      messages.push({
+        id: event.id || `agent-${index}`,
+        type: 'agent',
+        agentName: payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent',
+        kindLabel: getAgentStageLabel(payload.stage) || 'Agent',
+        status: payload.isLoading ? 'running' : 'succeeded',
+        statusLabel: payload.isLoading ? '处理中' : '已完成',
+        content: payload.content || ''
+      })
+      return
+    }
+    if (eventType === 'agent_handoff') {
+      messages.push({
+        id: event.id || `handoff-${index}`,
+        type: 'handoff',
+        agentName: 'Agent Handoff',
+        kindLabel: '接力',
+        status: 'succeeded',
+        statusLabel: '接力',
+        content: payload.message || `${payload.from_agent || '上一位 Agent'} 邀请 ${payload.to_agent || '下一位 Agent'} 加入群聊`
+      })
+      return
+    }
+    if (eventType === 'run_awaiting_confirm') {
+      messages.push({
+        id: event.id || `waiting-${index}`,
+        type: 'waiting',
+        agentName: payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent',
+        kindLabel: '等待确认',
+        status: 'waiting_user',
+        statusLabel: '待确认',
+        content: payload.message || payload.question || '请确认是否继续下一步。'
+      })
+      return
+    }
+    if (eventType === 'run_confirmed') {
+      messages.push({
+        id: event.id || `confirmed-${index}`,
+        type: 'system',
+        agentName: 'Agent Team',
+        kindLabel: '确认',
+        status: 'succeeded',
+        statusLabel: '继续',
+        content: payload.message || '已确认，继续执行下一步。'
+      })
+      return
+    }
+    if (eventType === 'run_completed') {
+      messages.push({
+        id: event.id || `completed-${index}`,
+        type: 'system',
+        agentName: 'Agent Team',
+        kindLabel: '完成',
+        status: 'succeeded',
+        statusLabel: '完成',
+        content: 'Agent Team 已完成本轮协作。'
+      })
+      return
+    }
+    if (eventType === 'run_failed') {
+      messages.push({
+        id: event.id || `failed-${index}`,
+        type: 'system',
+        agentName: 'Agent Team',
+        kindLabel: '失败',
+        status: 'failed',
+        statusLabel: '失败',
+        content: payload.error || payload.message || 'Agent Run 执行失败。'
+      })
+    }
+  })
+  return messages.filter((message) => String(message.content || '').trim())
+}
+
+function getAgentConversationMessageClass(message) {
+  return {
+    'is-user-message': message.type === 'user',
+    'is-handoff-message': message.type === 'handoff',
+    'is-waiting_user': message.status === 'waiting_user',
+    'is-failed': message.status === 'failed',
+    'is-running': message.status === 'running'
+  }
+}
+
+function getAgentConversationAvatar(message) {
+  if (message.type === 'user') return '你'
+  if (message.type === 'handoff') return '↗'
+  if (message.type === 'system') return '系'
+  const name = String(message.agentName || 'A').trim()
+  return name.slice(0, 1).toUpperCase()
+}
+
 function getAgentRunGoalTitle() {
   const goal = String(agentPanel.activeRun?.run?.goal || '').trim()
   if (!goal) return '说出一个创作目标'
@@ -3159,6 +3338,52 @@ function getAgentQuestionAnswerText(timeline) {
   return '我会先判断你的输入是普通询问、创作灵感还是已有剧本，再决定直接回答或进入创作拆解。'
 }
 
+function buildAgentRunEventStreamUrl(runId) {
+  const params = new URLSearchParams()
+  const token = window.localStorage.getItem('shenlu_token') || ''
+  if (token) params.set('token', token)
+  const query = params.toString()
+  return buildApiUrl(`/api/sluvo/agent/runs/${runId}/events${query ? `?${query}` : ''}`)
+}
+
+function closeAgentRunEventStream() {
+  if (agentRunEventSource) {
+    agentRunEventSource.close()
+  }
+  agentRunEventSource = null
+  agentRunEventStreamId = ''
+}
+
+function subscribeToAgentRunEvents(runId) {
+  if (!runId || typeof window === 'undefined' || typeof window.EventSource === 'undefined') return
+  if (agentRunEventSource && agentRunEventStreamId === runId) return
+  closeAgentRunEventStream()
+  agentRunEventStreamId = runId
+  const source = new window.EventSource(buildAgentRunEventStreamUrl(runId))
+  source.addEventListener('snapshot', (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}')
+      const timeline = payload.timeline || payload.snapshot
+      if (timeline?.run?.id && timeline.run.id === agentPanel.runId) {
+        setActiveAgentRun(timeline)
+      }
+    } catch {
+      // Ignore malformed stream frames and keep the EventSource retry loop alive.
+    }
+  })
+  source.addEventListener('status', (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}')
+      if (payload.status === 'error') {
+        agentPanel.error = payload.detail || 'Agent Run 实时通道异常'
+      }
+    } catch {
+      agentPanel.error = 'Agent Run 实时通道异常'
+    }
+  })
+  agentRunEventSource = source
+}
+
 function setActiveAgentRun(timeline) {
   if (!timeline?.run?.id) return
   agentPanel.activeRun = timeline
@@ -3170,6 +3395,11 @@ function setActiveAgentRun(timeline) {
   if (assignments && typeof assignments === 'object') {
     agentPanel.agentAssignments = { ...assignments }
   }
+  const index = agentPanel.runs.findIndex((item) => item?.run?.id === timeline.run.id)
+  if (index >= 0) {
+    agentPanel.runs[index] = timeline
+  }
+  subscribeToAgentRunEvents(timeline.run.id)
 }
 
 function getAgentRunHistorySummary(item) {

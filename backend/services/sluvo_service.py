@@ -99,6 +99,46 @@ SLUVO_UPLOAD_MIME_TYPES = {
 }
 
 SLUVO_OFFICIAL_AGENT_PROFILES = {
+    "onboarding": {
+        "name": "Onboarding Agent",
+        "description": "理解创作目标、输入素材和边界，并决定进入哪条创作流水线。",
+        "tools": ["read_canvas", "route_agents"],
+    },
+    "director": {
+        "name": "Director Agent",
+        "description": "规划故事方向、视听风格、节奏和后续 Agent 的工作边界。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "scriptwriter": {
+        "name": "Scriptwriter Agent",
+        "description": "创作剧本、角色关系、场景节拍和可拆分镜头结构。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "character_artist": {
+        "name": "Character Artist Agent",
+        "description": "生成角色外观、服装、道具和一致性视觉锚点。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "storyboard_artist": {
+        "name": "Storyboard Artist Agent",
+        "description": "规划分镜首帧、构图、景别和画面提示词。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "video_generator": {
+        "name": "Video Generator Agent",
+        "description": "基于首帧和镜头动作创建视频生成任务，并等待扣费确认。",
+        "tools": ["read_canvas", "propose_canvas_patch", "estimate_cost"],
+    },
+    "video_merger": {
+        "name": "Video Merger Agent",
+        "description": "拼接视频片段，整理最终预览、导出和交付状态。",
+        "tools": ["read_canvas", "propose_report"],
+    },
+    "review": {
+        "name": "Review Agent",
+        "description": "处理用户反馈，判断应从哪位 Agent 重新进入流水线。",
+        "tools": ["read_canvas", "route_agents"],
+    },
     "canvas_agent": {
         "name": "画布协作 Agent",
         "description": "读取选区和上下文，生成可审阅的画布提案。",
@@ -655,9 +695,18 @@ def _serialize_agent_run_timeline(session: Session, run: SluvoAgentRun) -> Dict[
         .order_by(SluvoAgentStep.order_index.asc(), SluvoAgentStep.id.asc())
     ).all()
     session_item = session.get(SluvoAgentSession, run.session_id) if run.session_id else None
+    events = []
+    if session_item:
+        session_events = session.exec(
+            select(SluvoAgentEvent)
+            .where(SluvoAgentEvent.session_id == session_item.id)
+            .order_by(SluvoAgentEvent.sequence_no.asc(), SluvoAgentEvent.id.asc())
+        ).all()
+        events = [serialize_sluvo_agent_event(item) for item in session_events]
     return {
         "run": serialize_sluvo_agent_run(run),
         "steps": [serialize_sluvo_agent_step(session, item) for item in steps],
+        "events": events,
         "latestSession": serialize_sluvo_agent_session(session_item) if session_item else None,
     }
 
@@ -1145,70 +1194,81 @@ def _build_script_seed(goal: str, context_snapshot: Dict[str, Any], model_code: 
 
 SLUVO_AGENT_WORKFLOW_SPECS = [
     {
-        "stepKey": "understand_story",
+        "stepKey": "onboarding",
         "stage": "ideate",
-        "agentName": "创作总监",
-        "agentProfile": "canvas_agent",
-        "title": "识别意图并起草剧本",
-        "completed": "已识别创作意图并形成剧本草案",
-        "next": "接下来由故事发展 Agent 打磨剧情结构",
-        "question": "剧本方向是否正确？",
-        "artifacts": [("剧本草案", "text_node", "auto_canvas")],
+        "agentName": "Onboarding Agent",
+        "agentProfile": "onboarding",
+        "title": "整理创作目标",
+        "completed": "已理解创作目标并整理输入边界",
+        "next": "接下来 Director Agent 会规划整体故事方向",
+        "question": "创作目标和边界是否正确？",
+        "artifacts": [("需求分析", "text_node", "auto_canvas")],
     },
     {
-        "stepKey": "develop_story",
+        "stepKey": "director",
         "stage": "ideate",
-        "agentName": "故事发展 Agent",
-        "agentProfile": "story_director",
-        "title": "发展故事",
-        "completed": "已完成故事结构整理",
-        "next": "接下来提取角色、场景、道具和一致性锚点",
-        "question": "故事总览是否符合预期？",
-        "artifacts": [("故事结构", "storyboard_plan", "auto_canvas")],
+        "agentName": "Director Agent",
+        "agentProfile": "director",
+        "title": "规划导演方案",
+        "completed": "已完成导演规划",
+        "next": "接下来 Scriptwriter Agent 会展开剧本和镜头节拍",
+        "question": "故事方向、风格和节奏是否符合预期？",
+        "artifacts": [("导演规划", "storyboard_plan", "auto_canvas")],
     },
     {
-        "stepKey": "extract_assets",
+        "stepKey": "scriptwriter",
+        "stage": "ideate",
+        "agentName": "Scriptwriter Agent",
+        "agentProfile": "scriptwriter",
+        "title": "创作剧本与镜头节拍",
+        "completed": "已完成剧本与镜头节拍",
+        "next": "接下来 Character Artist Agent 会建立角色视觉锚点",
+        "question": "剧本、角色关系和镜头节拍是否可继续？",
+        "artifacts": [("剧本草案", "text_node", "auto_canvas"), ("镜头节拍", "storyboard_plan", "auto_canvas")],
+    },
+    {
+        "stepKey": "character_artist",
         "stage": "visualize",
-        "agentName": "角色场景 Agent",
-        "agentProfile": "story_director",
-        "title": "提取角色与场景",
-        "completed": "已完成角色与场景设定",
-        "next": "接下来分镜导演会拆解镜头链路",
-        "question": "角色和场景设定是否满意？",
-        "artifacts": [("角色设定", "character_brief", "auto_canvas"), ("场景设定", "scene_brief", "auto_canvas"), ("道具设定", "prop_brief", "auto_canvas")],
+        "agentName": "Character Artist Agent",
+        "agentProfile": "character_artist",
+        "title": "设计角色视觉",
+        "completed": "已完成角色视觉设定",
+        "next": "接下来 Storyboard Artist Agent 会规划分镜首帧",
+        "question": "角色外观、服装和一致性锚点是否满意？",
+        "artifacts": [("角色设定", "character_brief", "auto_canvas"), ("角色图占位", "image_placeholder", "auto_canvas")],
     },
     {
-        "stepKey": "plan_storyboard",
+        "stepKey": "storyboard_artist",
         "stage": "visualize",
-        "agentName": "分镜导演 Agent",
-        "agentProfile": "storyboard_director",
-        "title": "规划分镜链路",
-        "completed": "已完成分镜链路规划",
-        "next": "接下来 Prompt 精修 Agent 会稳定首帧提示词",
-        "question": "分镜节奏和镜头数量是否合适？",
-        "artifacts": [("分镜计划", "storyboard_plan", "auto_canvas")],
+        "agentName": "Storyboard Artist Agent",
+        "agentProfile": "storyboard_artist",
+        "title": "规划分镜首帧",
+        "completed": "已完成分镜首帧规划",
+        "next": "接下来 Video Generator Agent 会创建视频生成任务",
+        "question": "分镜构图、景别和画面提示是否合适？",
+        "artifacts": [("分镜计划", "storyboard_plan", "auto_canvas"), ("首帧 Prompt", "prompt", "auto_canvas"), ("首帧图片占位", "image_placeholder", "auto_canvas")],
     },
     {
-        "stepKey": "polish_prompt",
-        "stage": "visualize",
-        "agentName": "Prompt 精修 Agent",
-        "agentProfile": "prompt_polisher",
-        "title": "精修生成提示词",
-        "completed": "已完成首帧 Prompt 精修",
-        "next": "接下来制片调度 Agent 会创建媒体生成占位",
-        "question": "提示词是否需要补充风格或镜头约束？",
-        "artifacts": [("首帧 Prompt", "prompt", "auto_canvas")],
-    },
-    {
-        "stepKey": "prepare_generation",
+        "stepKey": "video_generator",
         "stage": "animate",
-        "agentName": "制片调度 Agent",
-        "agentProfile": "production_planner",
-        "title": "创建媒体占位",
-        "completed": "已创建媒体生成占位",
-        "next": "确认后提交图片和视频生成任务",
+        "agentName": "Video Generator Agent",
+        "agentProfile": "video_generator",
+        "title": "创建视频生成任务",
+        "completed": "已创建视频生成任务",
+        "next": "确认后提交生成任务，并交给 Video Merger Agent 整理成片",
         "question": "是否确认消耗灵感值并提交生成？",
-        "artifacts": [("首帧图片占位", "image_placeholder", "requires_cost_confirmation"), ("视频生成占位", "video_placeholder", "requires_cost_confirmation")],
+        "artifacts": [("视频生成占位", "video_placeholder", "requires_cost_confirmation")],
+    },
+    {
+        "stepKey": "video_merger",
+        "stage": "deploy",
+        "agentName": "Video Merger Agent",
+        "agentProfile": "video_merger",
+        "title": "整理成片交付",
+        "completed": "已整理成片合成计划",
+        "next": "本轮 Agent Team 协作已完成",
+        "question": "最终成片计划是否可用？",
+        "artifacts": [("成片合成计划", "report", "readonly")],
     },
 ]
 
@@ -1334,6 +1394,19 @@ def _append_agent_workflow_step(
             model_code=model_code,
         )
         next_agent_name = next_agent["agentName"]
+    if spec_index > 0:
+        previous_spec = SLUVO_AGENT_WORKFLOW_SPECS[spec_index - 1]
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="agent_handoff",
+            payload={
+                "from_agent": previous_spec["stepKey"],
+                "to_agent": spec["stepKey"],
+                "message": f"@{previous_spec['stepKey']} 邀请 @{spec['stepKey']} 加入了群聊",
+            },
+        )
     step = _create_agent_run_step(
         session,
         run=run,
@@ -1381,6 +1454,31 @@ def _append_agent_workflow_step(
     )
     session.commit()
     _write_agent_run_artifacts_to_canvas(session, run=run, user=user, artifacts=artifacts)
+    _append_sluvo_run_event(
+        session,
+        run=run,
+        role="agent",
+        event_type="run_progress",
+        payload={
+            "current_agent": spec["stepKey"],
+            "currentAgent": spec["stepKey"],
+            "stage": spec["stage"],
+            "progress": min((spec_index + 1) / max(len(SLUVO_AGENT_WORKFLOW_SPECS), 1), 1),
+        },
+    )
+    _append_sluvo_run_event(
+        session,
+        run=run,
+        role="agent",
+        event_type="run_message",
+        payload={
+            "agent": spec["stepKey"],
+            "agentName": resolved["agentName"],
+            "stage": spec["stage"],
+            "content": f"{spec['completed']}：{spec['next']}",
+            "stepId": encode_id(step.id),
+        },
+    )
     return artifacts
 
 
@@ -1592,6 +1690,28 @@ def _create_agent_run_artifact(
     return artifact
 
 
+def _append_sluvo_run_event(
+    session: Session,
+    *,
+    run: SluvoAgentRun,
+    role: str,
+    event_type: str,
+    payload: Dict[str, Any],
+) -> Optional[SluvoAgentEvent]:
+    if not run.session_id:
+        return None
+    agent_session = session.get(SluvoAgentSession, run.session_id)
+    if not agent_session:
+        return None
+    return append_sluvo_agent_event(
+        session,
+        agent_session=agent_session,
+        role=role,
+        event_type=event_type,
+        payload={"runId": encode_id(run.id), "run_id": encode_id(run.id), "eventType": event_type, **(payload or {})},
+    )
+
+
 def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin: tuple[float, float]) -> Dict[str, Any]:
     payload = _json_load(artifact.payload_json, {})
     body = str(payload.get("body") or payload.get("prompt") or "").strip()
@@ -1752,6 +1872,8 @@ def create_sluvo_agent_run(
     session.commit()
     session.refresh(run)
     append_sluvo_agent_event(session, agent_session=agent_session, role="user", event_type="run_goal", payload={"content": clean_goal, "runId": encode_id(run.id)})
+    _append_sluvo_run_event(session, run=run, role="user", event_type="user_message", payload={"content": clean_goal})
+    _append_sluvo_run_event(session, run=run, role="system", event_type="run_started", payload={"projectId": encode_id(project.id)})
 
     if intent["intent"] == "question":
         step = _create_agent_run_step(
@@ -1796,6 +1918,14 @@ def create_sluvo_agent_run(
         session.add(run)
         session.commit()
         append_sluvo_agent_event(session, agent_session=agent_session, role="agent", event_type="run_answer", payload={"content": _agent_question_answer(clean_goal), "runId": encode_id(run.id)})
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_message",
+            payload={"agent": "onboarding", "agentName": "Onboarding Agent", "stage": "ideate", "content": _agent_question_answer(clean_goal)},
+        )
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_completed", payload={})
         session.refresh(run)
         return _serialize_agent_run_timeline(session, run)
 
@@ -1832,12 +1962,20 @@ def create_sluvo_agent_run(
         run.updated_at = _utc_now()
         session.add(run)
         session.commit()
-        append_sluvo_agent_event(
+        _append_sluvo_run_event(
             session,
-            agent_session=agent_session,
+            run=run,
             role="agent",
             event_type="run_awaiting_confirm",
-            payload={"content": "第一阶段已完成，等待确认后交给下一位 Agent。", "runId": encode_id(run.id), "artifactCount": len(step_artifacts)},
+            payload={
+                "agent": SLUVO_AGENT_WORKFLOW_SPECS[0]["stepKey"],
+                "agentName": SLUVO_AGENT_WORKFLOW_SPECS[0]["agentName"],
+                "stage": SLUVO_AGENT_WORKFLOW_SPECS[0]["stage"],
+                "message": SLUVO_AGENT_WORKFLOW_SPECS[0]["question"],
+                "question": SLUVO_AGENT_WORKFLOW_SPECS[0]["question"],
+                "next_step": SLUVO_AGENT_WORKFLOW_SPECS[0]["next"],
+                "artifactCount": len(step_artifacts),
+            },
         )
     except Exception as exc:
         session.rollback()
@@ -1862,8 +2000,12 @@ def continue_sluvo_agent_run(
     action: Optional[str] = "continue",
 ) -> Dict[str, Any]:
     clean_content = str(content or "").strip()
-    if not clean_content:
+    normalized_action = str(action or "continue").strip().lower()
+    if not clean_content and normalized_action in {"revise", "feedback", "补充", "修改"}:
         raise HTTPException(status_code=400, detail="补充需求不能为空")
+    if not clean_content and normalized_action == "continue":
+        clean_content = "继续下一步"
+    _append_sluvo_run_event(session, run=run, role="user", event_type="user_message", payload={"content": clean_content, "action": normalized_action})
     existing_steps = session.exec(select(SluvoAgentStep).where(SluvoAgentStep.run_id == run.id).order_by(SluvoAgentStep.order_index)).all()
     summary = _json_load(run.summary_json, {})
     model_code = normalize_sluvo_agent_model_code(summary.get("modelCode") or "deepseek-v4-flash")
@@ -1903,12 +2045,38 @@ def continue_sluvo_agent_run(
         session.add(run)
         session.commit()
         session.refresh(run)
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_message",
+            payload={"agent": "onboarding", "agentName": "Onboarding Agent", "stage": "ideate", "content": _agent_question_answer(clean_content)},
+        )
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_completed", payload={})
         return _serialize_agent_run_timeline(session, run)
     workflow_index = _workflow_step_count(session, run)
-    normalized_action = str(action or "continue").strip().lower()
     if normalized_action in {"revise", "feedback", "补充", "修改"} and workflow_index > 0:
         current_index = max(workflow_index - 1, 0)
         spec = SLUVO_AGENT_WORKFLOW_SPECS[current_index]
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_message",
+            payload={
+                "agent": "review",
+                "agentName": "Review Agent",
+                "stage": "ideate",
+                "content": f"Review Agent 已收到反馈：{clean_content}。我会把修改重路由给 {spec['agentName']}。",
+            },
+        )
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="agent_handoff",
+            payload={"from_agent": "review", "to_agent": spec["stepKey"], "message": f"@review 邀请 @{spec['stepKey']} 重新加入群聊"},
+        )
         resolved = _resolve_agent_for_workflow_step(
             session,
             context_snapshot=merged_context,
@@ -1983,9 +2151,24 @@ def continue_sluvo_agent_run(
         session.add(run)
         session.commit()
         session.refresh(run)
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_awaiting_confirm",
+            payload={
+                "agent": spec["stepKey"],
+                "agentName": spec["agentName"],
+                "stage": spec["stage"],
+                "message": spec["question"],
+                "question": spec["question"],
+                "next_step": spec["next"],
+            },
+        )
         return _serialize_agent_run_timeline(session, run)
 
     if workflow_index < len(SLUVO_AGENT_WORKFLOW_SPECS):
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_confirmed", payload={"message": "已确认，继续下一位 Agent。"})
         artifacts = _append_agent_workflow_step(
             session,
             run=run,
@@ -2015,6 +2198,21 @@ def continue_sluvo_agent_run(
             "nextQuestion": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["question"],
             "estimatePoints": 28 if waiting_cost else 0,
         })
+        status_event_payload = {
+            "agent": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["stepKey"],
+            "agentName": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["agentName"],
+            "stage": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["stage"],
+            "message": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["question"],
+            "question": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["question"],
+            "next_step": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["next"],
+        }
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_awaiting_confirm",
+            payload=status_event_payload,
+        )
     else:
         step = _create_agent_run_step(
             session,
@@ -2049,6 +2247,8 @@ def continue_sluvo_agent_run(
     if run.session_id:
         agent_session = require_sluvo_agent_session(session, run.session_id)
         append_sluvo_agent_event(session, agent_session=agent_session, role="user", event_type="run_continue", payload={"content": clean_content, "runId": encode_id(run.id)})
+    if run.status == "succeeded":
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_completed", payload={})
     session.refresh(run)
     return _serialize_agent_run_timeline(session, run)
 
@@ -2126,9 +2326,54 @@ def confirm_sluvo_agent_run_cost(
                     node.revision = int(node.revision or 1) + 1
                     node.updated_at = now
                     session.add(node)
-    run.status = "succeeded"
-    run.updated_at = now
-    run.finished_at = now
+    _append_sluvo_run_event(
+        session,
+        run=run,
+        role="system",
+        event_type="run_confirmed",
+        payload={"agent": "video_generator", "message": "媒体生成已确认，任务进入队列"},
+    )
+    summary = _json_load(run.summary_json, {})
+    context_snapshot = _json_load(run.context_snapshot_json, {})
+    model_code = normalize_sluvo_agent_model_code(summary.get("modelCode") or "deepseek-v4-flash")
+    workflow_index = _workflow_step_count(session, run)
+    if workflow_index < len(SLUVO_AGENT_WORKFLOW_SPECS):
+        root_template_id = _decode_optional_safe(str(context_snapshot.get("agentTemplateId") or ""))
+        root_template = session.get(SluvoAgentTemplate, root_template_id) if root_template_id else None
+        _append_agent_workflow_step(
+            session,
+            run=run,
+            user=user,
+            spec_index=workflow_index,
+            goal=run.goal,
+            context_snapshot=context_snapshot,
+            root_template=root_template,
+            model_code=model_code,
+        )
+        spec = SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]
+        run.status = "waiting_user"
+        run.summary_json = _json_dump({
+            **summary,
+            "artifactCount": _agent_run_artifact_count(session, run),
+            "nodeCount": _agent_run_artifact_count(session, run),
+            "currentStepIndex": workflow_index,
+            "nextStepIndex": workflow_index + 1 if workflow_index + 1 < len(SLUVO_AGENT_WORKFLOW_SPECS) else None,
+            "awaitingAgent": None,
+            "nextQuestion": spec["question"],
+            "estimatePoints": 0,
+        })
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_awaiting_confirm",
+            payload={"agent": spec["stepKey"], "agentName": spec["agentName"], "stage": spec["stage"], "message": spec["question"], "question": spec["question"], "next_step": spec["next"]},
+        )
+    else:
+        run.status = "succeeded"
+        run.finished_at = now
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_completed", payload={})
+    run.updated_at = _utc_now()
     session.add(run)
     session.commit()
     session.refresh(run)
