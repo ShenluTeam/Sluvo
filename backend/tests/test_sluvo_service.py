@@ -29,6 +29,7 @@ from schemas import (
     SluvoCanvasNodeUpdateRequest,
     SluvoProjectCreateRequest,
     SluvoProjectMemberCreateRequest,
+    SluvoTextNodeAnalyzeRequest,
 )
 from services.sluvo_service import (
     SLUVO_PERMISSION_AGENT,
@@ -36,6 +37,7 @@ from services.sluvo_service import (
     SLUVO_PERMISSION_READ,
     SLUVO_PERMISSION_WRITE,
     add_sluvo_project_member,
+    analyze_sluvo_text_node,
     append_sluvo_agent_event,
     apply_sluvo_canvas_batch,
     approve_sluvo_agent_action,
@@ -541,3 +543,19 @@ def test_sluvo_agent_new_story_prompt_builds_production_pipeline():
         assert "镜头视频生成" in titles
         assert "agent" not in node_types
         assert len(action_payload["patch"]["edges"]) >= 6
+
+
+def test_sluvo_text_node_analysis_returns_node_local_markdown():
+    result = analyze_sluvo_text_node(
+        SluvoTextNodeAnalyzeRequest(
+            nodeTitle="宣传片灵感",
+            content="做一个北京的宣传片",
+            instruction="提取角色、场景、道具，并继续拆分镜。",
+            modelCode="deepseek-v4-flash",
+        )
+    )
+
+    assert result["modelCode"] == "deepseek-v4-flash"
+    assert "content" in result
+    assert "### 场景" in result["content"] or "分镜" in result["content"]
+    assert "action" not in result

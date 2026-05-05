@@ -197,6 +197,7 @@ Standalone Sluvo:
 | Upload persistent canvas asset as base64 | `POST /api/sluvo/canvases/{canvas_id}/assets/upload/base64` |
 | Manage project members | `/api/sluvo/projects/{project_id}/members` |
 | Canvas Agent persistence | `/api/sluvo/projects/{project_id}/agent/sessions`, `/api/sluvo/agent/*` |
+| Text node local model analysis | `POST /api/sluvo/projects/{project_id}/text-node/analyze` |
 | My Agent templates | `GET/POST /api/sluvo/agents`, `GET/PATCH/DELETE /api/sluvo/agents/{agent_id}` |
 | Agent community templates | `GET /api/sluvo/community/agents`, publish/fork/unpublish under `/api/sluvo/*/agents/*` |
 | Community canvas list/detail | `GET /api/sluvo/community/canvases`, `GET /api/sluvo/community/canvases/{publication_id}` |
@@ -213,6 +214,7 @@ Frontend implementation note:
 - Community canvas list is public card metadata; detail and fork require login. Forked projects reuse original OSS media URLs for v1.
 - Canvas Agent sessions support selectable model codes `deepseek-v4-flash` and `deepseek-v4-pro`. The frontend defaults to `agentProfile: "auto"` and sends the selected model in session creation and message context; the backend normalizes unknown models to `deepseek-v4-flash`. If `DEEPSEEK_API_KEY` is configured, proposals use the selected DeepSeek model and safely fall back to deterministic canvas proposals on model/API failure.
 - Canvas Agent messages create proposed `SluvoAgentAction` records. In auto mode, the backend resolves the specialist Agent/action type from the user request and context, returning `resolvedProfile`, `resolvedActionType`, `routingReason`, and `modelCode` for UI display. Approved actions apply `patch` payloads through the existing canvas batch endpoint semantics and write an Agent-linked mutation audit record.
+- Text node local analysis is intentionally separate from Canvas Agent sessions. `POST /api/sluvo/projects/{project_id}/text-node/analyze` returns Markdown content for the current text node only and does not create Agent events, actions, or canvas mutations; the frontend writes the returned content into that node and saves the canvas.
 - User-created Agent templates are no-code prompt/config packages. Community Agent publications are sanitized snapshots and do not include private memory.
 
 For the complete `api.shenlu.top` inventory and Sluvo suitability notes, read `doc/API_SHENLU_TOP.md`.

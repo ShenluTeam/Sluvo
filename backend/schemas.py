@@ -1453,6 +1453,13 @@ class SluvoAgentMessageSendRequest(BaseModel):
     proposedAction: Optional[Dict[str, Any]] = None
 
 
+class SluvoTextNodeAnalyzeRequest(BaseModel):
+    nodeTitle: Optional[str] = None
+    content: Optional[str] = None
+    instruction: Optional[str] = None
+    modelCode: str = "deepseek-v4-flash"
+
+
 # ==========================================
 # 统一 Assistant Runtime v2 相关
 # ==========================================

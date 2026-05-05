@@ -1,5 +1,31 @@
 # Sluvo Development Changelog
 
+## 2026-05-05
+
+Changed files:
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/schemas.py`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/PRD.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Split text-node local AI from the right-side Canvas Agent conversation. The selected text node composer now calls a node-scoped analysis endpoint and writes the Markdown reply back into that node.
+- Added a backend text-node analysis contract that uses DeepSeek Flash/Pro when available and deterministic Markdown fallback otherwise, without creating Agent sessions, events, actions, or mutations.
+- Center-aligned the text-node composer with the text-node frame by giving prompt-note nodes a shared width and making the composer fill that node width.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/models.py backend/schemas.py backend/tests/test_sluvo_service.py`
+- `npm run build`
+- `git diff --check`
+
 ## 2026-05-04
 
 Changed files:

@@ -53,6 +53,7 @@ from schemas import (
     SluvoProjectCreateRequest,
     SluvoProjectMemberCreateRequest,
     SluvoProjectMemberUpdateRequest,
+    SluvoTextNodeAnalyzeRequest,
     SluvoProjectUpdateRequest,
     normalize_sluvo_edge_type,
     normalize_sluvo_agent_model_code,
@@ -2016,6 +2017,30 @@ def process_sluvo_agent_message(
     return {"event": user_event, "agentEvent": agent_event, "action": action}
 
 
+def analyze_sluvo_text_node(payload: SluvoTextNodeAnalyzeRequest) -> Dict[str, Any]:
+    source = str(payload.content or "").strip()
+    instruction = str(payload.instruction or "").strip()
+    title = str(payload.nodeTitle or "文本节点").strip() or "文本节点"
+    model_code = normalize_sluvo_agent_model_code(payload.modelCode)
+    llm_content = _try_deepseek_text_node_analysis(
+        model_code=model_code,
+        title=title,
+        source=source,
+        instruction=instruction,
+    )
+    content = llm_content or _build_text_node_analysis_fallback(
+        title=title,
+        source=source,
+        instruction=instruction,
+    )
+    return {
+        "content": content,
+        "modelCode": model_code,
+        "llmUsed": bool(llm_content),
+        "summary": "已更新文本节点",
+    }
+
+
 def build_sluvo_agent_action_payload(
     session: Session,
     *,
@@ -2225,6 +2250,109 @@ def _try_deepseek_canvas_agent_payload(
         "outputTitle": str(payload.get("outputTitle") or "").strip()[:80],
         "outputPrompt": str(payload.get("outputPrompt") or "").strip(),
     }
+
+
+def _try_deepseek_text_node_analysis(
+    *,
+    model_code: str,
+    title: str,
+    source: str,
+    instruction: str,
+) -> Optional[str]:
+    if not settings.DEEPSEEK_API_KEY:
+        return None
+    try:
+        payload = chat_json(
+            model=model_code,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 Sluvo 文本节点内的局部创作助手。你只服务当前文本节点，"
+                        "不要生成画布 patch，不要提及右侧 Agent 面板。请只输出 JSON 对象，"
+                        "字段为 content，content 必须是可以直接放进文本节点渲染的 Markdown。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"节点标题：{title}\n"
+                        f"用户指令：{instruction or '请分析这段内容，并给出可继续创作的结构化结果。'}\n\n"
+                        f"当前节点内容：\n{source or '（空）'}"
+                    ),
+                },
+            ],
+            thinking_enabled=model_code == "deepseek-v4-pro",
+            max_tokens=1400,
+            temperature=0.24,
+            route_tag="sluvo_text_node",
+        )
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    content = str(payload.get("content") or payload.get("markdown") or "").strip()
+    return content[:12000] if content else None
+
+
+def _build_text_node_analysis_fallback(*, title: str, source: str, instruction: str) -> str:
+    clean_source = source.strip()
+    clean_instruction = instruction.strip()
+    if not clean_source and clean_instruction:
+        clean_source = clean_instruction
+
+    text = f"{clean_instruction}\n{clean_source}".lower()
+
+    if any(keyword in text for keyword in ["提示词", "prompt", "优化", "精修", "润色"]):
+        seed = clean_source or clean_instruction or title
+        return "\n".join(
+            [
+                f"## {title}",
+                "",
+                "### 优化后的提示词",
+                _build_polished_prompt(seed),
+                "",
+                "### 继续调整方向",
+                "- 明确主体、动作、环境、光线和镜头运动。",
+                "- 保留适合图片和视频生成的具体视觉信息。",
+                "- 避免抽象形容词堆叠，优先使用可被画面执行的描述。",
+            ]
+        )
+
+    if any(keyword in text for keyword in ["分镜", "镜头", "拆分", "storyboard"]):
+        seed = clean_source or clean_instruction or title
+        return "\n".join(
+            [
+                f"## {title} 分镜草案",
+                "",
+                _build_storyboard_plan(seed),
+                "",
+                "### 下一步",
+                "- 为每个镜头补充首帧画面提示词。",
+                "- 标注角色、场景和道具在镜头间的连续性。",
+            ]
+        )
+
+    seed = clean_source or clean_instruction or title
+    return "\n".join(
+        [
+            f"## {title} 分析",
+            "",
+            "### 核心内容",
+            seed[:1200],
+            "",
+            "### 角色",
+            _build_character_prop_brief(seed),
+            "",
+            "### 场景",
+            _build_scene_brief(seed),
+            "",
+            "### 下一步创作",
+            "- 把核心创意整理成故事总览。",
+            "- 提取角色、场景和关键道具，形成独立节点。",
+            "- 再根据故事节奏拆成分镜、首帧图片和视频生成链路。",
+        ]
+    )
 
 
 def _build_deepseek_agent_prompt(

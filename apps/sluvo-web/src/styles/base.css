@@ -3345,6 +3345,10 @@ button {
   width: 410px;
 }
 
+.direct-workflow-node--prompt_note {
+  width: 720px;
+}
+
 .direct-workflow-node__title {
   display: flex;
   align-items: center;
@@ -3788,7 +3792,8 @@ button {
   display: grid;
   grid-template-rows: minmax(96px, 1fr) auto;
   gap: 14px;
-  width: min(720px, calc(100vw - 56px));
+  box-sizing: border-box;
+  width: 100%;
   min-height: 166px;
   margin-top: 12px;
   padding: 18px 18px 14px;
@@ -3861,6 +3866,13 @@ button {
 .text-node-ai-composer button:disabled {
   cursor: not-allowed;
   opacity: 0.42;
+}
+
+.text-node-ai-composer__error {
+  margin: -4px 0 0;
+  color: #ffd2c9;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .direct-workflow-node--audio_unit .direct-workflow-node__prompt-field {

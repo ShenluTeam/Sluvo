@@ -500,10 +500,11 @@
                 <button type="button" title="写入节点" :disabled="!textNodeComposer.input.trim()" @click.stop="writeTextComposerToNode(node)">
                   <ListChecks :size="16" />
                 </button>
-                <button type="submit" :disabled="agentPanel.busy || (!textNodeComposer.input.trim() && !node.prompt.trim())">
+                <button type="submit" :disabled="textNodeComposer.busy || (!textNodeComposer.input.trim() && !node.prompt.trim())">
                   <ArrowUp :size="18" />
                 </button>
               </footer>
+              <p v-if="textNodeComposer.error" class="text-node-ai-composer__error">{{ textNodeComposer.error }}</p>
             </form>
             <div
               v-if="node.type === 'image_unit'"
@@ -1395,6 +1396,7 @@ import {
   submitCreativeVideo
 } from '../api/creativeApi'
 import {
+  analyzeSluvoTextNode,
   approveSluvoAgentAction,
   cancelSluvoAgentAction,
   createSluvoAgentSession,
@@ -1600,7 +1602,9 @@ const agentPanel = reactive({
 })
 const textNodeComposer = reactive({
   input: '',
-  modelCode: 'deepseek-v4-flash'
+  modelCode: 'deepseek-v4-flash',
+  busy: false,
+  error: ''
 })
 const AGENT_PANEL_VISIBILITY_STORAGE_KEY = 'sluvo_agent_panel_visible'
 const referenceUploadAccept = ref('image/*')
@@ -2529,19 +2533,42 @@ function writeTextComposerToNode(node) {
 }
 
 async function submitTextNodeAnalysis(node) {
-  if (!node?.id || agentPanel.busy) return
+  if (!node?.id || textNodeComposer.busy) return
   const question = textNodeComposer.input.trim()
   const source = node.prompt.trim()
   if (!question && !source) return
-  const previousModel = agentPanel.modelCode
-  agentPanel.modelCode = textNodeComposer.modelCode
-  selectedDirectNodeIds.value = [node.id]
-  const prompt = question
-    ? `请基于文本节点「${node.title}」分析并继续创作：${question}`
-    : `请分析文本节点「${node.title}」，提取角色、场景、道具，并给出下一步创作建议。`
-  textNodeComposer.input = ''
-  await runAgentPrompt(prompt)
-  agentPanel.modelCode = previousModel
+  const projectId = projectStore.activeProject?.id || String(route.params.projectId || '')
+  if (!projectId) {
+    textNodeComposer.error = '缺少项目 ID，无法调用文本节点模型。'
+    return
+  }
+  textNodeComposer.busy = true
+  textNodeComposer.error = ''
+  try {
+    const response = await analyzeSluvoTextNode(projectId, {
+      nodeTitle: node.title,
+      content: source,
+      instruction: question || '请分析这个文本节点，提取角色、场景、道具，并给出下一步创作建议。',
+      modelCode: textNodeComposer.modelCode
+    })
+    const nextContent = String(response?.content || '').trim()
+    if (!nextContent) throw new Error('模型没有返回可写入的内容')
+    rememberHistory()
+    updateDirectNode(node.id, {
+      prompt: nextContent,
+      promptSegments: [{ type: 'text', text: nextContent }],
+      agentModelCode: response?.modelCode || textNodeComposer.modelCode
+    })
+    directPromptEditorSignatures.delete(node.id)
+    textNodeComposer.input = ''
+    scheduleCanvasSave(180)
+    showToast(response?.llmUsed ? '文本节点已由模型更新' : '文本节点已生成本地分析')
+  } catch (error) {
+    textNodeComposer.error = error instanceof Error ? error.message : '文本节点分析失败'
+    if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
+  } finally {
+    textNodeComposer.busy = false
+  }
 }
 
 function renderDirectMarkdown(value) {

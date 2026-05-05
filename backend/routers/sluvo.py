@@ -28,6 +28,7 @@ from schemas import (
     SluvoProjectMemberCreateRequest,
     SluvoProjectMemberUpdateRequest,
     SluvoProjectUpdateRequest,
+    SluvoTextNodeAnalyzeRequest,
 )
 from services.sluvo_service import (
     SLUVO_PERMISSION_AGENT,
@@ -35,6 +36,7 @@ from services.sluvo_service import (
     SLUVO_PERMISSION_READ,
     SLUVO_PERMISSION_WRITE,
     add_sluvo_project_member,
+    analyze_sluvo_text_node,
     append_sluvo_agent_event,
     apply_sluvo_canvas_batch,
     approve_sluvo_agent_action,
@@ -737,6 +739,20 @@ async def post_sluvo_agent_session(
         context_snapshot=payload.contextSnapshot,
     )
     return {"session": serialize_sluvo_agent_session(item)}
+
+
+@router.post("/api/sluvo/projects/{project_id}/text-node/analyze")
+async def post_sluvo_text_node_analyze(
+    project_id: str,
+    payload: SluvoTextNodeAnalyzeRequest,
+    _: TeamMemberLink = Depends(require_team_permission("generate:run")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    _access_project(session, user=user, team=team, team_member=team_member, project_id=project_id, permission=SLUVO_PERMISSION_AGENT)
+    return analyze_sluvo_text_node(payload)
 
 
 @router.get("/api/sluvo/agent/sessions/{session_id}")

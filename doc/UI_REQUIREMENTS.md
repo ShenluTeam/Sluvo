@@ -63,6 +63,7 @@ MVP canvas interactions:
 - Run node action from node or inspector
 - Upload image, video, and audio files into a canvas asset node with instant preview and visible upload state
 - Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, let the system auto-route to a specialist Agent, review the proposed action, then approve or cancel it.
+- Use the text-node local composer below a text node to analyze, expand, or rewrite only that node; the response should render as Markdown inside the same node and should not appear in the right-side Agent panel.
 - Add an Agent node to the canvas and connect it to creative inputs/outputs like other workflow nodes.
 
 Canvas layout must be stable: hover states, badges, task indicators, and loading states should not cause node size jumps.
@@ -130,7 +131,7 @@ Upload capacity errors should use user-facing copy that explains the storage lim
 
 Publishing to community must make clear that it creates a shareable snapshot. Updating the original project after publishing should not visually imply the community version changes until the creator publishes again.
 
-Agent proposals must make clear that they are not written to the canvas until the user approves them. The default Agent profile is automatic 创作总监 routing; manual Agent and model controls belong in advanced settings. The initial selectable Agent models are `DeepSeek v4 Flash` and `DeepSeek v4 Pro`; model choice should appear as a creative control, not as a raw provider-debug field.
+Agent proposals must make clear that they are not written to the canvas until the user approves them. The default Agent profile is automatic 创作总监 routing; manual Agent and model controls belong in advanced settings. The initial selectable Agent models are `DeepSeek v4 Flash` and `DeepSeek v4 Pro`; model choice should appear as a creative control, not as a raw provider-debug field. Text-node local model controls are scoped to the selected text node and should be visually centered with that node frame.
 
 ## 7. Copywriting
 

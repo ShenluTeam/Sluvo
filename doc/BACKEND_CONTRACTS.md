@@ -81,6 +81,7 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | Create canvas Agent session | POST | `/api/sluvo/projects/{project_id}/agent/sessions` |
 | Read canvas Agent session | GET | `/api/sluvo/agent/sessions/{session_id}` |
 | Send Agent message/proposed action | POST | `/api/sluvo/agent/sessions/{session_id}/messages` |
+| Analyze text node locally | POST | `/api/sluvo/projects/{project_id}/text-node/analyze` |
 | Approve Agent action | POST | `/api/sluvo/agent/actions/{action_id}/approve` |
 | Cancel Agent action | POST | `/api/sluvo/agent/actions/{action_id}/cancel` |
 | List/create user Agent templates | GET/POST | `/api/sluvo/agents` |
@@ -112,6 +113,7 @@ Frontend write mapping:
 - Canvas Agent endpoints are called by the current canvas milestone. Messages create proposed actions; approving an action applies its batch-compatible `patch` through the existing canvas save path and records `SluvoCanvasMutation` with Agent session/action IDs.
 - `agentProfile: "auto"` is the default 创作总监 contract. The backend resolves the specialist Agent and action type from the prompt and canvas context, then exposes `resolvedProfile`, `resolvedActionType`, `routingReason`, and `modelCode` in the Agent event/action input summary.
 - Agent model choices currently allow `deepseek-v4-flash` and `deepseek-v4-pro`. Unknown values normalize to `deepseek-v4-flash`; when `DEEPSEEK_API_KEY` exists, the selected model is used to draft proposal content, with deterministic fallback on failure. Future models should be added server-side before exposing them in the frontend.
+- Text node local analysis uses the same DeepSeek model policy but is not part of the Agent action lifecycle. It returns `{ content, modelCode, llmUsed, summary }`; callers persist the returned Markdown through normal canvas saving.
 
 ## 5. Legacy Project Workspace APIs
 
