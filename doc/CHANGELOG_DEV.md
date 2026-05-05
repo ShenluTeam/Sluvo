@@ -1149,3 +1149,19 @@ Verification suggestions:
 - Run `npm run build --workspace sluvo-web`.
 - Start a run and verify only stage 1 appears; click "继续下一步" repeatedly and verify each stage is appended one at a time until media confirmation.
 
+Changed files:
+- `backend/services/sluvo_service.py`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added Agent input intent routing: ordinary questions now produce a direct read-only answer and do not create canvas nodes or start the creative workflow.
+- Creative inspiration now starts by expanding the idea into a script draft, while script-like input is treated as source script material for the downstream team.
+- Downstream extraction now includes props alongside characters and scenes, so the workflow follows script -> characters/scenes/props -> storyboard -> prompts -> production placeholders.
+- Sending a new prompt after a completed answer now starts a fresh run instead of appending to the prior answered run.
+
+Verification suggestions:
+- Run `python3 -m py_compile backend/services/sluvo_service.py`.
+- Run `npm run build --workspace sluvo-web`.
+- Enter `你是谁` and verify the panel answers directly without writing canvas nodes; then enter a creative idea and verify it starts with a script draft.
+

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -974,17 +975,56 @@ def _agent_run_origin(context_snapshot: Dict[str, Any]) -> tuple[float, float]:
     return 180.0, 180.0
 
 
+def _classify_agent_goal(goal: str) -> Dict[str, str]:
+    text = re.sub(r"\s+", " ", str(goal or "").strip())
+    lower = text.lower()
+    question_markers = ("?", "？", "是什么", "是谁", "怎么", "如何", "为什么", "能不能", "可以吗", "介绍", "说明")
+    creative_markers = ("故事", "剧本", "分镜", "角色", "场景", "道具", "镜头", "短片", "动画", "漫画", "漫剧", "生成", "画面", "剧情")
+    script_markers = ("第", "幕", "场", "镜", "旁白", "对白", "台词", "内景", "外景", "角色：", "场景：", "镜头")
+    if not text:
+        return {"intent": "question", "label": "询问", "reason": "空输入"}
+    is_question = text.endswith(("?", "？")) or any(marker in text for marker in question_markers)
+    has_creative = any(marker in text for marker in creative_markers)
+    if is_question and not has_creative:
+        return {"intent": "question", "label": "询问", "reason": "普通问题"}
+    if any(marker in text for marker in script_markers) or len(text) >= 160:
+        return {"intent": "script", "label": "剧本", "reason": "包含剧本/镜头结构"}
+    return {"intent": "inspiration", "label": "灵感", "reason": "创作灵感或简短目标"}
+
+
+def _agent_question_answer(goal: str) -> str:
+    text = str(goal or "").strip()
+    if re.search(r"(你是谁|你是誰|who are you)", text, flags=re.IGNORECASE):
+        return "我是 Sluvo 画布里的创作总监，负责理解你的输入，判断它是普通询问、创作灵感还是已有剧本。普通问题我会直接回答；创作灵感我会先扩成剧本；已有剧本我会继续拆角色、场景、道具、分镜和生成任务。"
+    return f"我先按普通询问处理：{text}\n\n如果你想进入创作流程，可以直接输入一个灵感或贴一段剧本，我会先识别意图，再决定是否扩写剧本、提取角色/场景/道具或继续做分镜。"
+
+
+def _build_script_seed(goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
+    classification = context_snapshot.get("intent") if isinstance(context_snapshot, dict) else {}
+    intent = classification.get("intent") if isinstance(classification, dict) else "inspiration"
+    title = "剧本整理" if intent == "script" else "灵感扩写剧本"
+    return (
+        f"{title}\n"
+        f"- 核心输入：{goal.strip()}\n"
+        "- 故事钩子：保留用户原始表达里的核心冲突，把它扩成一个可拍摄的短片开端。\n"
+        "- 主角目标：明确主角想得到什么，以及阻碍来自人物、环境或秘密信息。\n"
+        "- 三段结构：开端建立处境，中段升级冲突，结尾留下清晰转折或生成下一镜的悬念。\n"
+        "- 可视化线索：记录关键场景、可识别道具、光线气氛和动作节奏，方便后续拆角色、场景、道具和分镜。\n"
+        f"\n模型：{model_code}"
+    )
+
+
 SLUVO_AGENT_WORKFLOW_SPECS = [
     {
         "stepKey": "understand_story",
         "stage": "ideate",
         "agentName": "创作总监",
         "agentProfile": "canvas_agent",
-        "title": "理解目标",
-        "completed": "已完成目标理解",
-        "next": "接下来由故事发展 Agent 形成故事总览",
-        "question": "目标方向是否正确？",
-        "artifacts": [("故事总览", "text_node", "auto_canvas")],
+        "title": "识别意图并起草剧本",
+        "completed": "已识别创作意图并形成剧本草案",
+        "next": "接下来由故事发展 Agent 打磨剧情结构",
+        "question": "剧本方向是否正确？",
+        "artifacts": [("剧本草案", "text_node", "auto_canvas")],
     },
     {
         "stepKey": "develop_story",
@@ -1006,7 +1046,7 @@ SLUVO_AGENT_WORKFLOW_SPECS = [
         "completed": "已完成角色与场景设定",
         "next": "接下来分镜导演会拆解镜头链路",
         "question": "角色和场景设定是否满意？",
-        "artifacts": [("角色设定", "character_brief", "auto_canvas"), ("场景设定", "scene_brief", "auto_canvas")],
+        "artifacts": [("角色设定", "character_brief", "auto_canvas"), ("场景设定", "scene_brief", "auto_canvas"), ("道具设定", "prop_brief", "auto_canvas")],
     },
     {
         "stepKey": "plan_storyboard",
@@ -1218,11 +1258,15 @@ def _append_agent_workflow_step(
 def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
     prompt = _agent_run_prompt(goal, context_snapshot)
     if artifact_type == "text_node":
-        return f"创作目标\n{goal.strip()}\n\n理解摘要\n- 核心任务：把目标拆成可执行画布产物。\n- 上下文数量：{_agent_run_context_count(context_snapshot)} 个节点。\n- 建议流程：先确定故事/角色/场景，再进入分镜与生成链路。"
+        return _build_script_seed(goal, context_snapshot, model_code)
+    if artifact_type == "report":
+        return _agent_question_answer(goal)
     if artifact_type == "character_brief":
         return f"角色设定草稿\n- 主角：围绕目标中的核心人物建立外观、欲望、阻力和标志性道具。\n- 关系：把冲突双方、协作者和环境压力拆为后续可复用节点。\n- 一致性：记录服装、色彩、年龄感和镜头可识别特征。\n\n来源：{goal.strip()}"
     if artifact_type == "scene_brief":
         return f"场景设定草稿\n- 主场景：从目标里提取时间、地点、天气、光线和情绪。\n- 可生成元素：环境道具、空间层次、色彩气氛、镜头运动约束。\n- 连续性：为后续图片/视频节点保留统一场景锚点。"
+    if artifact_type == "prop_brief":
+        return f"道具设定草稿\n- 核心道具：提取推动剧情的信息物、信物、工具或环境装置。\n- 视觉特征：记录形状、材质、颜色、磨损痕迹和可识别细节。\n- 剧情功能：说明道具如何制造线索、冲突、误会或转折。\n\n来源：{goal.strip()}"
     if artifact_type == "storyboard_plan":
         return _build_storyboard_plan(prompt, model_code)
     if artifact_type == "prompt":
@@ -1418,6 +1462,8 @@ def create_sluvo_agent_run(
     clean_goal = str(goal or "").strip()
     if not clean_goal:
         raise HTTPException(status_code=400, detail="Agent Run 目标不能为空")
+    intent = _classify_agent_goal(clean_goal)
+    context_with_intent = {**(context_snapshot or {}), "intent": intent}
     resolved_agent_profile = encode_id(agent_template_id) if agent_template_id else (agent_profile or "auto")
     agent_session = create_sluvo_agent_session(
         session,
@@ -1430,7 +1476,7 @@ def create_sluvo_agent_run(
         agent_profile=resolved_agent_profile,
         model_code=model_code,
         mode=mode,
-        context_snapshot={**(context_snapshot or {}), "sourceSurface": source_surface, "targetNodeId": encode_id(target_node_id) if target_node_id else (context_snapshot or {}).get("targetNodeId")},
+        context_snapshot={**context_with_intent, "sourceSurface": source_surface, "targetNodeId": encode_id(target_node_id) if target_node_id else (context_snapshot or {}).get("targetNodeId")},
     )
     normalized_model = normalize_sluvo_agent_model_code(model_code)
     template = session.get(SluvoAgentTemplate, agent_template_id) if agent_template_id else _resolve_agent_template(session, agent_profile)
@@ -1449,8 +1495,8 @@ def create_sluvo_agent_run(
         status="running",
         mode=mode or "semi_auto",
         approval_policy_json=_json_dump({"autoCanvas": True, "costConfirmation": True}),
-        context_snapshot_json=_json_dump(context_snapshot or {}),
-        summary_json=_json_dump({"contextCount": _agent_run_context_count(context_snapshot or {}), "agentName": agent_name, "modelCode": normalized_model}),
+        context_snapshot_json=_json_dump(context_with_intent),
+        summary_json=_json_dump({"contextCount": _agent_run_context_count(context_with_intent), "agentName": agent_name, "modelCode": normalized_model, "intent": intent}),
         created_at=now,
         updated_at=now,
     )
@@ -1459,7 +1505,53 @@ def create_sluvo_agent_run(
     session.refresh(run)
     append_sluvo_agent_event(session, agent_session=agent_session, role="user", event_type="run_goal", payload={"content": clean_goal, "runId": encode_id(run.id)})
 
-    used_agents = _resolved_agent_team(session, context_snapshot=context_snapshot or {}, root_template=template, model_code=normalized_model)
+    if intent["intent"] == "question":
+        step = _create_agent_run_step(
+            session,
+            run=run,
+            step_key="answer_question",
+            agent_name="创作总监",
+            agent_profile="canvas_agent",
+            model_code=normalized_model,
+            title="直接回答",
+            order_index=0,
+            agent_template_id=template.id if template else None,
+            input_payload={"goal": clean_goal, "intent": intent},
+        )
+        _create_agent_run_artifact(
+            session,
+            run=run,
+            step=step,
+            title="回答",
+            artifact_type="report",
+            body=_agent_question_answer(clean_goal),
+            write_policy="readonly",
+            preview={"estimatedWrite": "none", "intent": intent["intent"]},
+        )
+        _finish_agent_run_step(session, step, output={"artifactCount": 1, "completed": "已回答你的问题", "stage": "ideate"}, status="succeeded")
+        run.status = "succeeded"
+        run.finished_at = _utc_now()
+        run.updated_at = run.finished_at
+        run.summary_json = _json_dump({
+            "contextCount": _agent_run_context_count(context_with_intent),
+            "agentName": "创作总监",
+            "modelCode": normalized_model,
+            "intent": intent,
+            "artifactCount": 1,
+            "nodeCount": 0,
+            "edgeCount": 0,
+            "estimatePoints": 0,
+            "workflow": [],
+            "agentTeam": [],
+            "nextQuestion": "",
+        })
+        session.add(run)
+        session.commit()
+        append_sluvo_agent_event(session, agent_session=agent_session, role="agent", event_type="run_answer", payload={"content": _agent_question_answer(clean_goal), "runId": encode_id(run.id)})
+        session.refresh(run)
+        return _serialize_agent_run_timeline(session, run)
+
+    used_agents = _resolved_agent_team(session, context_snapshot=context_with_intent, root_template=template, model_code=normalized_model)
     try:
         step_artifacts = _append_agent_workflow_step(
             session,
@@ -1467,16 +1559,17 @@ def create_sluvo_agent_run(
             user=user,
             spec_index=0,
             goal=clean_goal,
-            context_snapshot=context_snapshot or {},
+            context_snapshot=context_with_intent,
             root_template=template,
             model_code=normalized_model,
         )
         next_agent = used_agents[1]["agentName"] if len(used_agents) > 1 else None
         run.status = "waiting_user"
         run.summary_json = _json_dump({
-            "contextCount": _agent_run_context_count(context_snapshot or {}),
+            "contextCount": _agent_run_context_count(context_with_intent),
             "agentName": agent_name,
             "modelCode": normalized_model,
+            "intent": intent,
             "artifactCount": _agent_run_artifact_count(session, run),
             "nodeCount": _agent_run_artifact_count(session, run),
             "edgeCount": 0,
@@ -1529,6 +1622,38 @@ def continue_sluvo_agent_run(
     merged_context = {**base_context, **(context_snapshot or {})}
     root_template_id = _decode_optional_safe(str(base_context.get("agentTemplateId") or ""))
     root_template = session.get(SluvoAgentTemplate, root_template_id) if root_template_id else None
+    intent = summary.get("intent") if isinstance(summary.get("intent"), dict) else base_context.get("intent") if isinstance(base_context.get("intent"), dict) else {}
+    if intent.get("intent") == "question":
+        step = _create_agent_run_step(
+            session,
+            run=run,
+            step_key=f"answer_{len(existing_steps) + 1}",
+            agent_name="创作总监",
+            agent_profile="canvas_agent",
+            model_code=model_code,
+            title="继续回答",
+            order_index=len(existing_steps),
+            input_payload={"content": clean_content, "intent": intent},
+        )
+        _create_agent_run_artifact(
+            session,
+            run=run,
+            step=step,
+            title="回答",
+            artifact_type="report",
+            body=_agent_question_answer(clean_content),
+            write_policy="readonly",
+            preview={"estimatedWrite": "none", "intent": "question"},
+        )
+        _finish_agent_run_step(session, step, output={"artifactCount": 1, "completed": "已回答你的问题", "stage": "ideate"})
+        run.status = "succeeded"
+        run.updated_at = _utc_now()
+        run.finished_at = run.updated_at
+        run.summary_json = _json_dump({**summary, "artifactCount": _agent_run_artifact_count(session, run), "nodeCount": 0})
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        return _serialize_agent_run_timeline(session, run)
     workflow_index = _workflow_step_count(session, run)
     if workflow_index < len(SLUVO_AGENT_WORKFLOW_SPECS):
         artifacts = _append_agent_workflow_step(

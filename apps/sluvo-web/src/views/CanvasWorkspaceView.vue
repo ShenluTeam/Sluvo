@@ -1797,15 +1797,15 @@ const agentProfiles = [
 const officialAgentCards = [
   {
     name: '创作总监',
-    description: '理解目标，决定由哪个专业 Agent 接力，汇总下一步。',
+    description: '识别询问、灵感或剧本；普通问题直接回答，创作输入进入接力。',
     stepKey: 'understand_story',
     stage: 'ideate',
     profileKey: 'canvas_agent',
-    output: '任务拆解',
-    rolePrompt: '你是 Sluvo 创作总监，负责理解用户目标、读取画布上下文、规划 Agent Team 的协作顺序，并输出清晰的下一步画布产物。',
-    useCases: ['目标理解', '自动派发', '工作流汇总'],
+    output: '意图/剧本',
+    rolePrompt: '你是 Sluvo 创作总监，负责判断用户输入是询问、灵感还是剧本。询问直接回答；灵感先扩成剧本；剧本进入角色、场景、道具和分镜接力。',
+    useCases: ['意图识别', '直接问答', '灵感扩写'],
     inputTypes: ['text', 'image', 'canvas'],
-    outputTypes: ['plan', 'note'],
+    outputTypes: ['answer', 'script', 'note'],
     tools: ['read_canvas', 'route_agents', 'propose_canvas_patch']
   },
   {
@@ -2808,7 +2808,7 @@ async function ensureAgentSession(options = {}) {
 async function sendAgentPrompt() {
   const content = agentPanel.input.trim()
   if (!content || agentPanel.busy) return
-  if (agentPanel.runId && agentPanel.activeRun) {
+  if (agentPanel.runId && agentPanel.activeRun?.run?.status === 'waiting_user') {
     await continueAgentRun(content)
   } else {
     await runAgentPrompt(content)
@@ -3094,6 +3094,7 @@ function getAgentArtifactTypeLabel(type) {
     storyboard_plan: '分镜计划',
     character_brief: '角色设定',
     scene_brief: '场景设定',
+    prop_brief: '道具设定',
     prompt: 'Prompt',
     image_placeholder: '图片占位',
     video_placeholder: '视频占位',
@@ -3194,6 +3195,8 @@ function getAgentStepArtifactSummary(step) {
 }
 
 function getAgentStepConversationText(step) {
+  const readonlyArtifact = (step?.artifacts || []).find((artifact) => artifact.writePolicy === 'readonly' || artifact.artifactType === 'report')
+  if (readonlyArtifact) return getAgentArtifactPreview(readonlyArtifact)
   const completed = String(step?.output?.completed || '').trim()
   const inputSummary = getAgentStepInputSummary(step)
   const artifactSummary = getAgentStepArtifactSummary(step)
