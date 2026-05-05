@@ -4,6 +4,25 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Fixed Agent proposal writes that could fail with "无效的资源标识符" when selected or Agent-connected canvas nodes still carried frontend client IDs.
+- Made Agent session/action target IDs tolerant of stale client IDs and let canvas batch edge resolution fall back to node `clientId` mappings.
+- Stopped auto-restoring failed Agent actions as the active pending proposal so stale failures no longer reappear as the current panel state.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/tests/test_sluvo_service.py`
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-05
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
 - `doc/UI_REQUIREMENTS.md`
 - `doc/CHANGELOG_DEV.md`

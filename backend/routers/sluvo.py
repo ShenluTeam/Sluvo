@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
@@ -136,6 +137,15 @@ def _access_canvas_project(
         project_id=encode_id(canvas.project_id),
         permission=permission,
     )
+
+
+def _decode_optional_request_id(value: Optional[str]) -> Optional[int]:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return decode_id(str(value))
+    except HTTPException:
+        return None
 
 
 @router.post("/api/sluvo/projects")
@@ -731,8 +741,8 @@ async def post_sluvo_agent_session(
         project=project,
         user=user,
         team=team,
-        canvas_id=decode_id(payload.canvasId) if payload.canvasId else None,
-        target_node_id=decode_id(payload.targetNodeId) if payload.targetNodeId else None,
+        canvas_id=_decode_optional_request_id(payload.canvasId),
+        target_node_id=_decode_optional_request_id(payload.targetNodeId),
         title=payload.title,
         agent_profile=payload.agentProfile,
         model_code=payload.modelCode,

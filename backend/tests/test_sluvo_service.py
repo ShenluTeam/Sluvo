@@ -14,6 +14,7 @@ from core.security import encode_id
 from models import (
     RoleEnum,
     SluvoCanvasAsset,
+    SluvoCanvasEdge,
     SluvoCanvasMutation,
     SluvoCanvasNode,
     SluvoProject,
@@ -680,3 +681,61 @@ def test_sluvo_agent_node_target_context_and_approval_updates_node_state():
         assert action_payload["input"]["contextSummary"]["sourceSurface"] == "node"
         assert "agentLastActionStatus" in refreshed_node.data_json
         assert "succeeded" in refreshed_node.data_json
+
+
+def test_sluvo_agent_patch_accepts_client_source_node_id():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Agent Client IDs"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+        source_node = create_sluvo_node(
+            session,
+            canvas,
+            SluvoCanvasNodeCreateRequest(
+                nodeType="note",
+                title="灵感节点",
+                position={"x": 0, "y": 0},
+                data={"clientId": "direct-client-source", "directType": "prompt_note", "prompt": "雨夜少年追逐神秘信号"},
+            ),
+            user=owner,
+        )
+        agent_session = create_sluvo_agent_session(
+            session,
+            project=project,
+            user=owner,
+            team=team,
+            canvas_id=canvas.id,
+            target_node_id=None,
+            title="创作总监",
+            agent_profile="auto",
+            model_code="deepseek-v4-flash",
+            mode="semi_auto",
+            context_snapshot={},
+        )
+        action_payload, _reply = build_sluvo_agent_action_payload(
+            session,
+            agent_session=agent_session,
+            content="请根据选区生成创作建议",
+            payload={
+                "agentProfile": "auto",
+                "modelCode": "deepseek-v4-flash",
+                "contextSnapshot": {
+                    "selectedNodes": [
+                        {
+                            "id": "direct-prompt_note-local",
+                            "clientId": "direct-client-source",
+                            "title": "灵感节点",
+                            "prompt": "雨夜少年追逐神秘信号",
+                            "position": {"x": 0, "y": 0},
+                        }
+                    ]
+                },
+            },
+        )
+        action = create_sluvo_agent_action(session, agent_session=agent_session, action_payload=action_payload)
+        approved = approve_sluvo_agent_action(session, action, user=owner)
+        edges = session.exec(select(SluvoCanvasEdge).where(SluvoCanvasEdge.source_node_id == source_node.id)).all()
+
+        assert approved.status == "succeeded"
+        assert edges
