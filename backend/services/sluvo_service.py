@@ -965,12 +965,45 @@ def _agent_run_prompt(goal: str, context_snapshot: Dict[str, Any]) -> str:
             prompt = str(item.get("prompt") or "").strip()
             node_lines.append(f"- {title}: {prompt[:180]}")
     source = "\n".join(node_lines) or "暂无选区，按项目画布目标展开。"
-    return f"{goal.strip()}\n\n上下文：\n{source}"
+    previous = context_snapshot.get("previousArtifacts") if isinstance(context_snapshot, dict) else []
+    artifact_lines = []
+    if isinstance(previous, list):
+        for item in previous[:6]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "上一步产物").strip()
+            body = str(item.get("body") or "").strip()
+            if body:
+                artifact_lines.append(f"- {title}: {body[:420]}")
+    artifact_context = "\n".join(artifact_lines) or "暂无已生成产物。"
+    return f"{goal.strip()}\n\n画布上下文：\n{source}\n\n已生成产物：\n{artifact_context}"
 
 
 def _agent_run_context_count(context_snapshot: Dict[str, Any]) -> int:
     selected = context_snapshot.get("selectedNodes") if isinstance(context_snapshot, dict) else []
     return len(selected) if isinstance(selected, list) else 0
+
+
+def _agent_run_previous_artifacts(session: Session, run: SluvoAgentRun, limit: int = 8) -> List[Dict[str, Any]]:
+    artifacts = session.exec(
+        select(SluvoAgentArtifact)
+        .where(SluvoAgentArtifact.run_id == run.id)
+        .order_by(SluvoAgentArtifact.id.asc())
+    ).all()
+    result: List[Dict[str, Any]] = []
+    for artifact in artifacts:
+        if len(result) >= limit:
+            break
+        payload = _json_load(artifact.payload_json, {})
+        body = str(payload.get("body") or payload.get("prompt") or "").strip()
+        if not body:
+            continue
+        result.append({
+            "title": artifact.title,
+            "artifactType": artifact.artifact_type,
+            "body": _compact_story_source(body, 1000),
+        })
+    return result
 
 
 def _agent_run_origin(context_snapshot: Dict[str, Any]) -> tuple[float, float]:
@@ -1438,6 +1471,15 @@ def _try_deepseek_agent_artifact_body(
             content = str(item.get("prompt") or item.get("body") or item.get("content") or "").strip()
             if content:
                 context_lines.append(f"- {title}: {content[:600]}")
+    previous_artifacts = context_snapshot.get("previousArtifacts") if isinstance(context_snapshot, dict) else []
+    if isinstance(previous_artifacts, list):
+        for item in previous_artifacts[:6]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "上一步产物").strip()
+            body = str(item.get("body") or "").strip()
+            if body:
+                context_lines.append(f"- {title}: {body[:900]}")
     context_text = "\n".join(context_lines) or "暂无上游节点。"
     try:
         payload = chat_json(
@@ -1817,6 +1859,7 @@ def continue_sluvo_agent_run(
     user: User,
     content: str,
     context_snapshot: Dict[str, Any],
+    action: Optional[str] = "continue",
 ) -> Dict[str, Any]:
     clean_content = str(content or "").strip()
     if not clean_content:
@@ -1825,7 +1868,8 @@ def continue_sluvo_agent_run(
     summary = _json_load(run.summary_json, {})
     model_code = normalize_sluvo_agent_model_code(summary.get("modelCode") or "deepseek-v4-flash")
     base_context = _json_load(run.context_snapshot_json, {})
-    merged_context = {**base_context, **(context_snapshot or {})}
+    previous_artifacts = _agent_run_previous_artifacts(session, run)
+    merged_context = {**base_context, **(context_snapshot or {}), "previousArtifacts": previous_artifacts}
     root_template_id = _decode_optional_safe(str(base_context.get("agentTemplateId") or ""))
     root_template = session.get(SluvoAgentTemplate, root_template_id) if root_template_id else None
     intent = summary.get("intent") if isinstance(summary.get("intent"), dict) else base_context.get("intent") if isinstance(base_context.get("intent"), dict) else {}
@@ -1861,6 +1905,86 @@ def continue_sluvo_agent_run(
         session.refresh(run)
         return _serialize_agent_run_timeline(session, run)
     workflow_index = _workflow_step_count(session, run)
+    normalized_action = str(action or "continue").strip().lower()
+    if normalized_action in {"revise", "feedback", "补充", "修改"} and workflow_index > 0:
+        current_index = max(workflow_index - 1, 0)
+        spec = SLUVO_AGENT_WORKFLOW_SPECS[current_index]
+        resolved = _resolve_agent_for_workflow_step(
+            session,
+            context_snapshot=merged_context,
+            spec=spec,
+            order_index=current_index,
+            root_template=root_template,
+            model_code=model_code,
+        )
+        revision_goal = f"{run.goal}\n\n用户补充 / 修改：{clean_content}"
+        step = _create_agent_run_step(
+            session,
+            run=run,
+            step_key=f"revise_{spec['stepKey']}_{len(existing_steps) + 1}",
+            agent_name=str(resolved["agentName"]),
+            agent_profile=str(resolved["agentProfile"]),
+            model_code=str(resolved["modelCode"]),
+            title=f"更新{spec['title']}",
+            order_index=len(existing_steps),
+            agent_template_id=_decode_optional_safe(str(resolved.get("agentTemplateId") or "")),
+            input_payload={
+                "goal": run.goal,
+                "content": clean_content,
+                "action": "revise",
+                "stage": spec["stage"],
+                "contextCount": _agent_run_context_count(merged_context),
+            },
+        )
+        artifacts = [
+            _create_agent_run_artifact(
+                session,
+                run=run,
+                step=step,
+                title=artifact_title,
+                artifact_type=artifact_type,
+                body=_artifact_body(artifact_type, revision_goal, merged_context, str(resolved["modelCode"])),
+                write_policy=policy,
+                preview={"estimatedWrite": "canvas_node", "revision": True, "estimatePoints": 20 if artifact_type == "video_placeholder" else 8 if artifact_type == "image_placeholder" else 0},
+            )
+            for artifact_title, artifact_type, policy in spec["artifacts"]
+        ]
+        _finish_agent_run_step(
+            session,
+            step,
+            output={
+                "artifactCount": len(artifacts),
+                "stage": spec["stage"],
+                "completed": "已根据补充更新当前阶段",
+                "question": spec["question"],
+                "revision": True,
+            },
+        )
+        session.commit()
+        _write_agent_run_artifacts_to_canvas(session, run=run, user=user, artifacts=artifacts)
+        used_agents = summary.get("agentTeam") if isinstance(summary.get("agentTeam"), list) else _resolved_agent_team(session, context_snapshot=base_context, root_template=root_template, model_code=model_code)
+        next_agent = used_agents[workflow_index]["agentName"] if workflow_index < len(used_agents) else None
+        run.status = "waiting_user"
+        run.summary_json = _json_dump({
+            **summary,
+            "contextCount": _agent_run_context_count(base_context),
+            "modelCode": model_code,
+            "artifactCount": _agent_run_artifact_count(session, run),
+            "nodeCount": _agent_run_artifact_count(session, run),
+            "workflow": _agent_workflow_public_specs(),
+            "agentTeam": used_agents,
+            "currentStepIndex": current_index,
+            "nextStepIndex": workflow_index if workflow_index < len(SLUVO_AGENT_WORKFLOW_SPECS) else None,
+            "awaitingAgent": next_agent,
+            "nextQuestion": spec["question"],
+            "estimatePoints": 0,
+        })
+        run.updated_at = _utc_now()
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        return _serialize_agent_run_timeline(session, run)
+
     if workflow_index < len(SLUVO_AGENT_WORKFLOW_SPECS):
         artifacts = _append_agent_workflow_step(
             session,

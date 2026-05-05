@@ -2855,7 +2855,7 @@ async function sendAgentPrompt() {
   const content = agentPanel.input.trim()
   if (!content || agentPanel.busy) return
   if (agentPanel.runId && agentPanel.activeRun?.run?.status === 'waiting_user') {
-    await continueAgentRun(content)
+    await reviseAgentRun(content)
   } else {
     await runAgentPrompt(content)
   }
@@ -2901,6 +2901,14 @@ async function runAgentPrompt(content, options = {}) {
 }
 
 async function continueAgentRun(content) {
+  return submitAgentRunContinuation(content, 'continue')
+}
+
+async function reviseAgentRun(content) {
+  return submitAgentRunContinuation(content, 'revise')
+}
+
+async function submitAgentRunContinuation(content, action = 'continue') {
   if (!agentPanel.runId || agentPanel.busy) return
   agentPanel.busy = true
   agentPanel.error = ''
@@ -2908,6 +2916,7 @@ async function continueAgentRun(content) {
     await saveCanvasNow()
     const response = await continueSluvoAgentRun(agentPanel.runId, {
       content,
+      action,
       contextSnapshot: buildAgentContextSnapshot({ sourceSurface: agentPanel.sourceSurface || 'panel' })
     })
     setActiveAgentRun(response)

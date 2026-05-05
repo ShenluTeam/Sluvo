@@ -123,6 +123,7 @@ Frontend write mapping:
 - Agent model choices currently allow `deepseek-v4-flash` and `deepseek-v4-pro`. Unknown values normalize to `deepseek-v4-flash`; when `DEEPSEEK_API_KEY` exists, the selected model is used to draft proposal content, with deterministic fallback on failure. Future models should be added server-side before exposing them in the frontend.
 - User Agent template ids may be sent as `agentProfile` or `agentTemplateId`; the backend uses the template's role prompt, use cases, input/output types, tools, approval policy, and default model when building the Agent prompt and action context.
 - Agent-node runs include `sourceSurface: "node"` and `targetNodeId`; after approval/cancel/failure, the backend updates the target Agent node's last action state in node `data`.
+- Agent run continuation distinguishes typed feedback from explicit progression: `POST /api/sluvo/agent/runs/{run_id}/continue` accepts `action: "revise"` to update the current waiting step, while `action: "continue"` advances to the next Agent stage and carries previous artifacts as context.
 - Text node local analysis uses the same DeepSeek model policy but is not part of the Agent action lifecycle. The estimate endpoint returns `{ modelCode, estimatePoints, pricing }`; analyze returns `{ content, modelCode, llmUsed, estimatePoints, pricing, summary }`. Callers persist the returned Markdown through normal canvas saving.
 
 ## 5. Legacy Project Workspace APIs

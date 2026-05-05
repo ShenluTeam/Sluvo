@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.security import encode_id
+from core.security import decode_id, encode_id
 from models import (
     GenerationRecord,
     RoleEnum,
@@ -57,6 +57,7 @@ from services.sluvo_service import (
     create_sluvo_edge,
     create_sluvo_node,
     create_sluvo_project,
+    continue_sluvo_agent_run,
     estimate_sluvo_text_node_points,
     get_or_create_main_canvas,
     confirm_sluvo_agent_run_cost,
@@ -550,6 +551,84 @@ def test_sluvo_agent_run_turns_inspiration_into_specific_script_artifact():
         assert "核心输入：" not in body
         assert "故事钩子：保留用户原始表达" not in body
         assert "模型：" not in body
+
+
+def test_sluvo_agent_run_waiting_input_revises_current_step_without_advancing():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Run Revision"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+        timeline = create_sluvo_agent_run(
+            session,
+            project=project,
+            user=owner,
+            team=team,
+            canvas_id=canvas.id,
+            target_node_id=None,
+            goal="雨夜迈巴赫",
+            source_surface="panel",
+            agent_profile="auto",
+            agent_template_id=None,
+            model_code="deepseek-v4-flash",
+            mode="semi_auto",
+            context_snapshot={"selectedNodes": []},
+        )
+        run = session.get(SluvoAgentRun, decode_id(timeline["run"]["id"]))
+
+        revised = continue_sluvo_agent_run(
+            session,
+            run=run,
+            user=owner,
+            content="强调车里的人和主角过去有关",
+            context_snapshot={"selectedNodes": []},
+            action="revise",
+        )
+
+        assert revised["run"]["status"] == "waiting_user"
+        assert revised["run"]["summary"]["nextStepIndex"] == 1
+        assert revised["steps"][-1]["stepKey"].startswith("revise_understand_story")
+        assert all(step["stepKey"] != "develop_story" for step in revised["steps"])
+        body = revised["steps"][-1]["artifacts"][0]["payload"]["body"]
+        assert "雨夜迈巴赫" in body or "迈巴赫" in body
+        assert "过去" in body or "有关" in body
+
+
+def test_sluvo_agent_run_continue_uses_previous_artifact_context():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Run Continue"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+        timeline = create_sluvo_agent_run(
+            session,
+            project=project,
+            user=owner,
+            team=team,
+            canvas_id=canvas.id,
+            target_node_id=None,
+            goal="雨夜迈巴赫",
+            source_surface="panel",
+            agent_profile="auto",
+            agent_template_id=None,
+            model_code="deepseek-v4-flash",
+            mode="semi_auto",
+            context_snapshot={"selectedNodes": []},
+        )
+        run = session.get(SluvoAgentRun, decode_id(timeline["run"]["id"]))
+
+        continued = continue_sluvo_agent_run(
+            session,
+            run=run,
+            user=owner,
+            content="继续",
+            context_snapshot={"selectedNodes": []},
+            action="continue",
+        )
+
+        assert any(step["stepKey"] == "develop_story" for step in continued["steps"])
+        body = continued["steps"][-1]["artifacts"][0]["payload"]["body"]
+        assert "迈巴赫" in body
 
 
 def test_sluvo_agent_panel_patch_writes_products_not_agent_nodes():

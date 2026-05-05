@@ -64,6 +64,7 @@ MVP canvas interactions:
 - Upload image, video, and audio files into a canvas asset node with instant preview and visible upload state
 - Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, and review a staged Agent Team timeline made of stages, artifacts, canvas writes, and media confirmation controls.
 - In the 创作总监 panel, ordinary question inputs should render as compact direct-answer cards instead of staged production steps; creative inspiration and script inputs still render as the staged Agent Team workflow.
+- When an Agent workflow is waiting for confirmation, text entered in the composer is treated as feedback for the current stage; only the explicit `继续下一步` button advances to the next Agent stage.
 - Use the text-node local composer below a text node to analyze, expand, or rewrite only that node; the response should render as Markdown inside the same node and should not appear in the right-side Agent panel.
 - Select and copy rendered Markdown text inside text nodes without triggering node drag or canvas selection.
 - Add an Agent node to the canvas and connect it to creative inputs/outputs like other workflow nodes.

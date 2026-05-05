@@ -4,6 +4,28 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/schemas.py`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Split Agent waiting-state composer behavior from explicit stage progression: typed feedback now revises the current stage, while `继续下一步` advances to the next Agent.
+- Agent continuation now carries previous artifacts into the next stage context so story structure, character, scene, and storyboard outputs stay connected to the drafted script.
+- Added tests for revising the current inspiration stage without accidentally creating the next story-structure step.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/schemas.py backend/tests/test_sluvo_service.py`
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
 - `doc/CHANGELOG_DEV.md`
 

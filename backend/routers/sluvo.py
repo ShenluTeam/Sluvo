@@ -893,7 +893,7 @@ async def continue_sluvo_run(
     ensure_sluvo_agent_workflow_tables()
     run = require_sluvo_agent_run(session, decode_id(run_id))
     _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_AGENT)
-    return continue_sluvo_agent_run(session, run=run, user=user, content=payload.content, context_snapshot=payload.contextSnapshot)
+    return continue_sluvo_agent_run(session, run=run, user=user, content=payload.content, context_snapshot=payload.contextSnapshot, action=payload.action)
 
 
 @router.post("/api/sluvo/agent/runs/{run_id}/confirm-cost")

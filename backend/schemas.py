@@ -1461,6 +1461,7 @@ class SluvoAgentRunCreateRequest(BaseModel):
 class SluvoAgentRunContinueRequest(BaseModel):
     content: str
     contextSnapshot: Dict[str, Any] = PydanticField(default_factory=dict)
+    action: Optional[str] = "continue"
 
 
 class SluvoAgentRunConfirmCostRequest(BaseModel):
