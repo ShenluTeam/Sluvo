@@ -3,6 +3,22 @@
 ## 2026-05-05
 
 Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Allowed rendered Markdown text inside Sluvo text nodes to be selected and copied.
+- Added the Markdown body to the direct-node interaction whitelist so text selection does not start node dragging or get blocked by the canvas-level selection guard.
+
+Verification suggestions:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-05
+
+Changed files:
 - `apps/sluvo-web/src/api/sluvoApi.js`
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`

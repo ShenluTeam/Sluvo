@@ -3012,7 +3012,7 @@ function handlePromptFieldPointerDown(nodeId, event) {
 function isDirectPromptEditTarget(target) {
   return (
     target instanceof HTMLElement &&
-    Boolean(target.closest('.direct-workflow-node__prompt-field, .direct-workflow-node__references, .direct-workflow-node__generation-controls'))
+    Boolean(target.closest('.direct-workflow-node__prompt-field, .direct-workflow-node__markdown, .direct-workflow-node__references, .direct-workflow-node__generation-controls'))
   )
 }
 

@@ -64,6 +64,7 @@ MVP canvas interactions:
 - Upload image, video, and audio files into a canvas asset node with instant preview and visible upload state
 - Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, let the system auto-route to a specialist Agent, review the proposed action, then approve or cancel it.
 - Use the text-node local composer below a text node to analyze, expand, or rewrite only that node; the response should render as Markdown inside the same node and should not appear in the right-side Agent panel.
+- Select and copy rendered Markdown text inside text nodes without triggering node drag or canvas selection.
 - Add an Agent node to the canvas and connect it to creative inputs/outputs like other workflow nodes.
 
 Canvas layout must be stable: hover states, badges, task indicators, and loading states should not cause node size jumps.

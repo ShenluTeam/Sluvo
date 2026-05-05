@@ -3477,8 +3477,15 @@ button {
   font-size: 19px;
   font-weight: 650;
   line-height: 1.68;
+  cursor: text;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.direct-workflow-node__markdown,
+.direct-workflow-node__markdown * {
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 .direct-workflow-node__markdown h1,
