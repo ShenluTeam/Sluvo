@@ -2527,6 +2527,7 @@ function setAgentPanelVisible(visible) {
 function serializeAgentContextNode(node) {
   return {
     id: node.id,
+    clientId: node.clientId || node.id,
     title: node.title,
     nodeType: mapDirectTypeToBackendType(node.type),
     directType: node.type,
@@ -2764,6 +2765,7 @@ function getAgentHistorySummary(item) {
 
 function restoreAgentSession(item) {
   if (!item?.session?.id) return
+  const restoredAction = item.pendingAction || null
   suppressAgentSelectionWatch = true
   agentPanel.sessionId = item.session.id
   agentPanel.profile = item.session.contextSnapshot?.agentTemplateId || item.session.agentProfile || 'auto'
@@ -2779,7 +2781,10 @@ function restoreAgentSession(item) {
     content: event.payload?.content || (event.eventType === 'proposal' ? 'Agent 已生成一条可审阅提案。' : ''),
     routing: getAgentEventRoutingLabel(event.payload)
   })).filter((message) => message.content)
-  agentPanel.pendingAction = normalizeAgentAction(item.pendingAction || (item.latestAction?.status === 'failed' ? item.latestAction : null))
+  agentPanel.pendingAction = normalizeAgentAction(restoredAction && restoredAction.status !== 'failed' ? restoredAction : null)
+  if (!agentPanel.pendingAction && item.latestAction?.status === 'failed') {
+    agentPanel.error = item.latestAction.error?.message || '上一条 Agent 提案写入失败，可重新生成。'
+  }
   setAgentPanelVisible(true)
 }
 
@@ -2802,7 +2807,8 @@ async function loadAgentHistory() {
   try {
     agentPanel.history = await fetchSluvoProjectAgentSessions(projectId, { limit: 12 })
     if (!agentPanel.sessionId) {
-      const restorable = agentPanel.history.find((item) => item.pendingAction || item.events?.length)
+      const restorable = agentPanel.history.find((item) => item.pendingAction?.status && item.pendingAction.status !== 'failed')
+        || agentPanel.history.find((item) => item.events?.length && item.latestAction?.status !== 'failed')
       if (restorable) restoreAgentSession(restorable)
     }
   } catch (error) {

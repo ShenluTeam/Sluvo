@@ -165,6 +165,15 @@ def _decode_optional(value: Optional[str]) -> Optional[int]:
     return decode_id(str(value))
 
 
+def _decode_optional_safe(value: Optional[str]) -> Optional[int]:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return decode_id(str(value))
+    except HTTPException:
+        return None
+
+
 def _require_active_project(session: Session, project_id: int) -> SluvoProject:
     project = session.get(SluvoProject, project_id)
     if not project or project.deleted_at is not None or project.status == SLUVO_PROJECT_STATUS_DELETED:
@@ -216,14 +225,15 @@ def _resolve_batch_node_id(
     client_node_ids: Dict[str, int],
     label: str,
 ) -> int:
-    node_id = _decode_optional(value)
+    raw_value = str(value or "").strip()
+    node_id = _decode_optional_safe(raw_value)
     if node_id:
         node = _require_node(session, node_id)
         _assert_same_canvas(node.canvas_id, canvas.id, label)
         return node.id
-    client_key = str(client_id or "").strip()
-    if client_key and client_key in client_node_ids:
-        return client_node_ids[client_key]
+    for client_key in (str(client_id or "").strip(), raw_value):
+        if client_key and client_key in client_node_ids:
+            return client_node_ids[client_key]
     raise HTTPException(status_code=400, detail=f"{label} cannot be resolved")
 
 
@@ -2819,6 +2829,11 @@ def _first_selected_node_id(selected_nodes: List[Dict[str, Any]]) -> str:
         if not isinstance(item, dict):
             continue
         value = str(item.get("id") or item.get("nodeId") or "").strip()
+        if value and _decode_optional_safe(value):
+            return value
+        client_value = str(item.get("clientId") or "").strip()
+        if client_value:
+            return client_value
         if value:
             return value
     return ""
@@ -2942,7 +2957,7 @@ def create_sluvo_agent_action(
     agent_session: SluvoAgentSession,
     action_payload: Dict[str, Any],
 ) -> SluvoAgentAction:
-    target_node_id = _decode_optional(action_payload.get("targetNodeId")) or agent_session.target_node_id
+    target_node_id = _decode_optional_safe(action_payload.get("targetNodeId")) or agent_session.target_node_id
     action = SluvoAgentAction(
         session_id=agent_session.id,
         project_id=agent_session.project_id,
