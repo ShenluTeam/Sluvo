@@ -79,6 +79,7 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | List/add project members | GET/POST | `/api/sluvo/projects/{project_id}/members` |
 | Patch/remove project member | PATCH/DELETE | `/api/sluvo/projects/{project_id}/members/{user_id}` |
 | Create canvas Agent session | POST | `/api/sluvo/projects/{project_id}/agent/sessions` |
+| List project Agent sessions | GET | `/api/sluvo/projects/{project_id}/agent/sessions` |
 | Read canvas Agent session | GET | `/api/sluvo/agent/sessions/{session_id}` |
 | Send Agent message/proposed action | POST | `/api/sluvo/agent/sessions/{session_id}/messages` |
 | Analyze text node locally | POST | `/api/sluvo/projects/{project_id}/text-node/analyze` |
@@ -110,9 +111,11 @@ Frontend write mapping:
 - Upload nodes persist media through `SluvoCanvasAsset` and existing `storage_object`; `blob:` preview URLs are never valid backend truth.
 - Uploaded Sluvo media is stored in OSS by user namespace and Sluvo project: `users/{namespace}/sluvo/projects/{project}/canvases/{canvas}/{images|videos|audio}/...`.
 - Sluvo uploads enforce the existing user storage quota path; the default free-user capacity is `5GB`. Duplicate uploads in the same user/project scope can reuse an existing OSS object by `sha256 + user_id + project_id`.
-- Canvas Agent endpoints are called by the current canvas milestone. Messages create proposed actions; approving an action applies its batch-compatible `patch` through the existing canvas save path and records `SluvoCanvasMutation` with Agent session/action IDs.
+- Canvas Agent endpoints are called by the current canvas milestone. Messages create proposed actions; approving an action applies its batch-compatible `patch` through the existing canvas save path and records `SluvoCanvasMutation` with Agent session/action IDs. Project session listing returns recent events/actions so the frontend can restore project-local Agent history.
 - `agentProfile: "auto"` is the default 创作总监 contract. The backend resolves the specialist Agent and action type from the prompt and canvas context, then exposes `resolvedProfile`, `resolvedActionType`, `routingReason`, and `modelCode` in the Agent event/action input summary.
 - Agent model choices currently allow `deepseek-v4-flash` and `deepseek-v4-pro`. Unknown values normalize to `deepseek-v4-flash`; when `DEEPSEEK_API_KEY` exists, the selected model is used to draft proposal content, with deterministic fallback on failure. Future models should be added server-side before exposing them in the frontend.
+- User Agent template ids may be sent as `agentProfile` or `agentTemplateId`; the backend uses the template's role prompt, use cases, input/output types, tools, approval policy, and default model when building the Agent prompt and action context.
+- Agent-node runs include `sourceSurface: "node"` and `targetNodeId`; after approval/cancel/failure, the backend updates the target Agent node's last action state in node `data`.
 - Text node local analysis uses the same DeepSeek model policy but is not part of the Agent action lifecycle. It returns `{ content, modelCode, llmUsed, summary }`; callers persist the returned Markdown through normal canvas saving.
 
 ## 5. Legacy Project Workspace APIs

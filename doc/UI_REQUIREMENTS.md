@@ -134,6 +134,10 @@ Publishing to community must make clear that it creates a shareable snapshot. Up
 
 Agent proposals must make clear that they are not written to the canvas until the user approves them. The default Agent profile is automatic 创作总监 routing; manual Agent and model controls belong in advanced settings. The initial selectable Agent models are `DeepSeek v4 Flash` and `DeepSeek v4 Pro`; model choice should appear as a creative control, not as a raw provider-debug field. Text-node local model controls are scoped to the selected text node and should be visually centered with that node frame.
 
+The right-side 创作总监 panel should work as an Agent Team control surface: users can select automatic routing, copy starter Agents into "我的 Agent", create/edit/delete custom Agents, restore project-local Agent history, and review proposed nodes/edges as a list before approval.
+
+Agent nodes should be runnable canvas units. A selected Agent node can choose a custom Agent template, inherit the panel Agent settings, read connected upstream nodes as context, and generate a proposal that still requires user approval before writing.
+
 ## 7. Copywriting
 
 Use creator-facing language.

@@ -61,6 +61,7 @@ from services.sluvo_service import (
     list_sluvo_agent_templates,
     list_sluvo_community_agents,
     list_sluvo_community_canvases,
+    list_sluvo_project_agent_sessions,
     list_sluvo_project_members,
     list_sluvo_projects,
     process_sluvo_agent_message,
@@ -739,6 +740,20 @@ async def post_sluvo_agent_session(
         context_snapshot=payload.contextSnapshot,
     )
     return {"session": serialize_sluvo_agent_session(item)}
+
+
+@router.get("/api/sluvo/projects/{project_id}/agent/sessions")
+async def get_sluvo_project_agent_sessions(
+    project_id: str,
+    limit: int = 12,
+    _: TeamMemberLink = Depends(require_team_permission("project:read")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    project, _ = _access_project(session, user=user, team=team, team_member=team_member, project_id=project_id, permission=SLUVO_PERMISSION_READ)
+    return {"items": list_sluvo_project_agent_sessions(session, project=project, limit=limit)}
 
 
 @router.post("/api/sluvo/projects/{project_id}/text-node/analyze")

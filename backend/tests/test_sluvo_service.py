@@ -15,6 +15,7 @@ from models import (
     RoleEnum,
     SluvoCanvasAsset,
     SluvoCanvasMutation,
+    SluvoCanvasNode,
     SluvoProject,
     SluvoProjectMember,
     Team,
@@ -23,6 +24,7 @@ from models import (
 )
 from schemas import (
     SluvoAgentSessionCreateRequest,
+    SluvoAgentTemplateCreateRequest,
     SluvoCanvasBatchRequest,
     SluvoCanvasEdgeCreateRequest,
     SluvoCanvasNodeCreateRequest,
@@ -44,11 +46,13 @@ from services.sluvo_service import (
     build_sluvo_agent_action_payload,
     create_sluvo_agent_action,
     create_sluvo_agent_session,
+    create_sluvo_agent_template,
     create_sluvo_canvas_asset_upload,
     create_sluvo_edge,
     create_sluvo_node,
     create_sluvo_project,
     get_or_create_main_canvas,
+    list_sluvo_project_agent_sessions,
     require_sluvo_project_access,
     resolve_sluvo_agent_route,
     update_sluvo_node,
@@ -559,3 +563,120 @@ def test_sluvo_text_node_analysis_returns_node_local_markdown():
     assert "content" in result
     assert "### 场景" in result["content"] or "分镜" in result["content"]
     assert "action" not in result
+
+
+def test_sluvo_custom_agent_template_shapes_context_and_history():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Custom Agent"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+        template = create_sluvo_agent_template(
+            session,
+            user=owner,
+            team=team,
+            payload=SluvoAgentTemplateCreateRequest(
+                name="角色设定师",
+                description="专门整理角色设定",
+                modelCode="deepseek-v4-pro",
+                rolePrompt="只输出角色设定，不处理视频执行。",
+                useCases=["角色关系", "角色外观"],
+                inputTypes=["text"],
+                outputTypes=["note"],
+                tools=["read_canvas", "propose_canvas_patch"],
+                approvalPolicy={"mode": "always_review"},
+            ),
+        )
+        agent_session = create_sluvo_agent_session(
+            session,
+            project=project,
+            user=owner,
+            team=team,
+            canvas_id=canvas.id,
+            target_node_id=None,
+            title="角色设定师",
+            agent_profile=encode_id(template.id),
+            model_code="",
+            mode="semi_auto",
+            context_snapshot={"agentTemplateId": encode_id(template.id), "sourceSurface": "panel"},
+        )
+
+        action_payload, reply = build_sluvo_agent_action_payload(
+            session,
+            agent_session=agent_session,
+            content="请整理主角设定",
+            payload={
+                "agentProfile": encode_id(template.id),
+                "contextSnapshot": {
+                    "agentTemplateId": encode_id(template.id),
+                    "sourceSurface": "panel",
+                    "selectedNodes": [],
+                },
+            },
+        )
+        action = create_sluvo_agent_action(session, agent_session=agent_session, action_payload=action_payload)
+
+        assert reply["agentName"] == "角色设定师"
+        assert reply["modelCode"] == "deepseek-v4-pro"
+        assert action_payload["input"]["contextSummary"]["agentTemplateId"] == encode_id(template.id)
+        assert action_payload["input"]["contextSummary"]["sourceSurface"] == "panel"
+
+        history = list_sluvo_project_agent_sessions(session, project=project)
+        assert len(history) == 1
+        assert history[0]["session"]["id"] == encode_id(agent_session.id)
+        assert history[0]["latestAction"]["id"] == encode_id(action.id)
+
+
+def test_sluvo_agent_node_target_context_and_approval_updates_node_state():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Agent Node"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+        agent_node = create_sluvo_node(
+            session,
+            canvas,
+            SluvoCanvasNodeCreateRequest(
+                nodeType="agent",
+                title="节点 Agent",
+                position={"x": 20, "y": 30},
+                data={"directType": "agent_node", "agentName": "节点 Agent"},
+            ),
+            user=owner,
+        )
+        agent_session = create_sluvo_agent_session(
+            session,
+            project=project,
+            user=owner,
+            team=team,
+            canvas_id=canvas.id,
+            target_node_id=agent_node.id,
+            title="节点 Agent",
+            agent_profile="auto",
+            model_code="deepseek-v4-flash",
+            mode="semi_auto",
+            context_snapshot={"sourceSurface": "node", "targetNodeId": encode_id(agent_node.id)},
+        )
+        action_payload, _reply = build_sluvo_agent_action_payload(
+            session,
+            agent_session=agent_session,
+            content="请分析上游并生成建议",
+            payload={
+                "agentProfile": "auto",
+                "modelCode": "deepseek-v4-flash",
+                "contextSnapshot": {
+                    "sourceSurface": "node",
+                    "targetNodeId": encode_id(agent_node.id),
+                    "selectedNodes": [],
+                },
+            },
+        )
+        action = create_sluvo_agent_action(session, agent_session=agent_session, action_payload=action_payload)
+        approved = approve_sluvo_agent_action(session, action, user=owner)
+        refreshed_node = session.get(SluvoCanvasNode, agent_node.id)
+
+        assert approved.status == "succeeded"
+        assert action_payload["targetNodeId"] == encode_id(agent_node.id)
+        assert action_payload["input"]["contextSummary"]["sourceSurface"] == "node"
+        assert "agentLastActionStatus" in refreshed_node.data_json
+        assert "succeeded" in refreshed_node.data_json
