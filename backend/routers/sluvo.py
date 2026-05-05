@@ -55,6 +55,7 @@ from services.sluvo_service import (
     create_sluvo_node,
     create_sluvo_project,
     delete_sluvo_agent_template,
+    estimate_sluvo_text_node_points,
     fork_sluvo_community_agent,
     fork_sluvo_community_canvas,
     get_sluvo_community_agent_detail,
@@ -834,6 +835,20 @@ async def post_sluvo_text_node_analyze(
 ):
     _access_project(session, user=user, team=team, team_member=team_member, project_id=project_id, permission=SLUVO_PERMISSION_AGENT)
     return analyze_sluvo_text_node(payload)
+
+
+@router.post("/api/sluvo/projects/{project_id}/text-node/estimate")
+async def post_sluvo_text_node_estimate(
+    project_id: str,
+    payload: SluvoTextNodeAnalyzeRequest,
+    _: TeamMemberLink = Depends(require_team_permission("generate:run")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    _access_project(session, user=user, team=team, team_member=team_member, project_id=project_id, permission=SLUVO_PERMISSION_AGENT)
+    return estimate_sluvo_text_node_points(payload)
 
 
 @router.get("/api/sluvo/agent/sessions/{session_id}")

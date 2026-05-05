@@ -882,7 +882,7 @@ function openCommunityDetail(item) {
     router.push({ name: 'login', query: { redirect: `/community/canvases/${item.id}` } })
     return
   }
-  router.push({ name: 'community-canvas-detail', params: { publicationId: item.id } })
+  router.push({ name: 'community-canvas-detail', params: { publicationId: item.id }, query: { from: 'community' } })
 }
 
 async function forkCommunityCanvas(item) {
@@ -2682,7 +2682,7 @@ onBeforeUnmount(() => {
 
 .community-space {
   width: min(1280px, calc(100vw - 120px));
-  min-height: 860px;
+  min-height: 680px;
   padding: 82px clamp(16px, 4vw, 52px) 120px;
   overflow: hidden;
   border-radius: 10px;
@@ -2707,51 +2707,20 @@ onBeforeUnmount(() => {
 }
 
 .community-grid--space {
-  position: relative;
   display: grid;
-  grid-template-columns: repeat(6, minmax(150px, 1fr));
-  grid-auto-rows: 96px;
-  gap: 18px;
-  min-height: 620px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 420px));
+  align-items: start;
+  justify-content: start;
+  gap: 24px;
+  min-height: 0;
 }
 
 .community-card--space {
-  grid-column: span 2;
-  grid-row: span 3;
-  align-self: start;
+  width: 100%;
+  min-height: 480px;
   animation: community-rise linear both;
   animation-timeline: view();
   animation-range: entry 0% cover 34%;
-}
-
-.community-card--space:nth-child(1) {
-  grid-column: 1 / span 2;
-  margin-top: 20px;
-}
-
-.community-card--space:nth-child(2) {
-  grid-column: 4 / span 2;
-  margin-top: 104px;
-}
-
-.community-card--space:nth-child(3) {
-  grid-column: 2 / span 2;
-  margin-top: 42px;
-}
-
-.community-card--space:nth-child(4) {
-  grid-column: 5 / span 2;
-  margin-top: 8px;
-}
-
-.community-card--space:nth-child(5) {
-  grid-column: 1 / span 2;
-  margin-top: 84px;
-}
-
-.community-card--space:nth-child(6) {
-  grid-column: 3 / span 2;
-  margin-top: 156px;
 }
 
 .community-card {

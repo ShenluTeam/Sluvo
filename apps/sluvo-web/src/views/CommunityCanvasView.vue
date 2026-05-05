@@ -5,7 +5,7 @@
         <img :src="logoUrl" alt="" />
         <strong>Sluvo</strong>
       </button>
-      <button type="button" @click="goHome">返回首页</button>
+      <button type="button" @click="goBack">返回</button>
     </nav>
 
     <section v-if="loading" class="community-state">
@@ -277,6 +277,18 @@ function formatDate(value) {
 
 function goHome() {
   router.push('/')
+}
+
+function goBack() {
+  if (route.query.from === 'community') {
+    router.push({ name: 'workspace', hash: '#community' })
+    return
+  }
+  if (typeof window !== 'undefined' && window.history.length > 1) {
+    router.back()
+    return
+  }
+  router.push({ name: 'workspace', hash: '#community' })
 }
 </script>
 

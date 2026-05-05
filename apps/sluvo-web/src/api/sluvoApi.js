@@ -209,6 +209,13 @@ export function analyzeSluvoTextNode(projectId, payload) {
   })
 }
 
+export function estimateSluvoTextNode(projectId, payload) {
+  return apiFetch(`/api/sluvo/projects/${projectId}/text-node/estimate`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
 export function approveSluvoAgentAction(actionId) {
   return apiFetch(`/api/sluvo/agent/actions/${actionId}/approve`, {
     method: 'POST'

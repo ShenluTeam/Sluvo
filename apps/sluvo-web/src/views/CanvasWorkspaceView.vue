@@ -178,13 +178,13 @@
               <div v-if="node.media?.kind === 'image' && getUploadedImageSrc(node)" class="uploaded-asset__preview">
                 <img :src="getUploadedImageSrc(node)" :alt="node.media.name" draggable="false" @error="handleUploadedImageError(node.id)" />
               </div>
-              <div v-else-if="node.media?.kind === 'video' && node.media?.url" class="uploaded-asset__preview">
-                <video :src="node.media.url" controls />
+              <div v-else-if="node.media?.kind === 'video' && getUploadedVideoSrc(node)" class="uploaded-asset__preview">
+                <video :src="getUploadedVideoSrc(node)" controls preload="metadata" />
               </div>
-              <div v-else-if="node.media?.kind === 'audio' && node.media?.url" class="uploaded-asset__audio">
+              <div v-else-if="node.media?.kind === 'audio' && getUploadedAudioSrc(node)" class="uploaded-asset__audio">
                 <Music2 :size="42" />
                 <strong>{{ node.media.name }}</strong>
-                <audio :src="node.media.url" controls />
+                <audio :src="getUploadedAudioSrc(node)" controls preload="metadata" />
               </div>
               <div v-else-if="node.upload?.status === 'error'" class="uploaded-asset__state uploaded-asset__state--error">
                 <strong>{{ node.upload.message || '上传失败' }}</strong>
@@ -506,7 +506,15 @@
                 <button type="button" title="写入节点" :disabled="!textNodeComposer.input.trim()" @click.stop="writeTextComposerToNode(node)">
                   <ListChecks :size="16" />
                 </button>
-                <button type="submit" :disabled="textNodeComposer.busy || (!textNodeComposer.input.trim() && !node.prompt.trim())">
+                <button
+                  class="text-node-ai-composer__submit"
+                  type="submit"
+                  :disabled="textNodeComposer.busy || (!textNodeComposer.input.trim() && !node.prompt.trim())"
+                >
+                  <span class="text-node-ai-composer__points" :class="{ 'is-pending': textNodeComposer.estimateStatus === 'loading' }">
+                    <Star :size="14" />
+                    {{ getTextNodeComposerPointsLabel() }}
+                  </span>
                   <ArrowUp :size="18" />
                 </button>
               </footer>
@@ -1391,7 +1399,7 @@
         v-if="addMenu.visible"
         :position="addMenu.screen"
         :show-resources="!pendingDirectConnection.sourceId"
-        :allowed-items="getPendingConnectionAllowedMenuItems()"
+        :disabled-items="getPendingConnectionDisabledMenuItems()"
         :on-select="handleMenuSelect"
         @click.stop
         @select-node="handleMenuSelect"
@@ -1403,7 +1411,7 @@
         variant="reference"
         :position="referenceMenu.screen"
         :show-resources="false"
-        :disabled-items="['compose']"
+        :disabled-items="getReferenceMenuDisabledItems()"
         :on-select="handleReferenceSelect"
         @click.stop
         @select-node="handleReferenceSelect"
@@ -1603,6 +1611,7 @@ import {
   createSluvoAgentRun,
   createSluvoAgentSession,
   deleteSluvoAgent,
+  estimateSluvoTextNode,
   fetchSluvoAgents,
   fetchSluvoAgentRun,
   fetchSluvoProjectAgentRuns,
@@ -1760,6 +1769,24 @@ const nodeMeta = {
     body: '读取连接的文本、素材和生成节点，提出可审阅、可批准、可撤销的画布创作建议。',
     action: '运行 Agent'
   }
+}
+
+const referenceMenuNodeTypes = {
+  text: 'prompt_note',
+  image: 'image_unit',
+  video: 'video_unit',
+  compose: 'media_board',
+  audio: 'audio_unit',
+  script: 'script_episode',
+  agent: 'agent_node'
+}
+const referenceMenuItemIds = Object.keys(referenceMenuNodeTypes)
+const downstreamConnectionRules = {
+  prompt_note: ['prompt_note', 'image_unit', 'video_unit', 'audio_unit'],
+  image_unit: ['prompt_note', 'image_unit', 'video_unit'],
+  video_unit: ['prompt_note', 'video_unit'],
+  audio_unit: ['video_unit'],
+  asset_table: ['image_unit', 'video_unit', 'audio_unit']
 }
 
 const route = useRoute()
@@ -1951,7 +1978,10 @@ const textNodeComposer = reactive({
   input: '',
   modelCode: 'deepseek-v4-flash',
   busy: false,
-  error: ''
+  error: '',
+  estimatePoints: null,
+  estimateStatus: 'idle',
+  estimateKey: ''
 })
 const AGENT_PANEL_VISIBILITY_STORAGE_KEY = 'sluvo_agent_panel_visible'
 const referenceUploadAccept = ref('image/*')
@@ -1963,6 +1993,7 @@ let previousDocumentKeydown = null
 let previousWindowKeydown = null
 let frameResizeObserver = null
 let uploadTimer = null
+let textNodeEstimateTimer = null
 let autoSaveTimer = null
 let suppressCanvasSaveScheduling = false
 let suppressAgentSelectionWatch = false
@@ -2287,6 +2318,10 @@ const selectionBoxStyle = computed(() => {
   }
 })
 const selectedDirectNodes = computed(() => directNodes.value.filter((node) => selectedDirectNodeIds.value.includes(node.id)))
+const selectedTextComposerNode = computed(() => {
+  if (selectedDirectNodeIds.value.length !== 1) return null
+  return directNodes.value.find((node) => node.id === selectedDirectNodeIds.value[0] && node.type === 'prompt_note') || null
+})
 const selectedDirectGroupId = computed(() => {
   const groups = [...new Set(selectedDirectNodes.value.map((node) => node.groupId).filter(Boolean))]
   if (groups.length !== 1) return ''
@@ -2475,6 +2510,20 @@ watch(
   { deep: true }
 )
 
+watch(
+  () => [
+    route.params.projectId,
+    selectedTextComposerNode.value?.id || '',
+    selectedTextComposerNode.value?.title || '',
+    selectedTextComposerNode.value?.prompt || '',
+    textNodeComposer.input,
+    textNodeComposer.modelCode
+  ],
+  () => {
+    scheduleTextNodeEstimate()
+  }
+)
+
 watch(projectTitle, () => {
   scheduleCanvasSave()
 })
@@ -2584,6 +2633,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   frameResizeObserver?.disconnect()
   window.clearTimeout(autoSaveTimer)
+  window.clearTimeout(textNodeEstimateTimer)
   window.clearInterval(uploadTimer)
   window.clearTimeout(clipboardPasteFallbackTimer)
   window.cancelAnimationFrame(directPortLayoutRaf)
@@ -2928,6 +2978,60 @@ function getAgentProfileLabel(profileId) {
 
 function getAgentModelLabel(modelCode) {
   return agentModelOptions.find((model) => model.id === modelCode)?.label || modelCode || ''
+}
+
+function getTextNodeComposerPointsLabel() {
+  const points = Number(textNodeComposer.estimatePoints)
+  return `${Number.isFinite(points) ? points : '--'} 灵感`
+}
+
+function buildTextNodeEstimatePayload(node) {
+  return {
+    nodeTitle: node?.title || '文本节点',
+    content: node?.prompt || '',
+    instruction: textNodeComposer.input || '',
+    modelCode: textNodeComposer.modelCode
+  }
+}
+
+function getTextNodeEstimateKey(node) {
+  if (!node?.id) return ''
+  const payload = buildTextNodeEstimatePayload(node)
+  return JSON.stringify([route.params.projectId || '', node.id, payload.nodeTitle, payload.content, payload.instruction, payload.modelCode])
+}
+
+function scheduleTextNodeEstimate(delay = 320) {
+  window.clearTimeout(textNodeEstimateTimer)
+  const node = selectedTextComposerNode.value
+  const projectId = String(route.params.projectId || '')
+  if (!node || !projectId) {
+    textNodeComposer.estimatePoints = null
+    textNodeComposer.estimateStatus = 'idle'
+    textNodeComposer.estimateKey = ''
+    return
+  }
+  const key = getTextNodeEstimateKey(node)
+  if (key === textNodeComposer.estimateKey && Number.isFinite(Number(textNodeComposer.estimatePoints))) return
+  textNodeComposer.estimateStatus = 'loading'
+  textNodeEstimateTimer = window.setTimeout(() => estimateTextNodeComposerPoints(node, key), delay)
+}
+
+async function estimateTextNodeComposerPoints(node, key = getTextNodeEstimateKey(node)) {
+  const projectId = String(route.params.projectId || '')
+  if (!node?.id || !projectId || key !== getTextNodeEstimateKey(node)) return
+  try {
+    const response = await estimateSluvoTextNode(projectId, buildTextNodeEstimatePayload(node))
+    if (key !== getTextNodeEstimateKey(node)) return
+    const points = Number(response?.estimatePoints ?? response?.estimate_points)
+    textNodeComposer.estimatePoints = Number.isFinite(points) ? points : null
+    textNodeComposer.estimateStatus = 'success'
+    textNodeComposer.estimateKey = key
+  } catch {
+    if (key !== getTextNodeEstimateKey(node)) return
+    textNodeComposer.estimatePoints = null
+    textNodeComposer.estimateStatus = 'error'
+    textNodeComposer.estimateKey = key
+  }
 }
 
 function getAgentActionPreviewNodes(action) {
@@ -3552,6 +3656,12 @@ async function submitTextNodeAnalysis(node) {
       instruction: question || '请分析这个文本节点，提取角色、场景、道具，并给出下一步创作建议。',
       modelCode: textNodeComposer.modelCode
     })
+    const points = Number(response?.estimatePoints ?? response?.estimate_points)
+    if (Number.isFinite(points)) {
+      textNodeComposer.estimatePoints = points
+      textNodeComposer.estimateStatus = 'success'
+      textNodeComposer.estimateKey = getTextNodeEstimateKey(node)
+    }
     const nextContent = String(response?.content || '').trim()
     if (!nextContent) throw new Error('模型没有返回可写入的内容')
     rememberHistory()
@@ -5567,7 +5677,7 @@ function finishDirectConnection(event) {
   const point = { ...directConnection.current }
   const sourceId = directConnection.sourceId
   const sourceSide = directConnection.sourceSide
-  const targetId = findDirectConnectionTarget(event, sourceId, point)
+  const targetId = findDirectConnectionTarget(event, sourceId, point, sourceSide)
   pendingDirectConnection.sourceId = directConnection.sourceId
   pendingDirectConnection.sourceSide = sourceSide
   pendingDirectConnection.start = { ...directConnection.start }
@@ -5606,17 +5716,17 @@ function finishDirectConnection(event) {
   contextMenu.visible = false
 }
 
-function findDirectConnectionTarget(event, sourceId, flowPoint = null) {
+function findDirectConnectionTarget(event, sourceId, flowPoint = null, sourceSide = 'right') {
   const point = getPointerPoint(event)
 
   if (point) {
     const hovered = document.elementFromPoint(point.x, point.y)
     const directNodeId = hovered?.closest?.('.direct-workflow-node')?.getAttribute('data-direct-node-id') || ''
-    if (directNodeId && isValidDirectConnectionTarget(sourceId, directNodeId)) return directNodeId
+    if (directNodeId && isValidDirectConnectionTarget(sourceId, directNodeId, sourceSide)) return directNodeId
   }
 
   const targetNode = directNodes.value.find((node) => {
-    if (!isValidDirectConnectionTarget(sourceId, node.id)) return false
+    if (!isValidDirectConnectionTarget(sourceId, node.id, sourceSide)) return false
     if (point) {
       const rect = getDirectNodeScreenRect(node)
       return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height
@@ -5630,14 +5740,12 @@ function findDirectConnectionTarget(event, sourceId, flowPoint = null) {
   return targetNode?.id || ''
 }
 
-function isValidDirectConnectionTarget(sourceId, targetId) {
+function isValidDirectConnectionTarget(sourceId, targetId, sourceSide = 'right') {
   if (!targetId || targetId === sourceId) return false
   if (isDirectGroupId(sourceId) && getDirectGroupMemberIds(sourceId).includes(targetId)) return false
-  if (isDirectImageOnlyGroup(sourceId)) {
-    const target = directNodes.value.find((node) => node.id === targetId)
-    return target?.type === 'image_unit' || target?.type === 'video_unit'
-  }
-  return true
+  const edgeSourceId = sourceSide === 'left' ? targetId : sourceId
+  const edgeTargetId = sourceSide === 'left' ? sourceId : targetId
+  return canConnectDirectEndpoints(edgeSourceId, edgeTargetId)
 }
 
 function isDirectEndpointAvailable(endpointId) {
@@ -5668,11 +5776,58 @@ function isDirectImageOnlyGroup(groupId) {
   return members.length > 0 && members.every(isDirectImageReferenceSource)
 }
 
-function getPendingConnectionAllowedMenuItems() {
-  if (pendingDirectConnection.sourceId && isDirectImageOnlyGroup(pendingDirectConnection.sourceId)) {
-    return ['image', 'video']
-  }
-  return []
+function getPendingConnectionDisabledMenuItems() {
+  if (!pendingDirectConnection.sourceId) return []
+  return getDisabledMenuItemsForConnection({
+    endpointId: pendingDirectConnection.sourceId,
+    endpointSide: pendingDirectConnection.sourceSide
+  })
+}
+
+function getReferenceMenuDisabledItems() {
+  const sourceId = pendingDirectConnection.sourceId || referenceMenu.sourceId
+  const sourceSide = pendingDirectConnection.sourceId ? pendingDirectConnection.sourceSide : 'right'
+  if (!sourceId) return []
+  return getDisabledMenuItemsForConnection({ endpointId: sourceId, endpointSide: sourceSide })
+}
+
+function getDisabledMenuItemsForConnection({ endpointId, endpointSide = 'right' }) {
+  return referenceMenuItemIds.filter((itemId) => {
+    const itemType = referenceMenuNodeTypes[itemId]
+    if (!itemType) return false
+    const sourceType = endpointSide === 'left' ? itemType : getDirectEndpointConnectionType(endpointId)
+    const targetType = endpointSide === 'left' ? getDirectEndpointConnectionType(endpointId) : itemType
+    return !canConnectNodeTypes(sourceType, targetType)
+  })
+}
+
+function canConnectDirectEndpoints(sourceId, targetId) {
+  return canConnectNodeTypes(getDirectEndpointConnectionType(sourceId), getDirectEndpointConnectionType(targetId))
+}
+
+function canConnectNodeTypes(sourceType, targetType) {
+  if (!sourceType || !targetType) return false
+  const allowed = downstreamConnectionRules[sourceType] || []
+  return allowed.includes(targetType)
+}
+
+function getDirectEndpointConnectionType(endpointId) {
+  const node = directNodes.value.find((item) => item.id === endpointId)
+  if (node) return getDirectNodeConnectionType(node)
+  const workflowNode = nodes.value.find((item) => item.id === endpointId)
+  if (workflowNode) return workflowNode.data?.nodeType || 'prompt_note'
+  if (isDirectImageOnlyGroup(endpointId)) return 'image_unit'
+  return isDirectGroupId(endpointId) ? 'prompt_note' : ''
+}
+
+function getDirectNodeConnectionType(node) {
+  if (!node) return ''
+  if (node.type !== 'uploaded_asset') return node.type
+  const kind = node.media?.kind || ''
+  if (kind === 'image') return 'image_unit'
+  if (kind === 'video') return 'video_unit'
+  if (kind === 'audio') return 'audio_unit'
+  return ''
 }
 
 function upsertDirectEdge(sourceId, targetId) {
@@ -6251,6 +6406,10 @@ function handleMenuSelect(selection) {
 }
 
 function createDirectNodeFromPendingConnection(item) {
+  if (!canCreateNodeFromPendingConnection(item)) {
+    showToast('该节点类型不能接在这里')
+    return
+  }
   canvasActivated.value = true
   rememberHistory()
   closeFloatingPanels(false)
@@ -6277,6 +6436,10 @@ function handleReferenceSelect(selection) {
   }
 
   if (!referenceMenu.sourceId) return
+  if (!canConnectNodeTypes(getDirectEndpointConnectionType(referenceMenu.sourceId), item.type)) {
+    showToast('该节点类型不能接在这里')
+    return
+  }
 
   canvasActivated.value = true
   rememberHistory()
@@ -6292,6 +6455,19 @@ function handleReferenceSelect(selection) {
   selectOnly(createdNode.id)
   referenceMenu.visible = false
   showToast('已引用节点生成')
+}
+
+function canCreateNodeFromPendingConnection(item) {
+  if (!pendingDirectConnection.sourceId || !item?.type) return false
+  const sourceType =
+    pendingDirectConnection.sourceSide === 'left'
+      ? item.type
+      : getDirectEndpointConnectionType(pendingDirectConnection.sourceId)
+  const targetType =
+    pendingDirectConnection.sourceSide === 'left'
+      ? getDirectEndpointConnectionType(pendingDirectConnection.sourceId)
+      : item.type
+  return canConnectNodeTypes(sourceType, targetType)
 }
 
 function normalizeMenuSelection(selection) {
@@ -6683,6 +6859,7 @@ function startCanvasAssetUpload(file, options = {}) {
           }
         : node
     )
+    pruneInvalidDirectEdgesForEndpoint(existingId)
   } else {
     const position = options.flowPosition || getViewportCenter()
     const node = createDirectNodeAtFlow('uploaded_asset', position, {
@@ -6695,7 +6872,7 @@ function startCanvasAssetUpload(file, options = {}) {
   }
 
   uploadFileMap.set(nodeId, file)
-  rememberLocalUploadPreview(nodeId, kind === 'image' ? url : '')
+  rememberLocalUploadPreview(nodeId, url)
   activeUploadSignatures.set(signature, nodeId)
   uploadSignatureByNodeId.set(nodeId, signature)
   selectedDirectNodeIds.value = [nodeId]
@@ -6715,6 +6892,16 @@ function startCanvasAssetUpload(file, options = {}) {
   }
   uploadFileForNode(nodeId, file, kind, url)
   return nodeId
+}
+
+function pruneInvalidDirectEdgesForEndpoint(endpointId) {
+  if (!endpointId) return
+  const before = directEdges.value.length
+  directEdges.value = directEdges.value.filter((edge) => {
+    if (edge.sourceId !== endpointId && edge.targetId !== endpointId) return true
+    return canConnectDirectEndpoints(edge.sourceId, edge.targetId)
+  })
+  if (directEdges.value.length !== before) scheduleCanvasSave(180)
 }
 
 function getUploadFileSignature(file) {
@@ -6943,7 +7130,7 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
   if (!nextUrl) {
     throw new Error('上传接口未返回文件地址')
   }
-  rememberLocalUploadPreview(nodeId, kind === 'image' ? localUrl : '')
+  rememberLocalUploadPreview(nodeId, localUrl)
   directNodes.value = directNodes.value.map((node) =>
     node.id === nodeId
       ? {
@@ -6951,7 +7138,7 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
           media: {
             kind,
             url: nextUrl,
-            previewUrl: kind === 'image' && localUrl?.startsWith('blob:') ? localUrl : '',
+            previewUrl: localUrl?.startsWith('blob:') ? localUrl : '',
             thumbnailUrl: response?.thumbnailUrl || asset.thumbnailUrl || '',
             name: file.name,
             mime: file.type,
@@ -6974,7 +7161,6 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
         }
       : node
   )
-  if (localUrl?.startsWith('blob:') && kind !== 'image') URL.revokeObjectURL(localUrl)
   releaseUploadSignature(nodeId)
   dedupeUploadedAssetNodes({ preferId: nodeId, silent: true })
   showToast('上传成功')
@@ -7081,6 +7267,16 @@ function getUploadedImageSrc(node) {
   return getLocalUploadPreviewUrl(node) || media.previewUrl || media.thumbnailUrl || media.url || ''
 }
 
+function getUploadedVideoSrc(node) {
+  const media = node?.media || {}
+  return normalizeDisplayVideoSrc(getLocalUploadPreviewUrl(node) || media.previewUrl || media.url || '')
+}
+
+function getUploadedAudioSrc(node) {
+  const media = node?.media || {}
+  return normalizeDisplayAudioSrc(getLocalUploadPreviewUrl(node) || media.previewUrl || media.url || '')
+}
+
 function getGeneratedImageSrc(node) {
   const image = node?.generatedImage || {}
   return normalizeDisplayImageSrc(image.url || image.previewUrl || image.thumbnailUrl || '')
@@ -7107,7 +7303,7 @@ function normalizeDisplayImageSrc(value) {
   if (source.startsWith('//')) return `${window.location.protocol}${source}`
   if (/^(https?:|data:image\/|blob:)/i.test(source)) return source
   if (source.startsWith('/')) return buildApiUrl(source)
-  return source
+  return buildApiUrl(`/${source}`)
 }
 
 function normalizeDisplayVideoSrc(value) {
@@ -7116,7 +7312,7 @@ function normalizeDisplayVideoSrc(value) {
   if (source.startsWith('//')) return `${window.location.protocol}${source}`
   if (/^(https?:|blob:)/i.test(source)) return source
   if (source.startsWith('/')) return buildApiUrl(source)
-  return source
+  return buildApiUrl(`/${source}`)
 }
 
 function normalizeDisplayAudioSrc(value) {
@@ -7125,7 +7321,7 @@ function normalizeDisplayAudioSrc(value) {
   if (source.startsWith('//')) return `${window.location.protocol}${source}`
   if (/^(https?:|blob:|data:audio\/)/i.test(source)) return source
   if (source.startsWith('/')) return buildApiUrl(source)
-  return source
+  return buildApiUrl(`/${source}`)
 }
 
 function handleUploadedImageError(nodeId) {
@@ -7943,6 +8139,32 @@ function getDirectImageReferenceItems(nodeId) {
   return [...ordered, ...items.filter((item) => !orderedIds.has(item.id))]
 }
 
+function getDirectUpstreamNodes(nodeId) {
+  const nodesById = new Map(directNodes.value.map((node) => [node.id, node]))
+  const upstream = directEdges.value
+    .filter((edge) => edge.targetId === nodeId)
+    .map((edge) => nodesById.get(edge.sourceId))
+    .filter(Boolean)
+  return [...new Map(upstream.map((node) => [node.id, node])).values()]
+}
+
+function getDirectUpstreamTextSnippets(nodeId) {
+  return getDirectUpstreamNodes(nodeId)
+    .filter((node) => node.type === 'prompt_note')
+    .map((node) => String(node.prompt || '').trim())
+    .filter(Boolean)
+}
+
+function buildDirectPromptWithUpstreamReferences(node, prompt = '') {
+  const ownPrompt = String(prompt ?? node?.prompt ?? '').trim()
+  const upstreamText = node?.id ? getDirectUpstreamTextSnippets(node.id) : []
+  if (!upstreamText.length) return ownPrompt
+  return [
+    ...upstreamText.map((text, index) => `参考文本 ${index + 1}：${text}`),
+    ownPrompt ? `当前节点要求：${ownPrompt}` : ''
+  ].filter(Boolean).join('\n\n')
+}
+
 function getDirectImageReferencesFromEndpoint(endpointId) {
   if (isDirectGroupId(endpointId)) {
     return getDirectGroupMembers(endpointId)
@@ -7999,7 +8221,12 @@ function getDirectVideoReferenceItems(nodeId) {
       const source = directNodes.value.find((item) => item.id === edge.sourceId)
       const generatedVideoUrl = source?.generatedVideo?.url || ''
       const generatedAudioUrl = source?.generatedAudio?.url || ''
-      const mediaUrl = source?.media?.url || ''
+      const mediaUrl =
+        source?.media?.kind === 'audio'
+          ? getUploadedAudioSrc(source)
+          : source?.media?.kind === 'video'
+            ? getUploadedVideoSrc(source)
+            : source?.media?.url || ''
       const kind =
         source?.type === 'video_unit' && generatedVideoUrl
           ? 'video'
@@ -8035,6 +8262,29 @@ function getDirectVideoReferenceItems(nodeId) {
   const ordered = order.map((id) => itemMap.get(id)).filter(Boolean)
   const orderedIds = new Set(ordered.map((item) => item.id))
   return [...ordered, ...items.filter((item) => !orderedIds.has(item.id))]
+}
+
+function getDirectConnectedMediaReferenceKinds(nodeId) {
+  const kinds = new Set()
+  getDirectImageReferenceItems(nodeId).forEach((reference) => {
+    if (reference.url || reference.previewUrl) kinds.add('image')
+  })
+  directEdges.value
+    .filter((edge) => edge.targetId === nodeId)
+    .forEach((edge) => {
+      const source = directNodes.value.find((item) => item.id === edge.sourceId)
+      if (source?.type === 'video_unit' && source.generatedVideo?.url) kinds.add('video')
+      if (source?.type === 'audio_unit' && source.generatedAudio?.url) kinds.add('audio')
+      const mediaKind = source?.media?.kind || ''
+      const mediaUrl =
+        mediaKind === 'audio'
+          ? getUploadedAudioSrc(source)
+          : mediaKind === 'video'
+            ? getUploadedVideoSrc(source)
+            : source?.media?.url || source?.media?.previewUrl || ''
+      if (['image', 'video', 'audio'].includes(mediaKind) && mediaUrl) kinds.add(mediaKind)
+    })
+  return kinds
 }
 
 function getDirectVideoReferencePayload(nodeId, generationType = '') {
@@ -8243,9 +8493,11 @@ function getVideoGenerationType(node) {
   const model = findVideoModelOption(node?.videoModelId || fallbackVideoModelOptions[0].id)
   const features = model?.features?.length ? model.features : buildFallbackVideoFeatures(model?.id || node?.videoModelId)
   const requested = String(node?.videoGenerationType || '').trim()
+  const mediaKinds = node?.id ? getDirectConnectedMediaReferenceKinds(node.id) : new Set()
+  if (requested && requested !== 'text_to_video' && features.some((feature) => feature.generationType === requested)) return requested
+  if ((mediaKinds.has('video') || mediaKinds.has('audio')) && features.some((feature) => feature.generationType === 'reference_to_video')) return 'reference_to_video'
+  if (mediaKinds.has('image') && features.some((feature) => feature.generationType === 'image_to_video')) return 'image_to_video'
   if (requested && features.some((feature) => feature.generationType === requested)) return requested
-  const imageRefs = node?.id ? getDirectImageReferenceUrls(node.id) : []
-  if (imageRefs.length > 0 && features.some((feature) => feature.generationType === 'image_to_video')) return 'image_to_video'
   return model?.defaultGenerationType || features[0]?.generationType || 'text_to_video'
 }
 
@@ -8543,6 +8795,9 @@ function normalizeImageQualityValue(quality) {
 function buildDirectVideoPayload(node, options = {}) {
   const generationType = getVideoGenerationType(node)
   const refs = getDirectVideoReferencePayload(node?.id || '', generationType)
+  const prompt = options.promptResolved
+    ? String(options.prompt ?? '')
+    : buildDirectPromptWithUpstreamReferences(node, options.prompt ?? node?.prompt ?? '')
   const payload = {
     ownership_mode: 'standalone',
     model_code: node?.videoModelId || fallbackVideoModelOptions[0].id,
@@ -8561,7 +8816,7 @@ function buildDirectVideoPayload(node, options = {}) {
     last_frame: refs.lastFrame || '',
     motion_strength: node?.videoMotionStrength || undefined,
     quality_mode: node?.videoQualityMode || undefined,
-    prompt: options.prompt ?? node?.prompt ?? ''
+    prompt
   }
   Object.keys(payload).forEach((key) => {
     if (payload[key] === undefined || payload[key] === '') delete payload[key]
@@ -8627,7 +8882,7 @@ async function estimateDirectVideoNode(nodeId) {
 }
 
 async function runDirectImageNode(node) {
-  const prompt = node.prompt.trim()
+  const prompt = buildDirectPromptWithUpstreamReferences(node, node.prompt)
   if (!prompt) {
     showToast('请先输入图片提示词')
     return
@@ -8815,7 +9070,7 @@ async function fetchLatestMatchingImageRecord(prompt, taskId = '', recordId = ''
 }
 
 async function runDirectVideoNode(node) {
-  const prompt = node.prompt.trim()
+  const prompt = buildDirectPromptWithUpstreamReferences(node, node.prompt)
   if (!prompt) {
     showToast('请先输入视频提示词')
     return
@@ -8827,7 +9082,7 @@ async function runDirectVideoNode(node) {
 
   rememberHistory()
   clearVideoGenerationTimer(node.id)
-  const settings = buildDirectVideoPayload(node, { prompt })
+  const settings = buildDirectVideoPayload(node, { prompt, promptResolved: true })
   updateDirectNode(node.id, {
     videoModelId: settings.model_code,
     videoGenerationType: settings.generation_type,
@@ -9225,11 +9480,11 @@ function calculateAudioBillingCharacters(text) {
 }
 
 function getAudioCharacterLabel(node) {
-  return `${calculateAudioBillingCharacters(node?.prompt || '')}/50000`
+  return `${calculateAudioBillingCharacters(buildDirectPromptWithUpstreamReferences(node, node?.prompt || ''))}/50000`
 }
 
 function estimateAudioPointsLocally(node) {
-  const chars = Math.max(1, calculateAudioBillingCharacters(node?.prompt || ''))
+  const chars = Math.max(1, calculateAudioBillingCharacters(buildDirectPromptWithUpstreamReferences(node, node?.prompt || '')))
   const tier = getAudioTierOption(node)
   const pointsPer10k = Number(tier?.pointsPer10k || (String(tier?.modelCode || '').includes('turbo') ? 30 : 53))
   return Math.max(1, Math.ceil(chars / (10000 / pointsPer10k)))
@@ -9252,7 +9507,7 @@ function getAudioGenerationPointsButtonLabel(node) {
 }
 
 function getAudioGenerationBlocker(node) {
-  const characters = calculateAudioBillingCharacters(node?.prompt || '')
+  const characters = calculateAudioBillingCharacters(buildDirectPromptWithUpstreamReferences(node, node?.prompt || ''))
   if (!String(node?.audioVoiceId || '').trim()) return '请先在设置里选择音色'
   if (characters > 50000) return '配音文本不能超过 50000 字符'
   return ''
@@ -9261,6 +9516,9 @@ function getAudioGenerationBlocker(node) {
 function buildDirectAudioPayload(node, patch = {}) {
   const tier = getAudioTierOption(node)
   const voice = audioVoiceOptions.value.find((item) => item.voiceId === node?.audioVoiceId)
+  const scriptText = patch.promptResolved
+    ? String(patch.prompt ?? '')
+    : buildDirectPromptWithUpstreamReferences(node, patch.prompt ?? node?.prompt ?? '')
   const payload = {
     ownership_mode: 'standalone',
     ability_type: node?.audioAbilityType || fallbackAudioAbilityOptions[0].id,
@@ -9268,7 +9526,7 @@ function buildDirectAudioPayload(node, patch = {}) {
     model_code: node?.audioModelCode || tier?.modelCode || 'speech-2.8-hd',
     voice_id: node?.audioVoiceId || voice?.voiceId || '',
     voice_source_type: node?.audioVoiceSourceType || voice?.sourceType || 'system',
-    script_text: patch.prompt ?? node?.prompt ?? '',
+    script_text: scriptText,
     emotion: isAudioEmotionSupported(node) ? node?.audioEmotion || undefined : undefined,
     speed: node?.audioSpeed ?? undefined,
     volume: node?.audioVolume ?? undefined,
@@ -9290,7 +9548,7 @@ function refreshAudioEstimate(node) {
   if (!node?.id) return
   const existing = audioEstimateTimers.get(node.id)
   if (existing) window.clearTimeout(existing)
-  if (!String(node.prompt || '').trim() || getAudioGenerationBlocker(node)) {
+  if (!String(buildDirectPromptWithUpstreamReferences(node, node.prompt || '')).trim() || getAudioGenerationBlocker(node)) {
     updateDirectNode(node.id, {
       audioEstimateStatus: 'idle',
       audioEstimatePoints: null
@@ -9362,7 +9620,7 @@ async function estimateDirectAudioNode(nodeId) {
 }
 
 async function runDirectAudioNode(node) {
-  const prompt = node.prompt.trim()
+  const prompt = buildDirectPromptWithUpstreamReferences(node, node.prompt)
   if (!prompt) {
     showToast('请先输入配音文本')
     return
@@ -9375,7 +9633,7 @@ async function runDirectAudioNode(node) {
 
   rememberHistory()
   clearAudioGenerationTimer(node.id)
-  const settings = buildDirectAudioPayload(node, { prompt })
+  const settings = buildDirectAudioPayload(node, { prompt, promptResolved: true })
   updateDirectNode(node.id, {
     audioAbilityType: settings.ability_type,
     audioTierCode: settings.tier_code,
@@ -10241,12 +10499,11 @@ function handleCreateWorkflow() {
 
   if (nodes.value.length === 0) {
     const createdNodes = [
-      buildCanvasNode('script_episode', { x: 80, y: 120 }, { title: '\u9996\u5e27\u56fe\u7247\u751f\u6210' }),
+      buildCanvasNode('prompt_note', { x: 80, y: 120 }, { title: '\u521b\u610f\u6587\u672c' }),
       buildCanvasNode('asset_table', { x: 430, y: 120 }, { title: '\u89d2\u8272\u4e09\u89c6\u56fe' }),
       buildCanvasNode('storyboard_table', { x: 780, y: 120 }, { title: '\u5206\u955c\u62c6\u89e3' }),
       buildCanvasNode('image_unit', { x: 1130, y: 120 }, { title: '\u9996\u5e27\u56fe\u7247\u751f\u6210' }),
-      buildCanvasNode('video_unit', { x: 1480, y: 120 }, { title: '\u5206\u955c\u62c6\u89e3' }),
-      buildCanvasNode('media_board', { x: 1830, y: 120 }, { title: '\u5206\u955c\u62c6\u89e3' })
+      buildCanvasNode('video_unit', { x: 1480, y: 120 }, { title: '\u5206\u955c\u62c6\u89e3' })
     ]
 
     nodes.value = createdNodes

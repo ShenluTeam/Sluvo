@@ -170,20 +170,22 @@ const resourceItems = [
     id: 'library',
     label: '从图库选择',
     description: '从历史生成中选择素材',
-    type: 'media_board',
+    type: 'asset_table',
     icon: Library,
     patch: { title: '历史素材节点', kindLabel: '素材', numberedTitle: true }
   }
 ]
 
+const retiredNodeItemIds = new Set(['compose', 'script'])
+const availableNodeItems = computed(() => nodeItems.filter((item) => !retiredNodeItemIds.has(item.id)))
 const menuStyle = computed(() => ({
   left: `${props.position.x}px`,
   top: `${props.position.y}px`
 }))
 
 const filteredNodeItems = computed(() => {
-  if (!props.allowedItems.length) return nodeItems
-  return nodeItems.filter((item) => props.allowedItems.includes(item.id) || props.allowedItems.includes(item.type))
+  if (!props.allowedItems.length) return availableNodeItems.value
+  return availableNodeItems.value.filter((item) => props.allowedItems.includes(item.id) || props.allowedItems.includes(item.type))
 })
 
 let lastSelect = { id: '', at: 0 }
