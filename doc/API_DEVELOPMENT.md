@@ -197,7 +197,7 @@ Standalone Sluvo:
 | Upload persistent canvas asset as base64 | `POST /api/sluvo/canvases/{canvas_id}/assets/upload/base64` |
 | Manage project members | `/api/sluvo/projects/{project_id}/members` |
 | Canvas Agent persistence | `GET/POST /api/sluvo/projects/{project_id}/agent/sessions`, `/api/sluvo/agent/*` |
-| Text node local model analysis | `POST /api/sluvo/projects/{project_id}/text-node/analyze` |
+| Text node local model analysis | `POST /api/sluvo/projects/{project_id}/text-node/analyze`, `POST /api/sluvo/projects/{project_id}/text-node/estimate` |
 | My Agent templates | `GET/POST /api/sluvo/agents`, `GET/PATCH/DELETE /api/sluvo/agents/{agent_id}` |
 | Agent community templates | `GET /api/sluvo/community/agents`, publish/fork/unpublish under `/api/sluvo/*/agents/*` |
 | Community canvas list/detail | `GET /api/sluvo/community/canvases`, `GET /api/sluvo/community/canvases/{publication_id}` |

@@ -57,6 +57,7 @@ from services.sluvo_service import (
     create_sluvo_edge,
     create_sluvo_node,
     create_sluvo_project,
+    estimate_sluvo_text_node_points,
     get_or_create_main_canvas,
     confirm_sluvo_agent_run_cost,
     list_sluvo_project_agent_sessions,
@@ -643,8 +644,27 @@ def test_sluvo_text_node_analysis_returns_node_local_markdown():
 
     assert result["modelCode"] == "deepseek-v4-flash"
     assert "content" in result
+    assert isinstance(result["estimatePoints"], int)
+    assert result["pricing"]["unit"] == "inspiration_points"
     assert "### 场景" in result["content"] or "分镜" in result["content"]
     assert "action" not in result
+
+
+def test_sluvo_text_node_estimate_returns_points_and_usage():
+    result = estimate_sluvo_text_node_points(
+        SluvoTextNodeAnalyzeRequest(
+            nodeTitle="宣传片灵感",
+            content="做一个北京的宣传片",
+            instruction="提取角色、场景、道具，并继续拆分镜。",
+            modelCode="deepseek-v4-flash",
+        )
+    )
+
+    assert result["modelCode"] == "deepseek-v4-flash"
+    assert isinstance(result["estimatePoints"], int)
+    assert result["estimatePoints"] >= 0
+    assert result["pricing"]["source"] == "deepseek_v4_usage_estimate"
+    assert result["pricing"]["usage"]["completion_tokens"] == 1400
 
 
 def test_sluvo_custom_agent_template_shapes_context_and_history():

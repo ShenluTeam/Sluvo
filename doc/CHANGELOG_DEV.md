@@ -1,5 +1,26 @@
 # Sluvo Development Changelog
 
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Restored the text-node local analysis inspiration-point estimate flow across frontend and backend.
+- Added the missing shared prompt-message builder used by both estimate and analysis, preventing the text-node estimate endpoint from failing at runtime.
+- The selected text-node composer now shows an estimated inspiration-point badge and keeps the estimate in sync after analysis completes.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/tests/test_sluvo_service.py`
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
 ## 2026-05-05
 
 Changed files:

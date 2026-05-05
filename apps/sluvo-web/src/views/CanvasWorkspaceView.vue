@@ -506,7 +506,15 @@
                 <button type="button" title="写入节点" :disabled="!textNodeComposer.input.trim()" @click.stop="writeTextComposerToNode(node)">
                   <ListChecks :size="16" />
                 </button>
-                <button type="submit" :disabled="textNodeComposer.busy || (!textNodeComposer.input.trim() && !node.prompt.trim())">
+                <button
+                  class="text-node-ai-composer__submit"
+                  type="submit"
+                  :disabled="textNodeComposer.busy || (!textNodeComposer.input.trim() && !node.prompt.trim())"
+                >
+                  <span class="text-node-ai-composer__points" :class="{ 'is-pending': textNodeComposer.estimateStatus === 'loading' }">
+                    <Star :size="14" />
+                    {{ getTextNodeComposerPointsLabel() }}
+                  </span>
                   <ArrowUp :size="18" />
                 </button>
               </footer>
@@ -1605,6 +1613,7 @@ import {
   createSluvoAgentRun,
   createSluvoAgentSession,
   deleteSluvoAgent,
+  estimateSluvoTextNode,
   fetchSluvoAgents,
   fetchSluvoAgentRun,
   fetchSluvoProjectAgentRuns,
@@ -1953,7 +1962,10 @@ const textNodeComposer = reactive({
   input: '',
   modelCode: 'deepseek-v4-flash',
   busy: false,
-  error: ''
+  error: '',
+  estimatePoints: null,
+  estimateStatus: 'idle',
+  estimateKey: ''
 })
 const AGENT_PANEL_VISIBILITY_STORAGE_KEY = 'sluvo_agent_panel_visible'
 const referenceUploadAccept = ref('image/*')
@@ -1966,6 +1978,7 @@ let previousWindowKeydown = null
 let frameResizeObserver = null
 let uploadTimer = null
 let autoSaveTimer = null
+let textNodeEstimateTimer = null
 let suppressCanvasSaveScheduling = false
 let suppressAgentSelectionWatch = false
 const imageGenerationTimers = new Map()
@@ -2289,6 +2302,10 @@ const selectionBoxStyle = computed(() => {
   }
 })
 const selectedDirectNodes = computed(() => directNodes.value.filter((node) => selectedDirectNodeIds.value.includes(node.id)))
+const selectedTextComposerNode = computed(() => {
+  if (selectedDirectNodeIds.value.length !== 1) return null
+  return directNodes.value.find((node) => node.id === selectedDirectNodeIds.value[0] && node.type === 'prompt_note') || null
+})
 const selectedDirectGroupId = computed(() => {
   const groups = [...new Set(selectedDirectNodes.value.map((node) => node.groupId).filter(Boolean))]
   if (groups.length !== 1) return ''
@@ -2477,6 +2494,20 @@ watch(
   { deep: true }
 )
 
+watch(
+  () => [
+    route.params.projectId,
+    selectedTextComposerNode.value?.id || '',
+    selectedTextComposerNode.value?.title || '',
+    selectedTextComposerNode.value?.prompt || '',
+    textNodeComposer.input,
+    textNodeComposer.modelCode
+  ],
+  () => {
+    scheduleTextNodeEstimate()
+  }
+)
+
 watch(projectTitle, () => {
   scheduleCanvasSave()
 })
@@ -2586,6 +2617,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   frameResizeObserver?.disconnect()
   window.clearTimeout(autoSaveTimer)
+  window.clearTimeout(textNodeEstimateTimer)
   window.clearInterval(uploadTimer)
   window.clearTimeout(clipboardPasteFallbackTimer)
   window.cancelAnimationFrame(directPortLayoutRaf)
@@ -2930,6 +2962,60 @@ function getAgentProfileLabel(profileId) {
 
 function getAgentModelLabel(modelCode) {
   return agentModelOptions.find((model) => model.id === modelCode)?.label || modelCode || ''
+}
+
+function getTextNodeComposerPointsLabel() {
+  const points = Number(textNodeComposer.estimatePoints)
+  return `${Number.isFinite(points) ? points : '--'} 灵感`
+}
+
+function buildTextNodeEstimatePayload(node) {
+  return {
+    nodeTitle: node?.title || '文本节点',
+    content: node?.prompt || '',
+    instruction: textNodeComposer.input || '',
+    modelCode: textNodeComposer.modelCode
+  }
+}
+
+function getTextNodeEstimateKey(node) {
+  if (!node?.id) return ''
+  const payload = buildTextNodeEstimatePayload(node)
+  return JSON.stringify([route.params.projectId || '', node.id, payload.nodeTitle, payload.content, payload.instruction, payload.modelCode])
+}
+
+function scheduleTextNodeEstimate(delay = 320) {
+  window.clearTimeout(textNodeEstimateTimer)
+  const node = selectedTextComposerNode.value
+  const projectId = String(route.params.projectId || '')
+  if (!node || !projectId) {
+    textNodeComposer.estimatePoints = null
+    textNodeComposer.estimateStatus = 'idle'
+    textNodeComposer.estimateKey = ''
+    return
+  }
+  const key = getTextNodeEstimateKey(node)
+  if (key === textNodeComposer.estimateKey && Number.isFinite(Number(textNodeComposer.estimatePoints))) return
+  textNodeComposer.estimateStatus = 'loading'
+  textNodeEstimateTimer = window.setTimeout(() => estimateTextNodeComposerPoints(node, key), delay)
+}
+
+async function estimateTextNodeComposerPoints(node, key = getTextNodeEstimateKey(node)) {
+  const projectId = String(route.params.projectId || '')
+  if (!node?.id || !projectId || key !== getTextNodeEstimateKey(node)) return
+  try {
+    const response = await estimateSluvoTextNode(projectId, buildTextNodeEstimatePayload(node))
+    if (key !== getTextNodeEstimateKey(node)) return
+    const points = Number(response?.estimatePoints ?? response?.estimate_points)
+    textNodeComposer.estimatePoints = Number.isFinite(points) ? points : null
+    textNodeComposer.estimateStatus = 'success'
+    textNodeComposer.estimateKey = key
+  } catch {
+    if (key !== getTextNodeEstimateKey(node)) return
+    textNodeComposer.estimatePoints = null
+    textNodeComposer.estimateStatus = 'error'
+    textNodeComposer.estimateKey = key
+  }
 }
 
 function getAgentActionPreviewNodes(action) {
@@ -3558,6 +3644,12 @@ async function submitTextNodeAnalysis(node) {
       instruction: question || '请分析这个文本节点，提取角色、场景、道具，并给出下一步创作建议。',
       modelCode: textNodeComposer.modelCode
     })
+    const points = Number(response?.estimatePoints ?? response?.estimate_points)
+    if (Number.isFinite(points)) {
+      textNodeComposer.estimatePoints = points
+      textNodeComposer.estimateStatus = 'success'
+      textNodeComposer.estimateKey = getTextNodeEstimateKey(node)
+    }
     const nextContent = String(response?.content || '').trim()
     if (!nextContent) throw new Error('模型没有返回可写入的内容')
     rememberHistory()
