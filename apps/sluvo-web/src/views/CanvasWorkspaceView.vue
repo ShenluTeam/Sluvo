@@ -943,7 +943,7 @@
       <input
         ref="deleteKeySink"
         class="delete-key-sink"
-        aria-hidden="true"
+        aria-label="画布快捷键输入"
         autocomplete="off"
         readonly
         tabindex="-1"

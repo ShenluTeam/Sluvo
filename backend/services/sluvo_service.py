@@ -985,9 +985,9 @@ def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, An
     if artifact_type == "storyboard_plan":
         return _build_storyboard_plan(prompt, model_code)
     if artifact_type == "prompt":
-        return f"精修 Prompt\n{_build_image_prompt(prompt)}"
+        return f"精修 Prompt\n{_build_first_frame_prompt(prompt)}"
     if artifact_type == "image_placeholder":
-        return _build_image_prompt(prompt)
+        return _build_first_frame_prompt(prompt)
     if artifact_type == "video_placeholder":
         return _build_video_prompt(prompt)
     return prompt

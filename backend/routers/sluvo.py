@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
 
 from core.security import decode_id, encode_id
-from database import get_session
+from database import ensure_sluvo_agent_workflow_tables, get_session
 from dependencies import get_current_team, get_current_team_member, get_current_user, require_team_permission
 from models import Team, TeamMemberLink, User
 from schemas import (
@@ -787,6 +787,7 @@ async def post_sluvo_agent_run(
     team_member: TeamMemberLink = Depends(get_current_team_member),
     session: Session = Depends(get_session),
 ):
+    ensure_sluvo_agent_workflow_tables()
     project, _ = _access_project(session, user=user, team=team, team_member=team_member, project_id=project_id, permission=SLUVO_PERMISSION_AGENT)
     template_id = _decode_optional_request_id(payload.agentTemplateId)
     return create_sluvo_agent_run(
@@ -816,6 +817,7 @@ async def get_sluvo_project_agent_runs(
     team_member: TeamMemberLink = Depends(get_current_team_member),
     session: Session = Depends(get_session),
 ):
+    ensure_sluvo_agent_workflow_tables()
     project, _ = _access_project(session, user=user, team=team, team_member=team_member, project_id=project_id, permission=SLUVO_PERMISSION_READ)
     return {"items": list_sluvo_project_agent_runs(session, project=project, limit=limit)}
 
@@ -857,6 +859,7 @@ async def get_sluvo_agent_run(
     team_member: TeamMemberLink = Depends(get_current_team_member),
     session: Session = Depends(get_session),
 ):
+    ensure_sluvo_agent_workflow_tables()
     run = require_sluvo_agent_run(session, decode_id(run_id))
     _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_READ)
     return get_sluvo_agent_run_timeline(session, run)
@@ -872,6 +875,7 @@ async def continue_sluvo_run(
     team_member: TeamMemberLink = Depends(get_current_team_member),
     session: Session = Depends(get_session),
 ):
+    ensure_sluvo_agent_workflow_tables()
     run = require_sluvo_agent_run(session, decode_id(run_id))
     _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_AGENT)
     return continue_sluvo_agent_run(session, run=run, user=user, content=payload.content, context_snapshot=payload.contextSnapshot)
@@ -887,6 +891,7 @@ async def confirm_sluvo_run_cost(
     team_member: TeamMemberLink = Depends(get_current_team_member),
     session: Session = Depends(get_session),
 ):
+    ensure_sluvo_agent_workflow_tables()
     run = require_sluvo_agent_run(session, decode_id(run_id))
     _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_AGENT)
     artifact_ids = [decode_id(item) for item in payload.artifactIds if item]
@@ -902,6 +907,7 @@ async def retry_sluvo_step(
     team_member: TeamMemberLink = Depends(get_current_team_member),
     session: Session = Depends(get_session),
 ):
+    ensure_sluvo_agent_workflow_tables()
     step = require_sluvo_agent_step(session, decode_id(step_id))
     run = require_sluvo_agent_run(session, step.run_id)
     _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_AGENT)
