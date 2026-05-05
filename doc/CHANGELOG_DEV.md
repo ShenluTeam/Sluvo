@@ -8,6 +8,22 @@ Changed files:
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
+- Added a visible official Agent Team roster to the 创作总监 panel so users can see the default collaborative roles, responsibilities, and outputs before running a workflow.
+- Official roles can now be selected directly or copied into "我的 Agent" as editable custom templates.
+- Kept the simplified run timeline while making the relationship between official Agents, user custom Agents, and collaborative execution explicit.
+
+Verification suggestions:
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-05
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
 - Simplified the 创作总监 panel into a clearer OiiOii-like brief: current task, progress, next action, compact run history, and stage summaries.
 - Collapsed verbose artifact bodies into short status chips so the Agent timeline reads at a glance instead of like raw logs.
 - Reduced quick actions and visual noise while keeping Agent Team settings, history restore, step retry, and media confirmation available.

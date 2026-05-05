@@ -1030,6 +1030,33 @@
           </footer>
         </section>
 
+        <section class="canvas-agent-team-roster">
+          <header>
+            <div>
+              <strong>官方 Agent Team</strong>
+              <small>自动派发会按阶段调用这些官方角色，也可以复制成你的自定义 Agent。</small>
+            </div>
+            <span>我的 {{ agentPanel.templates.length }}</span>
+          </header>
+          <div class="canvas-agent-team-roster__grid">
+            <article
+              v-for="agent in officialAgentCards"
+              :key="agent.profileKey"
+              :class="{ 'is-active': agentPanel.profile === agent.profileKey }"
+            >
+              <div>
+                <b>{{ agent.name }}</b>
+                <small>{{ agent.output }}</small>
+              </div>
+              <p>{{ agent.description }}</p>
+              <footer>
+                <button type="button" @click="selectOfficialAgent(agent)">使用</button>
+                <button type="button" @click="createAgentFromStarter(agent)">复制</button>
+              </footer>
+            </article>
+          </div>
+        </section>
+
         <section v-if="agentPanel.advancedOpen" class="canvas-agent-panel__controls">
           <label>
             Agent
@@ -1051,7 +1078,7 @@
           </label>
           <div class="canvas-agent-panel__template-actions">
             <button type="button" @click="openAgentTemplateEditor()">新建 Agent</button>
-            <button type="button" @click="createAgentFromStarter()">从 starter 复制</button>
+            <button type="button" @click="createAgentFromStarter()">从官方复制</button>
             <button type="button" :disabled="!hasAgentTemplateSelection" @click="openAgentTemplateEditor(getSelectedAgentTemplate())">编辑</button>
             <button type="button" :disabled="!hasAgentTemplateSelection" @click="deleteSelectedAgentTemplate">删除</button>
           </div>
@@ -1742,6 +1769,74 @@ const agentProfiles = [
   { id: 'prompt_polisher', label: 'Prompt 精修 Agent' },
   { id: 'consistency_checker', label: '一致性检查 Agent' },
   { id: 'production_planner', label: '制片调度 Agent' }
+]
+const officialAgentCards = [
+  {
+    name: '创作总监',
+    description: '理解目标，决定由哪个专业 Agent 接力，汇总下一步。',
+    profileKey: 'canvas_agent',
+    output: '任务拆解',
+    rolePrompt: '你是 Sluvo 创作总监，负责理解用户目标、读取画布上下文、规划 Agent Team 的协作顺序，并输出清晰的下一步画布产物。',
+    useCases: ['目标理解', '自动派发', '工作流汇总'],
+    inputTypes: ['text', 'image', 'canvas'],
+    outputTypes: ['plan', 'note'],
+    tools: ['read_canvas', 'route_agents', 'propose_canvas_patch']
+  },
+  {
+    name: '故事发展 Agent',
+    description: '把灵感扩成故事结构、冲突、人物关系和剧情节奏。',
+    profileKey: 'story_director',
+    output: '故事总览',
+    rolePrompt: '你是故事发展 Agent，负责把灵感、剧本或选区内容扩展为故事结构、冲突、角色关系、剧情节奏和可继续拆解的文本节点。',
+    useCases: ['故事扩写', '冲突设计', '剧情节奏'],
+    inputTypes: ['text', 'canvas'],
+    outputTypes: ['story_outline', 'note'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: '角色场景 Agent',
+    description: '提取角色外观、场景气氛、道具和一致性锚点。',
+    profileKey: 'custom_agent',
+    output: '角色/场景',
+    rolePrompt: '你是角色场景 Agent，负责提取角色外观、服装、道具、场景、光线、色彩和连续性约束，输出可写入画布的角色与场景设定。',
+    useCases: ['角色提取', '场景设定', '道具整理'],
+    inputTypes: ['text', 'image', 'canvas'],
+    outputTypes: ['character_brief', 'scene_brief', 'note'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: '分镜导演 Agent',
+    description: '把故事拆成镜头、景别、动作、情绪和生成链路。',
+    profileKey: 'storyboard_director',
+    output: '分镜计划',
+    rolePrompt: '你是分镜导演 Agent，负责把故事或选区拆成镜号、景别、动作、情绪、画面提示词，以及首帧图片和视频生成链路。',
+    useCases: ['分镜拆解', '镜头设计', '生成链路'],
+    inputTypes: ['text', 'image', 'canvas'],
+    outputTypes: ['storyboard', 'image_prompt', 'video_prompt'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: 'Prompt 精修 Agent',
+    description: '把口语描述改成适合图片/视频生成的稳定提示词。',
+    profileKey: 'prompt_polisher',
+    output: '精修 Prompt',
+    rolePrompt: '你是 Prompt 精修 Agent，负责把口语化描述、角色设定、分镜计划改写成适合图片和视频生成的稳定提示词。',
+    useCases: ['提示词润色', '首帧提示词', '视频动作描述'],
+    inputTypes: ['text', 'canvas'],
+    outputTypes: ['prompt', 'note'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: '制片调度 Agent',
+    description: '整理缺失输入、创建媒体占位，并等待用户确认消耗。',
+    profileKey: 'production_planner',
+    output: '生成任务',
+    rolePrompt: '你是制片调度 Agent，负责检查画布中缺失的生成输入，创建图片、视频、音频占位节点，并在任何消耗灵感值的动作前等待用户确认。',
+    useCases: ['任务排期', '媒体占位', '扣费确认'],
+    inputTypes: ['canvas', 'storyboard'],
+    outputTypes: ['image_placeholder', 'video_placeholder', 'report'],
+    tools: ['read_canvas', 'propose_canvas_patch', 'estimate_cost']
+  }
 ]
 const agentStarterTemplates = [
   {
@@ -3125,18 +3220,32 @@ function closeAgentTemplateEditor() {
   agentPanel.editingAgentId = ''
 }
 
-async function createAgentFromStarter() {
-  const starter = agentStarterTemplates[agentPanel.templates.length % agentStarterTemplates.length]
+function selectOfficialAgent(agent) {
+  if (!agent?.profileKey) return
+  agentPanel.profile = agent.profileKey
+  agentPanel.modelCode = agentPanel.modelCode || 'deepseek-v4-flash'
+  showToast(`已选择 ${agent.name}`)
+}
+
+async function createAgentFromStarter(starterAgent = null) {
+  const starter = starterAgent || agentStarterTemplates[agentPanel.templates.length % agentStarterTemplates.length]
   try {
     const response = await createSluvoAgent({
-      ...starter,
+      name: starter.name,
+      description: starter.description,
+      profileKey: starter.profileKey || 'custom_agent',
+      rolePrompt: starter.rolePrompt,
+      useCases: starter.useCases || [],
+      inputTypes: starter.inputTypes || [],
+      outputTypes: starter.outputTypes || [],
+      tools: starter.tools || ['read_canvas', 'propose_canvas_patch'],
       modelCode: agentPanel.modelCode,
       approvalPolicy: { mode: 'always_review' },
       examples: []
     })
     await loadAgentTemplates()
     agentPanel.profile = response?.agent?.id || agentPanel.templates[0]?.id || agentPanel.profile
-    showToast('已从 starter 创建 Agent')
+    showToast(`已复制 ${starter.name} 到我的 Agent`)
   } catch (error) {
     agentPanel.error = error instanceof Error ? error.message : '创建 Agent 失败'
   }

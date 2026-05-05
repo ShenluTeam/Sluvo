@@ -295,6 +295,116 @@ body {
   background: rgba(255, 255, 255, 0.07);
 }
 
+.canvas-agent-team-roster {
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-team-roster > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.canvas-agent-team-roster > header div {
+  display: grid;
+  gap: 3px;
+}
+
+.canvas-agent-team-roster > header strong {
+  color: #f6f6ef;
+  font-size: 13px;
+}
+
+.canvas-agent-team-roster > header small,
+.canvas-agent-team-roster > header span {
+  color: rgba(242, 242, 234, 0.58);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.canvas-agent-team-roster > header span {
+  flex: 0 0 auto;
+  border: 1px solid rgba(205, 244, 124, 0.18);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #dff7aa;
+  background: rgba(205, 244, 124, 0.08);
+}
+
+.canvas-agent-team-roster__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.canvas-agent-team-roster article {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.canvas-agent-team-roster article.is-active {
+  border-color: rgba(205, 244, 124, 0.4);
+  background: rgba(205, 244, 124, 0.1);
+}
+
+.canvas-agent-team-roster article div {
+  display: grid;
+  gap: 2px;
+}
+
+.canvas-agent-team-roster article b {
+  overflow: hidden;
+  color: #f6f6ef;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-team-roster article small,
+.canvas-agent-team-roster article p {
+  margin: 0;
+  color: rgba(242, 242, 234, 0.6);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.canvas-agent-team-roster article p {
+  display: -webkit-box;
+  min-height: 30px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.canvas-agent-team-roster article footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.canvas-agent-team-roster article button {
+  min-height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  color: #edf7d0;
+  background: rgba(205, 244, 124, 0.07);
+  font-size: 11px;
+}
+
+.canvas-agent-team-roster article button:last-child {
+  color: #f6f6ef;
+  background: rgba(255, 255, 255, 0.07);
+}
+
 .canvas-agent-history {
   display: grid;
   gap: 8px;
