@@ -39,6 +39,7 @@ from services.sluvo_service import (
     append_sluvo_agent_event,
     apply_sluvo_canvas_batch,
     approve_sluvo_agent_action,
+    build_sluvo_agent_action_payload,
     create_sluvo_agent_action,
     create_sluvo_agent_session,
     create_sluvo_canvas_asset_upload,
@@ -411,6 +412,13 @@ def test_sluvo_agent_auto_route_selects_specialist_profiles():
             context={},
             selected_nodes=[],
         )
+        story_route = resolve_sluvo_agent_route(
+            session,
+            requested_profile="auto",
+            prompt="我有一个动画短片灵感，请提取角色、场景、道具并拆分镜",
+            context={},
+            selected_nodes=[],
+        )
 
         assert prompt_route["profile"] == "prompt_polisher"
         assert prompt_route["actionType"] == "prompt.rewrite"
@@ -418,3 +426,118 @@ def test_sluvo_agent_auto_route_selects_specialist_profiles():
         assert storyboard_route["actionType"] == "workflow.plan"
         assert explicit_route["profile"] == "consistency_checker"
         assert explicit_route["actionType"] == "agent.report"
+        assert story_route["profile"] == "story_director"
+        assert story_route["actionType"] == "workflow.plan"
+
+
+def test_sluvo_agent_panel_patch_writes_products_not_agent_nodes():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Agent Products"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+        source_node = create_sluvo_node(
+            session,
+            canvas,
+            SluvoCanvasNodeCreateRequest(
+                nodeType="note",
+                title="原始提示词",
+                position={"x": 10, "y": 20},
+                data={
+                    "clientId": "source-prompt",
+                    "directType": "prompt_note",
+                    "prompt": "古风少女站在雨夜长街，电影感，浅景深",
+                },
+            ),
+            user=owner,
+        )
+        agent_session = create_sluvo_agent_session(
+            session,
+            project=project,
+            user=owner,
+            team=team,
+            canvas_id=canvas.id,
+            target_node_id=None,
+            title="创作总监",
+            agent_profile="auto",
+            model_code="deepseek-v4-flash",
+            mode="semi_auto",
+            context_snapshot={},
+        )
+
+        action_payload, reply = build_sluvo_agent_action_payload(
+            session,
+            agent_session=agent_session,
+            content="请优化提示词",
+            payload={
+                "agentProfile": "auto",
+                "modelCode": "deepseek-v4-flash",
+                "contextSnapshot": {
+                    "selectedNodes": [
+                        {
+                            "id": encode_id(source_node.id),
+                            "title": "原始提示词",
+                            "directType": "prompt_note",
+                            "prompt": "古风少女站在雨夜长街，电影感，浅景深",
+                            "position": {"x": 10, "y": 20},
+                        }
+                    ]
+                },
+            },
+        )
+
+        assert action_payload["actionType"] == "prompt.rewrite"
+        assert reply["resolvedProfile"] == "prompt_polisher"
+        assert len(action_payload["patch"]["nodes"]) == 1
+        assert action_payload["patch"]["nodes"][0]["nodeType"] == "note"
+        assert action_payload["patch"]["nodes"][0]["data"]["source"] == "canvas_agent_panel"
+        assert "古风少女" in action_payload["patch"]["nodes"][0]["data"]["prompt"]
+        assert len(action_payload["patch"]["edges"]) == 1
+        assert action_payload["patch"]["edges"][0]["sourceNodeId"] == encode_id(source_node.id)
+
+
+def test_sluvo_agent_new_story_prompt_builds_production_pipeline():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Story Pipeline"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+        agent_session = create_sluvo_agent_session(
+            session,
+            project=project,
+            user=owner,
+            team=team,
+            canvas_id=canvas.id,
+            target_node_id=None,
+            title="创作总监",
+            agent_profile="auto",
+            model_code="deepseek-v4-flash",
+            mode="semi_auto",
+            context_snapshot={},
+        )
+
+        action_payload, reply = build_sluvo_agent_action_payload(
+            session,
+            agent_session=agent_session,
+            content="一个关于雨夜少年追逐神秘信号的动画短片灵感，请提取角色、场景、道具，然后拆分镜。",
+            payload={
+                "agentProfile": "auto",
+                "modelCode": "deepseek-v4-flash",
+                "contextSnapshot": {"selectedNodes": []},
+            },
+        )
+
+        nodes = action_payload["patch"]["nodes"]
+        titles = {node["title"] for node in nodes}
+        node_types = {node["nodeType"] for node in nodes}
+        assert action_payload["actionType"] == "workflow.plan"
+        assert reply["resolvedProfile"] == "story_director"
+        assert len(nodes) == 6
+        assert "故事总览" in titles
+        assert "角色 / 道具提取" in titles
+        assert "场景设定" in titles
+        assert "分镜计划" in titles
+        assert "首帧图片生成" in titles
+        assert "镜头视频生成" in titles
+        assert "agent" not in node_types
+        assert len(action_payload["patch"]["edges"]) >= 6

@@ -458,6 +458,48 @@ Verification suggestions:
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
+
+Impact scope:
+- Updated direct text nodes to render existing node content as Markdown inside the node frame instead of showing only the empty-state action menu.
+- Added a Libtv-style text-node composer under the selected text node with model selection, a write-back action, and an Agent analysis submit action.
+- The node-level analysis composer sends the selected text node as context to the right-side 创作总监 flow while keeping conversation history in the Agent panel.
+
+Verification suggestions:
+- Run `npm run build`.
+- Run `git diff --check`.
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+
+Impact scope:
+- Added an OiiOii-style new-story Agent flow: when the user enters an inspiration/script prompt, the backend routes it to the story director and creates a production pipeline proposal.
+- The production pipeline writes canvas product nodes for story overview, character/prop extraction, scene setup, storyboard plan, first-frame image generation, and video generation.
+- Updated the Agent panel empty state and composer placeholder so users understand that conversation stays in the panel while the canvas receives approved creative artifacts.
+
+Verification suggestions:
+- Run `python3 -m py_compile backend/services/sluvo_service.py backend/tests/test_sluvo_service.py backend/routers/sluvo.py backend/models.py backend/schemas.py`.
+- Run `npm run build`.
+- Run `git diff --check`.
+
+Changed files:
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+
+Impact scope:
+- Adjusted Canvas Agent panel proposals so they write only creative product nodes to the canvas instead of also creating a new Agent node for every request.
+- Connected the selected source node directly to the generated product node when context is available.
+- Tightened the DeepSeek Agent prompt so `prompt.rewrite`, `workflow.plan`, and report actions return actual canvas-ready content instead of instructions about what to do.
+
+Verification suggestions:
+- Run `python3 -m py_compile backend/services/sluvo_service.py backend/tests/test_sluvo_service.py backend/routers/sluvo.py backend/models.py backend/schemas.py`.
+- Run `npm run build`.
+- Run `git diff --check`.
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
 - `backend/services/sluvo_service.py`
 - `backend/tests/test_sluvo_service.py`
 - `doc/API_DEVELOPMENT.md`

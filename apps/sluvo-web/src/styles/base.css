@@ -3390,6 +3390,14 @@ button {
     #211f1a;
 }
 
+.direct-workflow-node--prompt_note .direct-workflow-node__frame {
+  min-height: 470px;
+  max-height: 620px;
+  overflow: auto;
+  padding: 28px 34px;
+  scrollbar-color: rgba(218, 224, 234, 0.44) transparent;
+}
+
 .direct-workflow-node__frame--uploaded {
   display: grid;
   min-height: 556px;
@@ -3458,6 +3466,65 @@ button {
 
 .direct-workflow-node__frame > button:not(.direct-workflow-node__port):hover {
   background: #303030;
+}
+
+.direct-workflow-node__markdown {
+  color: #f1f2f4;
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.68;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.direct-workflow-node__markdown h1,
+.direct-workflow-node__markdown h2,
+.direct-workflow-node__markdown h3 {
+  margin: 0 0 16px;
+  color: #ffffff;
+  font-weight: 850;
+  line-height: 1.26;
+}
+
+.direct-workflow-node__markdown h1 {
+  font-size: 28px;
+}
+
+.direct-workflow-node__markdown h2 {
+  font-size: 24px;
+}
+
+.direct-workflow-node__markdown h3 {
+  font-size: 21px;
+}
+
+.direct-workflow-node__markdown p {
+  margin: 0 0 16px;
+  color: #ebeef3;
+  font-size: inherit;
+}
+
+.direct-workflow-node__markdown ul {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding-left: 24px;
+}
+
+.direct-workflow-node__markdown li {
+  padding-left: 4px;
+}
+
+.direct-workflow-node__markdown strong {
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.direct-workflow-node__markdown code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #f4d994;
 }
 
 .direct-workflow-node__port {
@@ -3715,6 +3782,85 @@ button {
   box-shadow:
     0 0 0 1px rgba(225, 192, 117, 0.28),
     0 0 0 5px rgba(188, 142, 59, 0.09);
+}
+
+.text-node-ai-composer {
+  display: grid;
+  grid-template-rows: minmax(96px, 1fr) auto;
+  gap: 14px;
+  width: min(720px, calc(100vw - 56px));
+  min-height: 166px;
+  margin-top: 12px;
+  padding: 18px 18px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(37, 37, 37, 0.96);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.34);
+}
+
+.text-node-ai-composer textarea {
+  min-width: 0;
+  width: 100%;
+  resize: vertical;
+  border: 0;
+  outline: none;
+  color: #f1f1f1;
+  background: transparent;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.6;
+}
+
+.text-node-ai-composer textarea::placeholder {
+  color: rgba(235, 235, 235, 0.54);
+}
+
+.text-node-ai-composer footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.text-node-ai-composer label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-right: auto;
+  color: #f4f4f4;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.text-node-ai-composer select {
+  max-width: 190px;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  color: #f4f4f4;
+  background: transparent;
+  font: inherit;
+}
+
+.text-node-ai-composer button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 11px;
+  color: #1d1d1d;
+  background: #e9e9e9;
+}
+
+.text-node-ai-composer button[type="button"] {
+  color: #ececec;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.text-node-ai-composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
 }
 
 .direct-workflow-node--audio_unit .direct-workflow-node__prompt-field {

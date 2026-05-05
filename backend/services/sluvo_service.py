@@ -2128,9 +2128,11 @@ def resolve_sluvo_agent_route(
         return {"profile": "consistency_checker", "actionType": "agent.report", "reason": "识别到一致性检查需求。"}
     if has_any("任务", "排期", "缺口", "失败", "重试", "成本", "制片", "整理工作流"):
         return {"profile": "production_planner", "actionType": "agent.report", "reason": "识别到制片调度或任务整理需求。"}
+    if has_any("灵感", "创意", "剧本", "故事", "短片", "动画", "角色", "场景", "道具", "提取"):
+        return {"profile": "story_director", "actionType": "workflow.plan", "reason": "识别到从灵感或剧本启动制片规划的需求。"}
     if has_any("分镜", "镜头", "storyboard", "下游", "首帧", "视频链路", "拆分"):
         return {"profile": "storyboard_director", "actionType": "workflow.plan", "reason": "识别到分镜或下游生成链路需求。"}
-    if has_any("剧情", "故事", "大纲", "对白", "角色关系", "冲突", "剧本"):
+    if has_any("剧情", "大纲", "对白", "角色关系", "冲突"):
         return {"profile": "story_director", "actionType": "canvas.patch", "reason": "识别到故事结构或剧本创作需求。"}
     return {"profile": "canvas_agent", "actionType": "canvas.patch", "reason": "未命中特定专业任务，使用通用画布协作。"}
 
@@ -2247,7 +2249,11 @@ def _build_deepseek_agent_prompt(
             "preferredActionType": action_type,
             "userRequest": prompt,
             "selectedNodes": node_brief,
-            "task": "生成一个适合写入 Sluvo 画布的新节点标题和正文，正文要能直接给创作者审阅。",
+            "task": (
+                "生成真正要沉淀到画布的创作产物，不要输出操作说明。"
+                "prompt.rewrite 直接输出优化后的提示词；workflow.plan 输出精简分镜计划；"
+                "agent.report 输出检查报告；canvas.patch 输出下一步创作建议。"
+            ),
         },
         {},
     )
@@ -2274,25 +2280,26 @@ def _build_agent_canvas_patch(
 ) -> Dict[str, Any]:
     base_x, base_y = _agent_patch_origin(selected_nodes)
     safe_prompt = prompt or "请基于当前画布继续创作。"
-    agent_client_id = f"agent-{profile_key}-{int(_utc_now().timestamp() * 1000)}"
-    agent_node = _agent_patch_node(
-        client_id=agent_client_id,
-        node_type="agent",
-        direct_type="agent_node",
-        title=_agent_profile_label_from_key(profile_key),
-        icon="智",
-        position={"x": base_x, "y": base_y},
-        prompt=safe_prompt,
-        data={
-            "agentProfile": profile_key,
-            "modelCode": model_code,
-            "lastProposal": _agent_action_summary(action_type),
-            "generationStatus": "idle",
-        },
-    )
-    output_client_id = f"{agent_client_id}-output"
+    base_client_id = f"agent-product-{profile_key}-{int(_utc_now().timestamp() * 1000)}"
+    output_client_id = f"{base_client_id}-output"
     llm_title = str((llm_payload or {}).get("outputTitle") or "").strip()
     llm_prompt = str((llm_payload or {}).get("outputPrompt") or "").strip()
+    source_edges: List[Dict[str, Any]] = []
+    first_selected_id = _first_selected_node_id(selected_nodes)
+    if first_selected_id:
+        source_edges.append(_agent_patch_edge_from_node(first_selected_id, output_client_id, "reference", "来源"))
+
+    def product_data(extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return {
+            "agentProfile": profile_key,
+            "agentLabel": _agent_profile_label_from_key(profile_key),
+            "modelCode": model_code,
+            "lastProposal": _agent_action_summary(action_type),
+            "source": "canvas_agent_panel",
+            "generationStatus": "idle",
+            **(extra or {}),
+        }
+
     if action_type == "agent.report":
         output = _agent_patch_node(
             client_id=output_client_id,
@@ -2302,6 +2309,7 @@ def _build_agent_canvas_patch(
             icon="检",
             position={"x": base_x + 360, "y": base_y},
             prompt=llm_prompt or _build_consistency_report(safe_prompt, selected_nodes, model_code),
+            data=product_data(),
         )
     elif action_type == "prompt.rewrite":
         output = _agent_patch_node(
@@ -2312,23 +2320,39 @@ def _build_agent_canvas_patch(
             icon="词",
             position={"x": base_x + 360, "y": base_y},
             prompt=llm_prompt or _build_polished_prompt(safe_prompt, selected_nodes),
+            data=product_data(),
         )
     elif action_type == "workflow.plan":
+        if _should_build_production_pipeline(profile_key, safe_prompt, selected_nodes):
+            return _build_agent_production_pipeline_patch(
+                canvas=canvas,
+                base_client_id=base_client_id,
+                base_x=base_x,
+                base_y=base_y,
+                safe_prompt=safe_prompt,
+                selected_nodes=selected_nodes,
+                profile_key=profile_key,
+                model_code=model_code,
+                llm_title=llm_title,
+                llm_prompt=llm_prompt,
+                product_data=product_data,
+                source_edges=source_edges,
+            )
         output = _agent_patch_node(
             client_id=output_client_id,
             node_type="note",
-            direct_type="script_episode",
-            title=llm_title or "Agent 分镜计划",
+            direct_type="prompt_note",
+            title=llm_title or "分镜计划",
             icon="镜",
-            position={"x": base_x + 360, "y": base_y - 90},
+            position={"x": base_x + 360, "y": base_y},
             prompt=llm_prompt or _build_workflow_plan(safe_prompt, selected_nodes, model_code),
+            data=product_data(),
         )
-        image_client_id = f"{agent_client_id}-image"
-        video_client_id = f"{agent_client_id}-video"
+        image_client_id = f"{base_client_id}-image"
+        video_client_id = f"{base_client_id}-video"
         return {
             "expectedRevision": canvas.revision,
             "nodes": [
-                agent_node,
                 output,
                 _agent_patch_node(
                     client_id=image_client_id,
@@ -2336,8 +2360,9 @@ def _build_agent_canvas_patch(
                     direct_type="image_unit",
                     title="分镜首帧生成",
                     icon="图",
-                    position={"x": base_x + 720, "y": base_y - 120},
+                    position={"x": base_x + 720, "y": base_y - 80},
                     prompt="根据分镜计划生成关键首帧，保持角色、服装和场景连续。",
+                    data=product_data(),
                 ),
                 _agent_patch_node(
                     client_id=video_client_id,
@@ -2345,12 +2370,12 @@ def _build_agent_canvas_patch(
                     direct_type="video_unit",
                     title="镜头视频生成",
                     icon="视",
-                    position={"x": base_x + 1080, "y": base_y - 120},
+                    position={"x": base_x + 1080, "y": base_y - 80},
                     prompt="基于首帧生成 5 秒镜头，强调镜头运动、角色动作和情绪节奏。",
+                    data=product_data(),
                 ),
             ],
-            "edges": [
-                _agent_patch_edge(agent_client_id, output_client_id, "generation", "提案"),
+            "edges": source_edges + [
                 _agent_patch_edge(output_client_id, image_client_id, "dependency", "分镜"),
                 _agent_patch_edge(image_client_id, video_client_id, "generation", "首帧"),
             ],
@@ -2364,11 +2389,133 @@ def _build_agent_canvas_patch(
             icon="案",
             position={"x": base_x + 360, "y": base_y},
             prompt=llm_prompt or _build_canvas_suggestion(safe_prompt, selected_nodes, model_code),
+            data=product_data(),
         )
     return {
         "expectedRevision": canvas.revision,
-        "nodes": [agent_node, output],
-        "edges": [_agent_patch_edge(agent_client_id, output_client_id, "generation", "提案")],
+        "nodes": [output],
+        "edges": source_edges,
+    }
+
+
+def _should_build_production_pipeline(profile_key: str, prompt: str, selected_nodes: List[Dict[str, Any]]) -> bool:
+    if not selected_nodes:
+        return True
+    text = prompt.lower()
+    keywords = ("灵感", "创意", "剧本", "故事", "短片", "动画", "角色", "场景", "道具", "提取", "制片")
+    return profile_key == "story_director" or any(keyword.lower() in text for keyword in keywords)
+
+
+def _build_agent_production_pipeline_patch(
+    *,
+    canvas: SluvoCanvas,
+    base_client_id: str,
+    base_x: float,
+    base_y: float,
+    safe_prompt: str,
+    selected_nodes: List[Dict[str, Any]],
+    profile_key: str,
+    model_code: str,
+    llm_title: str,
+    llm_prompt: str,
+    product_data,
+    source_edges: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    intake_client_id = f"{base_client_id}-intake"
+    characters_client_id = f"{base_client_id}-characters"
+    scenes_client_id = f"{base_client_id}-scenes"
+    storyboard_client_id = f"{base_client_id}-storyboard"
+    image_client_id = f"{base_client_id}-image"
+    video_client_id = f"{base_client_id}-video"
+    story_source = _selected_node_prompt_text(selected_nodes) or safe_prompt
+    production_plan = llm_prompt or _build_storyboard_plan(story_source, model_code)
+
+    nodes = [
+        _agent_patch_node(
+            client_id=intake_client_id,
+            node_type="note",
+            direct_type="prompt_note",
+            title=llm_title or "故事总览",
+            icon="总",
+            position={"x": base_x + 320, "y": base_y - 180},
+            prompt=_build_story_intake(story_source, model_code),
+            size={"width": 420, "height": 260},
+            data=product_data({"stage": "story_overview", "actions": ["提取角色", "拆分分镜"]}),
+        ),
+        _agent_patch_node(
+            client_id=characters_client_id,
+            node_type="note",
+            direct_type="prompt_note",
+            title="角色 / 道具提取",
+            icon="角",
+            position={"x": base_x + 320, "y": base_y + 130},
+            prompt=_build_character_prop_brief(story_source, model_code),
+            size={"width": 420, "height": 300},
+            data=product_data({"stage": "characters_props", "actions": ["生成角色图", "继续细化"]}),
+        ),
+        _agent_patch_node(
+            client_id=scenes_client_id,
+            node_type="note",
+            direct_type="prompt_note",
+            title="场景设定",
+            icon="景",
+            position={"x": base_x + 800, "y": base_y + 130},
+            prompt=_build_scene_brief(story_source, model_code),
+            size={"width": 420, "height": 300},
+            data=product_data({"stage": "scenes", "actions": ["生成场景图", "继续细化"]}),
+        ),
+        _agent_patch_node(
+            client_id=storyboard_client_id,
+            node_type="note",
+            direct_type="prompt_note",
+            title="分镜计划",
+            icon="镜",
+            position={"x": base_x + 800, "y": base_y - 180},
+            prompt=production_plan,
+            size={"width": 520, "height": 360},
+            data=product_data({"stage": "storyboard_plan", "actions": ["生成首帧", "继续拆分"]}),
+        ),
+        _agent_patch_node(
+            client_id=image_client_id,
+            node_type="image",
+            direct_type="image_unit",
+            title="首帧图片生成",
+            icon="图",
+            position={"x": base_x + 1380, "y": base_y - 180},
+            prompt=_build_first_frame_prompt(story_source),
+            size={"width": 420, "height": 320},
+            data=product_data({"stage": "first_frame"}),
+        ),
+        _agent_patch_node(
+            client_id=video_client_id,
+            node_type="video",
+            direct_type="video_unit",
+            title="镜头视频生成",
+            icon="视",
+            position={"x": base_x + 1840, "y": base_y - 180},
+            prompt=_build_video_prompt(story_source),
+            size={"width": 420, "height": 320},
+            data=product_data({"stage": "video_shot"}),
+        ),
+    ]
+    source_id = _first_selected_node_id(selected_nodes)
+    edges = list(source_edges)
+    if source_id:
+        # source_edges points to the default output id; use the actual intake node for this pipeline.
+        edges = [_agent_patch_edge_from_node(source_id, intake_client_id, "reference", "灵感")]
+    edges.extend([
+        _agent_patch_edge(intake_client_id, characters_client_id, "dependency", "角色道具"),
+        _agent_patch_edge(intake_client_id, scenes_client_id, "dependency", "场景"),
+        _agent_patch_edge(intake_client_id, storyboard_client_id, "dependency", "故事"),
+        _agent_patch_edge(characters_client_id, storyboard_client_id, "reference", "角色"),
+        _agent_patch_edge(scenes_client_id, storyboard_client_id, "reference", "场景"),
+        _agent_patch_edge(storyboard_client_id, image_client_id, "generation", "首帧"),
+        _agent_patch_edge(image_client_id, video_client_id, "generation", "视频"),
+    ])
+    return {
+        "expectedRevision": canvas.revision,
+        "nodes": nodes,
+        "edges": edges,
     }
 
 
@@ -2394,6 +2541,7 @@ def _agent_patch_node(
     icon: str,
     position: Dict[str, float],
     prompt: str,
+    size: Optional[Dict[str, float]] = None,
     data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return {
@@ -2401,7 +2549,7 @@ def _agent_patch_node(
         "nodeType": node_type,
         "title": title,
         "position": position,
-        "size": {"width": 320, "height": 220},
+        "size": size or {"width": 320, "height": 220},
         "status": "idle",
         "data": {
             "clientId": client_id,
@@ -2434,6 +2582,43 @@ def _agent_patch_edge(source_client_id: str, target_client_id: str, edge_type: s
     }
 
 
+def _agent_patch_edge_from_node(source_node_id: str, target_client_id: str, edge_type: str, label: str) -> Dict[str, Any]:
+    return {
+        "sourceNodeId": source_node_id,
+        "targetNodeId": None,
+        "sourcePortId": "right",
+        "targetPortId": "left",
+        "edgeType": edge_type,
+        "label": label,
+        "data": {
+            "targetClientId": target_client_id,
+        },
+    }
+
+
+def _first_selected_node_id(selected_nodes: List[Dict[str, Any]]) -> str:
+    for item in selected_nodes:
+        if not isinstance(item, dict):
+            continue
+        value = str(item.get("id") or item.get("nodeId") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _selected_node_prompt_text(selected_nodes: List[Dict[str, Any]]) -> str:
+    parts: List[str] = []
+    for item in selected_nodes:
+        if not isinstance(item, dict):
+            continue
+        for key in ("prompt", "body", "content", "description"):
+            text = str(item.get(key) or "").strip()
+            if text:
+                parts.append(text)
+                break
+    return "\n".join(parts[:4]).strip()
+
+
 def _selected_node_titles(selected_nodes: List[Dict[str, Any]]) -> str:
     titles = [str(item.get("title") or (item.get("data") or {}).get("title") or "").strip() for item in selected_nodes if isinstance(item, dict)]
     titles = [item for item in titles if item]
@@ -2449,7 +2634,84 @@ def _build_consistency_report(prompt: str, selected_nodes: List[Dict[str, Any]],
 
 
 def _build_polished_prompt(prompt: str, selected_nodes: List[Dict[str, Any]]) -> str:
-    return f"精修提示词：{prompt}。画面需要主体清晰、角色一致、光线有层次、镜头语言明确，保留「{_selected_node_titles(selected_nodes)}」中的关键设定。"
+    source = _selected_node_prompt_text(selected_nodes) or prompt
+    return (
+        f"{source}\n\n"
+        "优化方向：主体清晰，动作明确，环境、光线、镜头语言和风格连续；"
+        "适合图片首帧和视频生成，避免抽象空泛词。"
+    )
+
+
+def _compact_story_source(text: str, limit: int = 900) -> str:
+    source = str(text or "").strip()
+    if len(source) <= limit:
+        return source
+    return f"{source[:limit].rstrip()}..."
+
+
+def _build_story_intake(prompt: str, model_code: str) -> str:
+    source = _compact_story_source(prompt)
+    return (
+        "项目理解\n"
+        f"原始灵感 / 剧本：{source}\n\n"
+        "制片目标：先提取角色、场景、道具和风格约束，再拆成可生成的分镜链路。\n"
+        "下一步：确认故事核心、主角目标、冲突和视觉风格后继续细化。"
+        f"\n模型：{model_code}"
+    )
+
+
+def _build_character_prop_brief(prompt: str, model_code: str) -> str:
+    source = _compact_story_source(prompt, 700)
+    return (
+        "角色 / 道具提取\n"
+        "1. 主角：从灵感中提取身份、年龄感、服装、情绪和可复用外观特征。\n"
+        "2. 配角：提取和主角产生冲突或推动剧情的人物。\n"
+        "3. 道具：提取对剧情、动作或镜头有视觉价值的物件。\n"
+        "4. 一致性：每个角色保留固定发型、服装、色彩和标志物。\n\n"
+        f"来源：{source}\n模型：{model_code}"
+    )
+
+
+def _build_scene_brief(prompt: str, model_code: str) -> str:
+    source = _compact_story_source(prompt, 700)
+    return (
+        "场景设定\n"
+        "1. 主场景：提取故事发生的核心空间、时代、天气和光线。\n"
+        "2. 氛围：定义色调、质感、镜头情绪和参考风格。\n"
+        "3. 场景约束：列出每个镜头需要保持连续的环境元素。\n\n"
+        f"来源：{source}\n模型：{model_code}"
+    )
+
+
+def _build_first_frame_prompt(prompt: str) -> str:
+    source = _compact_story_source(prompt, 520)
+    return (
+        "根据分镜计划生成第一张关键首帧。画面需要主体清晰、角色外观一致、场景信息明确，"
+        "保留镜头景别、光线、色彩和情绪。\n\n"
+        f"故事来源：{source}"
+    )
+
+
+def _build_video_prompt(prompt: str) -> str:
+    source = _compact_story_source(prompt, 520)
+    return (
+        "基于首帧生成短视频镜头。描述镜头运动、角色动作、节奏、转场和情绪变化，"
+        "保持角色、场景和光线连续。\n\n"
+        f"故事来源：{source}"
+    )
+
+
+def _build_storyboard_plan(prompt: str, model_code: str) -> str:
+    source = _compact_story_source(prompt, 800)
+    return (
+        "分镜计划\n"
+        "1. 开场镜头：建立场景、主角状态和故事氛围。\n"
+        "2. 推进镜头：呈现主角动作、冲突或关键线索。\n"
+        "3. 情绪镜头：强化角色表情、道具和环境细节。\n"
+        "4. 转折镜头：制造变化、悬念或节奏推进。\n"
+        "5. 收束镜头：形成可继续生成下一个节点的画面结果。\n\n"
+        f"来源：{source}\n模型：{model_code}"
+    )
 
 
 def _build_workflow_plan(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:

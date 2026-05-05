@@ -309,13 +309,16 @@
             </div>
 
             <template v-else>
-            <div class="direct-workflow-node__hero">
-              <span v-if="node.type === 'prompt_note'" class="direct-workflow-node__lines" />
-              <span v-else class="direct-workflow-node__icon">{{ node.icon }}</span>
-            </div>
+              <div v-if="node.type === 'prompt_note' && node.prompt.trim()" class="direct-workflow-node__markdown" v-html="renderDirectMarkdown(node.prompt)" />
+              <template v-else>
+                <div class="direct-workflow-node__hero">
+                  <span v-if="node.type === 'prompt_note'" class="direct-workflow-node__lines" />
+                  <span v-else class="direct-workflow-node__icon">{{ node.icon }}</span>
+                </div>
 
-            <p>尝试:</p>
-            <button v-for="action in node.actions" :key="action" type="button">{{ action }}</button>
+                <p>尝试:</p>
+                <button v-for="action in node.actions" :key="action" type="button">{{ action }}</button>
+              </template>
             </template>
           </div>
 
@@ -436,6 +439,7 @@
                 </template>
             </div>
             <div
+              v-if="node.type !== 'prompt_note'"
               class="direct-workflow-node__prompt-field"
               @click.stop="focusDirectPromptEditor(node.id)"
               @pointerdown.stop="handlePromptFieldPointerDown(node.id, $event)"
@@ -471,6 +475,36 @@
                 {{ getDirectNodeTextareaPlaceholder(node) }}
               </span>
             </div>
+            <form
+              v-else
+              class="text-node-ai-composer"
+              @submit.prevent="submitTextNodeAnalysis(node)"
+              @click.stop
+              @pointerdown.stop
+              @mousedown.stop
+              @keydown.stop
+              @keyup.stop
+            >
+              <textarea
+                v-model="textNodeComposer.input"
+                rows="3"
+                :placeholder="node.prompt.trim() ? '让模型分析、扩写、提取角色场景或继续拆分镜。' : getDirectNodeTextareaPlaceholder(node)"
+              />
+              <footer>
+                <label>
+                  <Bot :size="16" />
+                  <select v-model="textNodeComposer.modelCode">
+                    <option v-for="model in agentModelOptions" :key="model.id" :value="model.id">{{ model.label }}</option>
+                  </select>
+                </label>
+                <button type="button" title="写入节点" :disabled="!textNodeComposer.input.trim()" @click.stop="writeTextComposerToNode(node)">
+                  <ListChecks :size="16" />
+                </button>
+                <button type="submit" :disabled="agentPanel.busy || (!textNodeComposer.input.trim() && !node.prompt.trim())">
+                  <ArrowUp :size="18" />
+                </button>
+              </footer>
+            </form>
             <div
               v-if="node.type === 'image_unit'"
               class="direct-workflow-node__generation-controls"
@@ -966,7 +1000,7 @@
             <p>{{ message.content }}</p>
             <small v-if="message.routing">{{ message.routing }}</small>
           </article>
-          <p v-if="agentPanel.messages.length === 0" class="canvas-agent-panel__empty">直接描述你想要的创作结果，创作总监会自动选择专业 Agent，并先生成可批准的画布提案。</p>
+          <p v-if="agentPanel.messages.length === 0" class="canvas-agent-panel__empty">直接输入灵感或剧本，创作总监会先在对话里分析，再把角色、场景、道具、分镜和生成链路作为画布提案。</p>
         </section>
 
         <section v-if="agentPanel.pendingAction" class="canvas-agent-action">
@@ -994,7 +1028,7 @@
         </section>
 
         <form class="canvas-agent-panel__composer" @submit.prevent="sendAgentPrompt">
-          <textarea v-model="agentPanel.input" rows="3" placeholder="例如：把这段故事拆成 6 个分镜，并为每个镜头生成首帧提示词。" />
+          <textarea v-model="agentPanel.input" rows="3" placeholder="例如：一个雨夜少年追逐神秘信号的动画短片，帮我提取角色、场景、道具并拆分镜。" />
           <button type="submit" :disabled="agentPanel.busy || !agentPanel.input.trim()">
             <Send :size="17" />
           </button>
@@ -1563,6 +1597,10 @@ const agentPanel = reactive({
   error: '',
   pendingAction: null,
   messages: []
+})
+const textNodeComposer = reactive({
+  input: '',
+  modelCode: 'deepseek-v4-flash'
 })
 const AGENT_PANEL_VISIBILITY_STORAGE_KEY = 'sluvo_agent_panel_visible'
 const referenceUploadAccept = ref('image/*')
@@ -2474,6 +2512,100 @@ function getAgentActionPreviewNodes(action) {
     title: node.title || node.data?.title || `节点 ${index + 1}`,
     type: node.nodeType || node.data?.directType || 'node'
   }))
+}
+
+function writeTextComposerToNode(node) {
+  const content = textNodeComposer.input.trim()
+  if (!node?.id || !content) return
+  rememberHistory()
+  updateDirectNode(node.id, {
+    prompt: content,
+    promptSegments: [{ type: 'text', text: content }]
+  })
+  directPromptEditorSignatures.delete(node.id)
+  textNodeComposer.input = ''
+  scheduleCanvasSave(180)
+  showToast('已写入文本节点')
+}
+
+async function submitTextNodeAnalysis(node) {
+  if (!node?.id || agentPanel.busy) return
+  const question = textNodeComposer.input.trim()
+  const source = node.prompt.trim()
+  if (!question && !source) return
+  const previousModel = agentPanel.modelCode
+  agentPanel.modelCode = textNodeComposer.modelCode
+  selectedDirectNodeIds.value = [node.id]
+  const prompt = question
+    ? `请基于文本节点「${node.title}」分析并继续创作：${question}`
+    : `请分析文本节点「${node.title}」，提取角色、场景、道具，并给出下一步创作建议。`
+  textNodeComposer.input = ''
+  await runAgentPrompt(prompt)
+  agentPanel.modelCode = previousModel
+}
+
+function renderDirectMarkdown(value) {
+  const lines = String(value || '').replace(/\r\n/g, '\n').split('\n')
+  const html = []
+  let listOpen = false
+  const closeList = () => {
+    if (listOpen) {
+      html.push('</ul>')
+      listOpen = false
+    }
+  }
+  lines.forEach((rawLine) => {
+    const line = rawLine.trimEnd()
+    if (!line.trim()) {
+      closeList()
+      return
+    }
+    const heading = /^(#{1,3})\s+(.+)$/.exec(line)
+    if (heading) {
+      closeList()
+      const level = heading[1].length
+      html.push(`<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`)
+      return
+    }
+    const bullet = /^[-*]\s+(.+)$/.exec(line)
+    if (bullet) {
+      if (!listOpen) {
+        html.push('<ul>')
+        listOpen = true
+      }
+      html.push(`<li>${renderMarkdownInline(bullet[1])}</li>`)
+      return
+    }
+    const numbered = /^\d+[.)]\s+(.+)$/.exec(line)
+    if (numbered) {
+      if (!listOpen) {
+        html.push('<ul>')
+        listOpen = true
+      }
+      html.push(`<li>${renderMarkdownInline(numbered[1])}</li>`)
+      return
+    }
+    closeList()
+    html.push(`<p>${renderMarkdownInline(line)}</p>`)
+  })
+  closeList()
+  return html.join('')
+}
+
+function renderMarkdownInline(value) {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 async function approveAgentAction() {
