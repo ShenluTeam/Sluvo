@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
-from decimal import Decimal, ROUND_CEILING
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
@@ -36,8 +35,6 @@ from models import (
     User,
 )
 from services.agents.llm_client import chat_json
-from services.deepseek_hybrid_router import estimate_text_tokens
-from services.deepseek_model_policy import calculate_deepseek_v4_flash_usage_cost_cny
 from schemas import (
     SLUVO_MEMBER_ROLE_EDITOR,
     SLUVO_MEMBER_ROLE_OWNER,
@@ -76,8 +73,6 @@ SLUVO_PERMISSION_WRITE = "write"
 SLUVO_PERMISSION_MANAGE = "manage"
 SLUVO_PERMISSION_AGENT = "agent"
 SLUVO_UPLOAD_MAX_BYTES = 20 * 1024 * 1024
-SLUVO_TEXT_NODE_ANALYZE_MAX_TOKENS = 1400
-SLUVO_TEXT_NODE_POINTS_UNIT_CNY = Decimal("0.1")
 
 SLUVO_UPLOAD_MIME_TYPES = {
     "image/jpeg",
@@ -3112,7 +3107,6 @@ def analyze_sluvo_text_node(payload: SluvoTextNodeAnalyzeRequest) -> Dict[str, A
     instruction = str(payload.instruction or "").strip()
     title = str(payload.nodeTitle or "文本节点").strip() or "文本节点"
     model_code = normalize_sluvo_agent_model_code(payload.modelCode)
-    estimate = estimate_sluvo_text_node_points(payload)
     llm_content = _try_deepseek_text_node_analysis(
         model_code=model_code,
         title=title,
@@ -3128,39 +3122,7 @@ def analyze_sluvo_text_node(payload: SluvoTextNodeAnalyzeRequest) -> Dict[str, A
         "content": content,
         "modelCode": model_code,
         "llmUsed": bool(llm_content),
-        "estimatePoints": estimate["estimatePoints"],
-        "pricing": estimate["pricing"],
         "summary": "已更新文本节点",
-    }
-
-
-def estimate_sluvo_text_node_points(payload: SluvoTextNodeAnalyzeRequest) -> Dict[str, Any]:
-    source = str(payload.content or "").strip()
-    instruction = str(payload.instruction or "").strip()
-    title = str(payload.nodeTitle or "文本节点").strip() or "文本节点"
-    model_code = normalize_sluvo_agent_model_code(payload.modelCode)
-    messages = _build_sluvo_text_node_analysis_messages(title=title, source=source, instruction=instruction)
-    prompt_text = "\n".join(str(message.get("content") or "") for message in messages)
-    prompt_tokens = estimate_text_tokens(prompt_text)
-    usage = {
-        "prompt_tokens": prompt_tokens,
-        "prompt_cache_hit_tokens": 0,
-        "prompt_cache_miss_tokens": prompt_tokens,
-        "completion_tokens": SLUVO_TEXT_NODE_ANALYZE_MAX_TOKENS,
-    }
-    cost_cny = calculate_deepseek_v4_flash_usage_cost_cny(usage)
-    estimate_points = 0
-    if cost_cny > 0:
-        estimate_points = int((cost_cny / SLUVO_TEXT_NODE_POINTS_UNIT_CNY).to_integral_value(rounding=ROUND_CEILING)) + 1
-    return {
-        "modelCode": model_code,
-        "estimatePoints": estimate_points,
-        "pricing": {
-            "unit": "inspiration_points",
-            "source": "deepseek_v4_usage_estimate",
-            "actualCostCny": float(cost_cny),
-            "usage": usage,
-        },
     }
 
 
@@ -3410,9 +3372,26 @@ def _try_deepseek_text_node_analysis(
     try:
         payload = chat_json(
             model=model_code,
-            messages=_build_sluvo_text_node_analysis_messages(title=title, source=source, instruction=instruction),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 Sluvo 文本节点内的局部创作助手。你只服务当前文本节点，"
+                        "不要生成画布 patch，不要提及右侧 Agent 面板。请只输出 JSON 对象，"
+                        "字段为 content，content 必须是可以直接放进文本节点渲染的 Markdown。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"节点标题：{title}\n"
+                        f"用户指令：{instruction or '请分析这段内容，并给出可继续创作的结构化结果。'}\n\n"
+                        f"当前节点内容：\n{source or '（空）'}"
+                    ),
+                },
+            ],
             thinking_enabled=model_code == "deepseek-v4-pro",
-            max_tokens=SLUVO_TEXT_NODE_ANALYZE_MAX_TOKENS,
+            max_tokens=1400,
             temperature=0.24,
             route_tag="sluvo_text_node",
         )
@@ -3422,27 +3401,6 @@ def _try_deepseek_text_node_analysis(
         return None
     content = str(payload.get("content") or payload.get("markdown") or "").strip()
     return content[:12000] if content else None
-
-
-def _build_sluvo_text_node_analysis_messages(*, title: str, source: str, instruction: str) -> List[Dict[str, str]]:
-    return [
-        {
-            "role": "system",
-            "content": (
-                "你是 Sluvo 文本节点内的局部创作助手。你只服务当前文本节点，"
-                "不要生成画布 patch，不要提及右侧 Agent 面板。请只输出 JSON 对象，"
-                "字段为 content，content 必须是可以直接放进文本节点渲染的 Markdown。"
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"节点标题：{title}\n"
-                f"用户指令：{instruction or '请分析这段内容，并给出可继续创作的结构化结果。'}\n\n"
-                f"当前节点内容：\n{source or '（空）'}"
-            ),
-        },
-    ]
 
 
 def _build_text_node_analysis_fallback(*, title: str, source: str, instruction: str) -> str:

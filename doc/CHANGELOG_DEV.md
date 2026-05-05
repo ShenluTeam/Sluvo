@@ -1165,3 +1165,17 @@ Verification suggestions:
 - Run `npm run build --workspace sluvo-web`.
 - Enter `你是谁` and verify the panel answers directly without writing canvas nodes; then enter a creative idea and verify it starts with a script draft.
 
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Tightened the Agent panel into a chat-first layout: the current task card is gone, the user prompt appears as a right-aligned message, and Agent steps read as the main conversation.
+- Team/history controls now sit in a slim toolbar, and quick creative starters only appear before a run starts.
+- Read-only answer artifacts are rendered as message text instead of redundant artifact chips, making ordinary Q&A feel like direct chat.
+
+Verification suggestions:
+- Run `npm run build --workspace sluvo-web`.
+- Ask `你是谁` and verify the panel shows a user bubble plus a concise Agent answer, with no canvas-write chips or workflow clutter.
+
