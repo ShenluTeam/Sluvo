@@ -1014,7 +1014,7 @@
           <div>
             <span>Canvas Agent Studio</span>
             <h2>创作总监</h2>
-            <p>{{ getAgentPanelSubtitle() }}</p>
+            <p v-if="getAgentPanelSubtitle()">{{ getAgentPanelSubtitle() }}</p>
           </div>
           <button type="button" aria-label="收起 Agent 面板" @click="setAgentPanelVisible(false)">
             <X :size="22" />
@@ -1023,7 +1023,7 @@
 
         <section class="canvas-agent-chat-toolbar">
           <div>
-            <span>{{ getAgentRunPlainSummary() }}</span>
+            <span v-if="getAgentRunPlainSummary()">{{ getAgentRunPlainSummary() }}</span>
           </div>
           <nav>
             <button type="button" @click="agentPanel.advancedOpen = !agentPanel.advancedOpen">
@@ -1165,17 +1165,7 @@
                 <Bot :size="16" />
               </div>
               <div class="canvas-agent-answer-card__body">
-                <header>
-                  <div>
-                    <span>创作总监</span>
-                    <strong>直接回答</strong>
-                  </div>
-                  <b>{{ getAgentQuestionStatusLabel(agentPanel.activeRun) }}</b>
-                </header>
                 <p>{{ getAgentQuestionAnswerText(agentPanel.activeRun) }}</p>
-                <footer>
-                  <span>{{ getAgentQuestionMeta(agentPanel.activeRun) }}</span>
-                </footer>
               </div>
             </article>
           </div>
@@ -3118,6 +3108,7 @@ function getAgentHistorySummary(item) {
 
 function getAgentPanelSubtitle() {
   if (agentPanel.busy) return '正在协调 Agent Team'
+  if (isAgentQuestionRun(agentPanel.activeRun)) return ''
   if (agentPanel.activeRun?.run?.status) return getAgentRunStatusLabel(agentPanel.activeRun.run.status)
   return '把目标拆成可执行画布产物'
 }
@@ -3130,7 +3121,7 @@ function getAgentRunGoalTitle() {
 
 function getAgentRunPlainSummary() {
   if (!agentPanel.activeRun?.run) return getAgentPanelModeSummary()
-  if (isAgentQuestionRun(agentPanel.activeRun)) return '已识别为普通询问'
+  if (isAgentQuestionRun(agentPanel.activeRun)) return ''
   const run = agentPanel.activeRun.run
   const steps = agentPanel.activeRun.steps || []
   const doneCount = steps.filter((step) => step.status === 'succeeded').length
@@ -3155,16 +3146,6 @@ function getAgentQuestionAnswerText(timeline) {
   const body = String(answerArtifact?.payload?.body || answerArtifact?.payload?.prompt || '').trim()
   if (body) return body
   return '我会先判断你的输入是普通询问、创作灵感还是已有剧本，再决定直接回答或进入创作拆解。'
-}
-
-function getAgentQuestionStatusLabel(timeline) {
-  return getAgentRunStatusLabel(timeline?.run?.status || 'succeeded')
-}
-
-function getAgentQuestionMeta(timeline) {
-  const summary = timeline?.run?.summary || {}
-  const model = getAgentModelLabel(summary.modelCode || agentPanel.modelCode)
-  return [summary.agentName || '创作总监', model, '无需写入画布'].filter(Boolean).join(' · ')
 }
 
 function setActiveAgentRun(timeline) {

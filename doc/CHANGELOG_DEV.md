@@ -4,6 +4,20 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Removed internal status, routing, model, and canvas-write metadata from ordinary 创作总监 direct-answer cards.
+- Ordinary question runs now show only the user's message and the assistant answer, while creative workflow runs still keep their stage and artifact labels.
+
+Verification suggestions:
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
 - `doc/UI_REQUIREMENTS.md`
 - `doc/CHANGELOG_DEV.md`
