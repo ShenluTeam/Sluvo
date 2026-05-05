@@ -935,6 +935,31 @@ Verification suggestions:
 - In Vite dev mode, open `/login` and use "本地开发模式进入画布" to reach `/projects/proj-aurora/canvas` or the redirect target.
 
 Changed files:
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/API_DEVELOPMENT.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Upgraded Canvas Agent into an Agent Team control surface with project-local session history, custom Agent template creation/edit/delete, starter-template copying, and richer proposal previews.
+- Made Agent nodes runnable canvas units that read connected upstream nodes, create target-node Agent sessions, keep proposals approval-gated, and persist the node's recent action state.
+- Added `GET /api/sluvo/projects/{project_id}/agent/sessions` and made custom Agent templates participate in backend routing/prompt context.
+
+Verification suggestions:
+- Run `npm run build`.
+- Run `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py`.
+- Run `python3 -m pytest backend/tests/test_sluvo_service.py -q` in an environment with pytest installed.
+- On the canvas, create a custom Agent, select it in the 创作总监 panel, run a proposal, cancel it, then run and approve another proposal.
+- Add an Agent node, connect a text/image node upstream, run the Agent node, and verify the proposal context and node recent status update.
+
+Changed files:
 - `apps/sluvo-web/src/styles/base.css`
 - `doc/CHANGELOG_DEV.md`
 

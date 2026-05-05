@@ -559,6 +559,38 @@ def serialize_sluvo_agent_template(template: SluvoAgentTemplate) -> Dict[str, An
     }
 
 
+def _serialize_agent_session_timeline(
+    session: Session,
+    session_item: SluvoAgentSession,
+    *,
+    event_limit: int = 8,
+    action_limit: int = 5,
+) -> Dict[str, Any]:
+    events = session.exec(
+        select(SluvoAgentEvent)
+        .where(SluvoAgentEvent.session_id == session_item.id)
+        .order_by(SluvoAgentEvent.sequence_no.desc(), SluvoAgentEvent.id.desc())
+        .limit(max(1, int(event_limit or 8)))
+    ).all()
+    actions = session.exec(
+        select(SluvoAgentAction)
+        .where(SluvoAgentAction.session_id == session_item.id)
+        .order_by(SluvoAgentAction.updated_at.desc(), SluvoAgentAction.id.desc())
+        .limit(max(1, int(action_limit or 5)))
+    ).all()
+    ordered_events = list(reversed(events))
+    ordered_actions = list(reversed(actions))
+    latest_action = actions[0] if actions else None
+    pending_action = next((item for item in actions if item.status in {"proposed", "approved", "failed"}), None)
+    return {
+        "session": serialize_sluvo_agent_session(session_item),
+        "events": [serialize_sluvo_agent_event(item) for item in ordered_events],
+        "actions": [serialize_sluvo_agent_action(item) for item in ordered_actions],
+        "latestAction": serialize_sluvo_agent_action(latest_action) if latest_action else None,
+        "pendingAction": serialize_sluvo_agent_action(pending_action) if pending_action else None,
+    }
+
+
 def serialize_sluvo_community_agent_with_session(
     session: Session,
     item: SluvoCommunityAgent,
@@ -741,6 +773,22 @@ def list_sluvo_agent_templates(session: Session, *, user: User, team: Team) -> L
         .order_by(SluvoAgentTemplate.updated_at.desc(), SluvoAgentTemplate.id.desc())
     ).all()
     return [serialize_sluvo_agent_template(item) for item in items]
+
+
+def list_sluvo_project_agent_sessions(
+    session: Session,
+    *,
+    project: SluvoProject,
+    limit: int = 12,
+) -> List[Dict[str, Any]]:
+    limit = max(1, min(int(limit or 12), 40))
+    items = session.exec(
+        select(SluvoAgentSession)
+        .where(SluvoAgentSession.project_id == project.id)
+        .order_by(SluvoAgentSession.updated_at.desc(), SluvoAgentSession.id.desc())
+        .limit(limit)
+    ).all()
+    return [_serialize_agent_session_timeline(session, item) for item in items]
 
 
 def create_sluvo_agent_template(
@@ -1903,12 +1951,15 @@ def create_sluvo_agent_session(
     canvas = _require_canvas(session, canvas_id) if canvas_id else get_or_create_main_canvas(session, project)
     if canvas.project_id != project.id:
         raise HTTPException(status_code=400, detail="Agent 画布不属于当前项目")
+    agent_template = _resolve_agent_template(session, agent_profile)
     if target_node_id:
         node = _require_node(session, target_node_id)
         _assert_same_canvas(node.canvas_id, canvas.id, "目标节点")
     normalized_context = {
         **(context_snapshot or {}),
-        "modelCode": normalize_sluvo_agent_model_code(model_code or (context_snapshot or {}).get("modelCode")),
+        "agentTemplateId": encode_id(agent_template.id) if agent_template else (context_snapshot or {}).get("agentTemplateId"),
+        "agentName": agent_template.name if agent_template else (context_snapshot or {}).get("agentName"),
+        "modelCode": normalize_sluvo_agent_model_code(model_code or (context_snapshot or {}).get("modelCode") or (agent_template.model_code if agent_template else None)),
     }
     item = SluvoAgentSession(
         project_id=project.id,
@@ -2051,11 +2102,13 @@ def build_sluvo_agent_action_payload(
     canvas = _require_canvas(session, agent_session.canvas_id)
     context = payload.get("contextSnapshot") if isinstance(payload.get("contextSnapshot"), dict) else _json_load(agent_session.context_snapshot_json, {})
     selected_nodes = context.get("selectedNodes") if isinstance(context.get("selectedNodes"), list) else []
-    model_code = normalize_sluvo_agent_model_code(context.get("modelCode") or payload.get("modelCode") or context.get("agentModelCode"))
+    requested_profile = payload.get("agentProfile") or context.get("agentTemplateId") or agent_session.agent_profile
+    agent_template = _resolve_agent_template(session, context.get("agentTemplateId") or requested_profile)
+    model_code = normalize_sluvo_agent_model_code(context.get("modelCode") or payload.get("modelCode") or context.get("agentModelCode") or (agent_template.model_code if agent_template else None))
     prompt = str(content or payload.get("content") or "").strip()
     route = resolve_sluvo_agent_route(
         session,
-        requested_profile=payload.get("agentProfile") or agent_session.agent_profile,
+        requested_profile=requested_profile,
         prompt=prompt,
         context=context,
         selected_nodes=selected_nodes,
@@ -2068,6 +2121,7 @@ def build_sluvo_agent_action_payload(
         action_type=action_type,
         prompt=prompt,
         selected_nodes=selected_nodes,
+        agent_template=agent_template,
     )
     if isinstance(llm_payload, dict):
         action_type = str(llm_payload.get("actionType") or action_type)
@@ -2080,15 +2134,21 @@ def build_sluvo_agent_action_payload(
         selected_nodes=selected_nodes,
         llm_payload=llm_payload,
     )
-    profile_label = _agent_profile_label(session, agent_session.agent_profile, profile_key)
+    profile_label = _agent_profile_label(session, context.get("agentTemplateId") or agent_session.agent_profile, profile_key)
+    agent_template_id = encode_id(agent_template.id) if agent_template else context.get("agentTemplateId")
+    agent_name = agent_template.name if agent_template else profile_label
+    source_surface = str(context.get("sourceSurface") or payload.get("sourceSurface") or "panel")
+    target_node_id = context.get("targetNodeId") or (encode_id(agent_session.target_node_id) if agent_session.target_node_id else None)
     node_count = len(patch.get("nodes") or [])
     edge_count = len(patch.get("edges") or [])
     reply = {
-        "content": f"创作总监已协调{profile_label}，基于当前画布生成 {node_count} 个节点、{edge_count} 条连线的提案。",
+        "content": f"创作总监已协调{agent_name}，基于当前画布生成 {node_count} 个节点、{edge_count} 条连线的提案。",
         "modelCode": model_code,
         "profile": profile_key,
         "resolvedProfile": profile_key,
         "resolvedProfileLabel": profile_label,
+        "agentTemplateId": agent_template_id,
+        "agentName": agent_name,
         "resolvedActionType": action_type,
         "routingReason": route["reason"],
         "requiresApproval": True,
@@ -2097,6 +2157,7 @@ def build_sluvo_agent_action_payload(
     }
     return {
         "actionType": action_type,
+        "targetNodeId": target_node_id,
         "input": {
             "content": prompt,
             "contextSummary": {
@@ -2106,6 +2167,10 @@ def build_sluvo_agent_action_payload(
                 "requestedProfile": agent_session.agent_profile,
                 "resolvedProfile": profile_key,
                 "resolvedProfileLabel": profile_label,
+                "agentTemplateId": agent_template_id,
+                "agentName": agent_name,
+                "sourceSurface": source_surface,
+                "targetNodeId": target_node_id,
                 "resolvedActionType": action_type,
                 "routingReason": route["reason"],
             },
@@ -2168,25 +2233,32 @@ def _resolve_agent_profile_key(session: Session, agent_profile: str) -> str:
         return "canvas_agent"
     if value in SLUVO_OFFICIAL_AGENT_PROFILES:
         return value
+    template = _resolve_agent_template(session, value)
+    if template:
+        return template.profile_key or "custom_agent"
+    return "custom_agent" if value else "canvas_agent"
+
+
+def _resolve_agent_template(session: Session, agent_profile: Optional[str]) -> Optional[SluvoAgentTemplate]:
+    value = str(agent_profile or "").strip()
+    if not value or value in {"auto", "creative_director"} or value in SLUVO_OFFICIAL_AGENT_PROFILES:
+        return None
     try:
         template = session.get(SluvoAgentTemplate, decode_id(value))
-        if template and template.deleted_at is None:
-            return template.profile_key or "custom_agent"
     except Exception:
-        pass
-    return "custom_agent" if value else "canvas_agent"
+        return None
+    if template and template.deleted_at is None:
+        return template
+    return None
 
 
 def _agent_profile_label(session: Session, agent_profile: str, profile_key: str) -> str:
     official = SLUVO_OFFICIAL_AGENT_PROFILES.get(profile_key)
     if official:
         return official["name"]
-    try:
-        template = session.get(SluvoAgentTemplate, decode_id(str(agent_profile or "")))
-        if template:
-            return template.name
-    except Exception:
-        pass
+    template = _resolve_agent_template(session, agent_profile)
+    if template:
+        return template.name
     return "自定义 Agent"
 
 
@@ -2208,6 +2280,7 @@ def _try_deepseek_canvas_agent_payload(
     action_type: str,
     prompt: str,
     selected_nodes: List[Dict[str, Any]],
+    agent_template: Optional[SluvoAgentTemplate] = None,
 ) -> Optional[Dict[str, Any]]:
     if not settings.DEEPSEEK_API_KEY:
         return None
@@ -2230,6 +2303,7 @@ def _try_deepseek_canvas_agent_payload(
                         action_type=action_type,
                         prompt=prompt,
                         selected_nodes=selected_nodes,
+                        agent_template=agent_template,
                     ),
                 },
             ],
@@ -2361,6 +2435,7 @@ def _build_deepseek_agent_prompt(
     action_type: str,
     prompt: str,
     selected_nodes: List[Dict[str, Any]],
+    agent_template: Optional[SluvoAgentTemplate] = None,
 ) -> str:
     node_brief = [
         {
@@ -2371,14 +2446,29 @@ def _build_deepseek_agent_prompt(
         for item in selected_nodes[:8]
         if isinstance(item, dict)
     ]
+    template_payload = None
+    if agent_template:
+        template_payload = {
+            "name": agent_template.name,
+            "description": agent_template.description,
+            "profileKey": agent_template.profile_key,
+            "rolePrompt": agent_template.role_prompt,
+            "useCases": _json_load(agent_template.use_cases_json, []),
+            "inputTypes": _json_load(agent_template.input_types_json, []),
+            "outputTypes": _json_load(agent_template.output_types_json, []),
+            "tools": _json_load(agent_template.tools_json, []),
+            "approvalPolicy": _json_load(agent_template.approval_policy_json, {}),
+        }
     return _json_dump(
         {
             "agentProfile": profile_key,
+            "agentTemplate": template_payload,
             "preferredActionType": action_type,
             "userRequest": prompt,
             "selectedNodes": node_brief,
             "task": (
                 "生成真正要沉淀到画布的创作产物，不要输出操作说明。"
+                "如果提供了 agentTemplate，必须遵守其中的 rolePrompt、用例、输入输出类型和工具边界。"
                 "prompt.rewrite 直接输出优化后的提示词；workflow.plan 输出精简分镜计划；"
                 "agent.report 输出检查报告；canvas.patch 输出下一步创作建议。"
             ),
@@ -2906,9 +2996,11 @@ def approve_sluvo_agent_action(session: Session, action: SluvoAgentAction, *, us
         action.result_json = _json_dump(result)
         action.error_json = "{}"
         action.executed_at = _utc_now()
+        _update_agent_node_execution_state(session, action, status="succeeded", message="提案已写入画布")
     except Exception as exc:
         action.status = "failed"
         action.error_json = _json_dump({"message": str(exc)})
+        _update_agent_node_execution_state(session, action, status="failed", message=str(exc))
     action.updated_at = _utc_now()
     session.add(action)
     session.commit()
@@ -2921,7 +3013,37 @@ def cancel_sluvo_agent_action(session: Session, action: SluvoAgentAction) -> Slu
         raise HTTPException(status_code=409, detail="当前 Agent 操作状态不可取消")
     action.status = "cancelled"
     action.updated_at = _utc_now()
+    _update_agent_node_execution_state(session, action, status="cancelled", message="提案已取消")
     session.add(action)
     session.commit()
     session.refresh(action)
     return action
+
+
+def _update_agent_node_execution_state(session: Session, action: SluvoAgentAction, *, status: str, message: str) -> None:
+    if not action.target_node_id:
+        return
+    node = session.get(SluvoCanvasNode, action.target_node_id)
+    if not node or node.deleted_at is not None:
+        return
+    data = _json_load(node.data_json, {})
+    if not isinstance(data, dict):
+        data = {}
+    summary = _json_load(action.input_json, {}).get("contextSummary") or {}
+    data.update(
+        {
+            "agentLastActionId": encode_id(action.id),
+            "agentLastActionStatus": status,
+            "agentLastProposal": _agent_action_summary(action.action_type),
+            "agentLastMessage": message,
+            "agentLastRunAt": _utc_now().isoformat(),
+            "agentName": summary.get("agentName") or data.get("agentName"),
+            "agentTemplateId": summary.get("agentTemplateId") or data.get("agentTemplateId"),
+            "generationStatus": "idle" if status in {"succeeded", "cancelled"} else "error",
+            "generationMessage": message,
+        }
+    )
+    node.data_json = _json_dump(data)
+    node.revision = int(node.revision or 1) + 1
+    node.updated_at = _utc_now()
+    session.add(node)

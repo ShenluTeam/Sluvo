@@ -162,12 +162,116 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.canvas-agent-panel__template-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.canvas-agent-panel__template-actions button,
+.canvas-agent-history button,
+.canvas-agent-template-form button {
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #f6f6ef;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.canvas-agent-panel__template-actions button:disabled,
+.canvas-agent-history button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.canvas-agent-template-form {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(205, 244, 124, 0.12);
+  border-radius: 10px;
+  background: rgba(205, 244, 124, 0.06);
+}
+
+.canvas-agent-template-form input,
+.canvas-agent-template-form textarea,
+.canvas-agent-template-form select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 9px;
+  color: #f6f6ef;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.canvas-agent-template-form textarea {
+  resize: vertical;
+}
+
+.canvas-agent-template-form footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.canvas-agent-template-form__primary {
+  color: #151812 !important;
+  background: #cdf47c !important;
+}
+
 .canvas-agent-panel__mode,
 .canvas-agent-panel__controls,
 .canvas-agent-panel__context,
 .canvas-agent-action,
 .canvas-agent-panel__composer {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-history {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-history header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(242, 242, 234, 0.72);
+  font-size: 12px;
+}
+
+.canvas-agent-history header button {
+  width: auto;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.canvas-agent-history > button {
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  text-align: left;
+}
+
+.canvas-agent-history > button.is-active {
+  border-color: rgba(205, 244, 124, 0.44);
+  background: rgba(205, 244, 124, 0.12);
+}
+
+.canvas-agent-history span {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-history small {
+  color: rgba(242, 242, 234, 0.54);
 }
 
 .canvas-agent-panel__context {
@@ -277,6 +381,17 @@ body {
 
 .canvas-agent-action__preview span {
   color: rgba(242, 242, 234, 0.54);
+}
+
+.canvas-agent-action__preview--edges li {
+  border-style: dashed;
+}
+
+.canvas-agent-action__error {
+  margin: 0;
+  color: #ffb0a5;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .canvas-agent-action footer {
@@ -3880,6 +3995,85 @@ button {
   color: #ffd2c9;
   font-size: 13px;
   font-weight: 700;
+}
+
+.agent-node-runner {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid rgba(205, 244, 124, 0.22);
+  border-radius: 12px;
+  background: rgba(31, 35, 25, 0.96);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.agent-node-runner header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.agent-node-runner header div {
+  display: grid;
+  gap: 3px;
+}
+
+.agent-node-runner strong {
+  color: #f6f6ef;
+  font-size: 14px;
+}
+
+.agent-node-runner span,
+.agent-node-runner small,
+.agent-node-runner p,
+.agent-node-runner label {
+  color: rgba(242, 242, 234, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-node-runner label {
+  display: grid;
+  gap: 6px;
+}
+
+.agent-node-runner select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f6f6ef;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.agent-node-runner p {
+  margin: 0;
+}
+
+.agent-node-runner button {
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #f6f6ef;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.agent-node-runner__primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: #151812 !important;
+  background: #cdf47c !important;
+}
+
+.agent-node-runner__primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .direct-workflow-node--audio_unit .direct-workflow-node__prompt-field {

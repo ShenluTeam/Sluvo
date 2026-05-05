@@ -507,6 +507,50 @@
               <p v-if="textNodeComposer.error" class="text-node-ai-composer__error">{{ textNodeComposer.error }}</p>
             </form>
             <div
+              v-if="node.type === 'agent_node'"
+              class="agent-node-runner"
+              @click.stop
+              @dblclick.stop
+              @keydown.stop
+              @keyup.stop
+              @pointerdown.stop
+              @mousedown.stop
+            >
+              <header>
+                <div>
+                  <strong>{{ node.agentName || getAgentProfileLabel(node.agentTemplateId || node.agentProfile) || '画布 Agent' }}</strong>
+                  <span>{{ getAgentNodeContextSummary(node) }}</span>
+                </div>
+                <button type="button" @click.stop="syncAgentNodeFromPanel(node)">使用面板设置</button>
+              </header>
+              <label>
+                Agent
+                <select v-model="node.agentTemplateId" @change="applyAgentTemplateToNode(node)">
+                  <option value="">自动派发</option>
+                  <option v-for="agent in agentPanel.templates" :key="agent.id" :value="agent.id">{{ agent.name }}</option>
+                </select>
+              </label>
+              <label>
+                模型
+                <select v-model="node.agentModelCode">
+                  <option v-for="model in agentModelOptions" :key="model.id" :value="model.id">{{ model.label }}</option>
+                </select>
+              </label>
+              <p v-if="node.agentRolePromptSummary">{{ node.agentRolePromptSummary }}</p>
+              <small v-if="node.agentLastActionStatus">
+                最近：{{ getAgentActionStatusLabel(node.agentLastActionStatus) }} · {{ node.agentLastProposal || node.agentLastMessage || '提案' }}
+              </small>
+              <button
+                class="agent-node-runner__primary"
+                type="button"
+                :disabled="agentPanel.busy"
+                @click.stop="runAgentNode(node)"
+              >
+                <Bot :size="16" />
+                {{ agentPanel.busy && agentPanel.targetNodeId === node.id ? '运行中' : '运行 Agent' }}
+              </button>
+            </div>
+            <div
               v-if="node.type === 'image_unit'"
               class="direct-workflow-node__generation-controls"
               @click.stop
@@ -964,10 +1008,10 @@
 
         <section class="canvas-agent-panel__mode">
           <strong>自由画布</strong>
-          <span>{{ selectedDirectNodeIds.length > 0 ? `已带入 ${selectedDirectNodeIds.length} 个选区节点` : '未选择节点，将基于项目画布理解需求' }}</span>
+          <span>{{ getAgentPanelModeSummary() }}</span>
           <button type="button" @click="agentPanel.advancedOpen = !agentPanel.advancedOpen">
             <SlidersHorizontal :size="15" />
-            高级设置
+            Agent Team
           </button>
         </section>
 
@@ -975,7 +1019,13 @@
           <label>
             Agent
             <select v-model="agentPanel.profile">
-              <option v-for="profile in agentProfiles" :key="profile.id" :value="profile.id">{{ profile.label }}</option>
+              <option value="auto">自动派发（推荐）</option>
+              <optgroup label="我的 Agent">
+                <option v-for="agent in agentPanel.templates" :key="agent.id" :value="agent.id">{{ agent.name }}</option>
+              </optgroup>
+              <optgroup label="官方 starter">
+                <option v-for="profile in agentProfiles.filter((profile) => profile.id !== 'auto')" :key="profile.id" :value="profile.id">{{ profile.label }}</option>
+              </optgroup>
             </select>
           </label>
           <label>
@@ -984,6 +1034,27 @@
               <option v-for="model in agentModelOptions" :key="model.id" :value="model.id">{{ model.label }}</option>
             </select>
           </label>
+          <div class="canvas-agent-panel__template-actions">
+            <button type="button" @click="openAgentTemplateEditor()">新建 Agent</button>
+            <button type="button" @click="createAgentFromStarter()">从 starter 复制</button>
+            <button type="button" :disabled="!hasAgentTemplateSelection" @click="openAgentTemplateEditor(getSelectedAgentTemplate())">编辑</button>
+            <button type="button" :disabled="!hasAgentTemplateSelection" @click="deleteSelectedAgentTemplate">删除</button>
+          </div>
+          <form v-if="agentPanel.agentEditorOpen" class="canvas-agent-template-form" @submit.prevent="saveAgentTemplate">
+            <input v-model="agentPanel.agentForm.name" type="text" placeholder="Agent 名称" maxlength="80" />
+            <input v-model="agentPanel.agentForm.description" type="text" placeholder="一句话说明它擅长什么" maxlength="180" />
+            <select v-model="agentPanel.agentForm.modelCode">
+              <option v-for="model in agentModelOptions" :key="model.id" :value="model.id">{{ model.label }}</option>
+            </select>
+            <textarea v-model="agentPanel.agentForm.rolePrompt" rows="3" placeholder="角色提示词：说明这个 Agent 的职责、边界和输出方式。" />
+            <input v-model="agentPanel.agentForm.useCasesText" type="text" placeholder="用例，用逗号分隔" />
+            <input v-model="agentPanel.agentForm.inputTypesText" type="text" placeholder="输入类型，如 text,image" />
+            <input v-model="agentPanel.agentForm.outputTypesText" type="text" placeholder="输出类型，如 note,image,video" />
+            <footer>
+              <button type="button" @click="closeAgentTemplateEditor">取消</button>
+              <button class="canvas-agent-template-form__primary" type="submit">{{ agentPanel.editingAgentId ? '保存 Agent' : '创建 Agent' }}</button>
+            </footer>
+          </form>
         </section>
 
         <section class="canvas-agent-panel__context">
@@ -993,6 +1064,23 @@
           <button type="button" @click="startAgentWithSelection('请把当前故事或选区拆成分镜计划。')">拆分分镜</button>
           <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请检查当前选区的角色、场景、道具和风格一致性。')">检查一致性</button>
           <button type="button" @click="startAgentWithSelection('请整理当前画布的创作工作流，指出缺口和下一步任务。')">整理工作流</button>
+        </section>
+
+        <section v-if="agentSessionHistory.length" class="canvas-agent-history">
+          <header>
+            <strong>项目内历史</strong>
+            <button type="button" :disabled="agentPanel.loadingHistory" @click="loadAgentHistory">刷新</button>
+          </header>
+          <button
+            v-for="item in agentSessionHistory"
+            :key="item.session.id"
+            type="button"
+            :class="{ 'is-active': item.session.id === agentPanel.sessionId }"
+            @click="restoreAgentSession(item)"
+          >
+            <span>{{ item.session.title || getAgentProfileLabel(item.session.agentProfile) || 'Agent 会话' }}</span>
+            <small>{{ getAgentHistorySummary(item) }}</small>
+          </button>
         </section>
 
         <section class="canvas-agent-panel__messages">
@@ -1016,6 +1104,15 @@
               <span>{{ node.type }}</span>
             </li>
           </ul>
+          <ul v-if="getAgentActionPreviewEdges(agentPanel.pendingAction).length" class="canvas-agent-action__preview canvas-agent-action__preview--edges">
+            <li v-for="edge in getAgentActionPreviewEdges(agentPanel.pendingAction)" :key="edge.key">
+              <b>{{ edge.label }}</b>
+              <span>{{ edge.type }}</span>
+            </li>
+          </ul>
+          <p v-if="agentPanel.pendingAction.status === 'failed'" class="canvas-agent-action__error">
+            {{ agentPanel.pendingAction.error?.message || '提案写入失败，可调整后重试或取消。' }}
+          </p>
           <footer>
             <button type="button" :disabled="agentPanel.busy" @click="cancelAgentAction">
               <X :size="16" />
@@ -1399,12 +1496,17 @@ import {
   analyzeSluvoTextNode,
   approveSluvoAgentAction,
   cancelSluvoAgentAction,
+  createSluvoAgent,
   createSluvoAgentSession,
+  deleteSluvoAgent,
+  fetchSluvoAgents,
+  fetchSluvoProjectAgentSessions,
   fetchSluvoProjectCanvas,
   publishSluvoProjectToCommunity,
   saveSluvoCanvasBatch,
   sendSluvoAgentMessage,
   SluvoRevisionConflictError,
+  updateSluvoAgent,
   unpublishSluvoCommunityCanvas,
   uploadSluvoCanvasAsset
 } from '../api/sluvoApi'
@@ -1584,6 +1686,38 @@ const agentProfiles = [
   { id: 'consistency_checker', label: '一致性检查 Agent' },
   { id: 'production_planner', label: '制片调度 Agent' }
 ]
+const agentStarterTemplates = [
+  {
+    name: '角色设定师',
+    description: '提取角色、外观、道具和关系，形成可继续生成的角色设定。',
+    profileKey: 'custom_agent',
+    rolePrompt: '你是漫剧角色设定 Agent，只处理角色、服装、道具和关系设定，输出能写入文本节点的结构化设定。',
+    useCases: ['角色提取', '道具设定', '角色一致性'],
+    inputTypes: ['text', 'image'],
+    outputTypes: ['note', 'image_prompt'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: '分镜规划师',
+    description: '把故事或选区拆成镜头计划、首帧图片和视频链路。',
+    profileKey: 'storyboard_director',
+    rolePrompt: '你是分镜规划 Agent，优先输出镜号、景别、动作、情绪、画面提示词和下游生成链路。',
+    useCases: ['分镜拆解', '首帧规划', '视频链路'],
+    inputTypes: ['text', 'image'],
+    outputTypes: ['storyboard', 'image', 'video'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: 'Prompt 精修师',
+    description: '把口语化描述改写成适合图片和视频生成的提示词。',
+    profileKey: 'prompt_polisher',
+    rolePrompt: '你是 Prompt 精修 Agent，只输出可直接用于生成节点的提示词和必要的约束说明。',
+    useCases: ['提示词润色', '图生图描述', '视频动作描述'],
+    inputTypes: ['text'],
+    outputTypes: ['note'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  }
+]
 const agentModelOptions = [
   { id: 'deepseek-v4-flash', label: 'DeepSeek v4 Flash' },
   { id: 'deepseek-v4-pro', label: 'DeepSeek v4 Pro' }
@@ -1597,8 +1731,26 @@ const agentPanel = reactive({
   input: '',
   busy: false,
   error: '',
+  targetNodeId: '',
+  sourceSurface: 'panel',
   pendingAction: null,
-  messages: []
+  messages: [],
+  templates: [],
+  history: [],
+  loadingTemplates: false,
+  loadingHistory: false,
+  agentEditorOpen: false,
+  editingAgentId: '',
+  agentForm: {
+    name: '',
+    description: '',
+    modelCode: 'deepseek-v4-flash',
+    rolePrompt: '',
+    useCasesText: '',
+    inputTypesText: '',
+    outputTypesText: '',
+    toolsText: 'read_canvas, propose_canvas_patch'
+  }
 })
 const textNodeComposer = reactive({
   input: '',
@@ -1618,6 +1770,7 @@ let frameResizeObserver = null
 let uploadTimer = null
 let autoSaveTimer = null
 let suppressCanvasSaveScheduling = false
+let suppressAgentSelectionWatch = false
 const imageGenerationTimers = new Map()
 const videoGenerationTimers = new Map()
 const videoEstimateTimers = new Map()
@@ -1909,6 +2062,8 @@ const canRedo = computed(() => redoStack.value.length > 0)
 const zoomLabel = computed(() => `${Math.round((viewport.value?.zoom || 1) * 100)}%`)
 const isCompactCanvas = computed(() => frameSize.width <= 900)
 const pendingAgentActionCount = computed(() => (agentPanel.pendingAction ? 1 : 0))
+const hasAgentTemplateSelection = computed(() => Boolean(getSelectedAgentTemplate()))
+const agentSessionHistory = computed(() => agentPanel.history.slice(0, 8))
 const showStarterStrip = computed(
   () =>
     !canvasActivated.value &&
@@ -2130,9 +2285,13 @@ watch(projectTitle, () => {
 
 watch(
   () => [agentPanel.profile, agentPanel.modelCode],
-  () => {
+  (next, previous = []) => {
+    if (suppressAgentSelectionWatch) return
     agentPanel.sessionId = ''
     agentPanel.pendingAction = null
+    agentPanel.targetNodeId = ''
+    const template = getSelectedAgentTemplate()
+    if (template?.modelCode && next[0] !== previous[0]) agentPanel.modelCode = template.modelCode
   }
 )
 
@@ -2240,6 +2399,7 @@ async function loadProjectCanvas() {
     const workspace = await fetchSluvoProjectCanvas(projectId)
     projectStore.setWorkspace(workspace)
     hydrateCanvasWorkspace(workspace)
+    await Promise.allSettled([loadAgentTemplates(), loadAgentHistory()])
     saveStatus.value = 'idle'
   } catch (error) {
     saveStatus.value = 'error'
@@ -2354,22 +2514,34 @@ function setAgentPanelVisible(visible) {
   }
 }
 
-function buildAgentContextSnapshot() {
-  const selectedIds = new Set(selectedDirectNodeIds.value)
+function serializeAgentContextNode(node) {
+  return {
+    id: node.id,
+    title: node.title,
+    nodeType: mapDirectTypeToBackendType(node.type),
+    directType: node.type,
+    position: { x: node.x, y: node.y },
+    prompt: node.prompt || '',
+    status: node.generationStatus || 'idle',
+    media: node.media ? { kind: node.media.kind, name: node.media.name, url: node.media.url } : null,
+    agentTemplateId: node.agentTemplateId || '',
+    agentName: node.agentName || ''
+  }
+}
+
+function buildAgentContextSnapshot(options = {}) {
+  const targetNode = options.targetNode || null
+  const sourceSurface = options.sourceSurface || 'panel'
+  const contextIds = options.contextNodeIds
+    ? new Set(options.contextNodeIds)
+    : new Set(selectedDirectNodeIds.value)
   const selectedNodes = directNodes.value
-    .filter((node) => selectedIds.has(node.id))
-    .map((node) => ({
-      id: node.id,
-      title: node.title,
-      nodeType: mapDirectTypeToBackendType(node.type),
-      directType: node.type,
-      position: { x: node.x, y: node.y },
-      prompt: node.prompt || '',
-      status: node.generationStatus || 'idle',
-      media: node.media ? { kind: node.media.kind, name: node.media.name, url: node.media.url } : null
-    }))
+    .filter((node) => contextIds.has(node.id))
+    .map(serializeAgentContextNode)
+  const agentTemplateId = options.agentTemplateId ?? targetNode?.agentTemplateId ?? getSelectedAgentTemplate()?.id ?? ''
+  const agentName = options.agentName ?? targetNode?.agentName ?? getAgentProfileLabel(agentTemplateId || agentPanel.profile)
   const selectedEdgeIds = new Set(directEdges.value
-    .filter((edge) => selectedIds.has(edge.sourceId) || selectedIds.has(edge.targetId))
+    .filter((edge) => contextIds.has(edge.sourceId) || contextIds.has(edge.targetId) || edge.targetId === targetNode?.id)
     .map((edge) => edge.id))
   const relatedEdges = directEdges.value
     .filter((edge) => selectedEdgeIds.has(edge.id))
@@ -2391,25 +2563,35 @@ function buildAgentContextSnapshot() {
     },
     selectedNodes,
     relatedEdges,
-    agentProfile: agentPanel.profile,
-    modelCode: agentPanel.modelCode,
-    agentModelCode: agentPanel.modelCode
+    targetNode: targetNode ? serializeAgentContextNode(targetNode) : null,
+    targetNodeId: targetNode?.id || '',
+    sourceSurface,
+    agentProfile: options.agentProfile || agentTemplateId || agentPanel.profile,
+    agentTemplateId,
+    agentName,
+    modelCode: options.modelCode || targetNode?.agentModelCode || agentPanel.modelCode,
+    agentModelCode: options.modelCode || targetNode?.agentModelCode || agentPanel.modelCode
   }
 }
 
-async function ensureAgentSession() {
-  if (agentPanel.sessionId) return agentPanel.sessionId
+async function ensureAgentSession(options = {}) {
+  if (!options.forceNew && agentPanel.sessionId) return agentPanel.sessionId
   const projectId = projectStore.activeProject?.id || String(route.params.projectId || '')
   if (!projectId) throw new Error('缺少项目 ID')
+  const targetNode = options.targetNode || null
+  const contextSnapshot = buildAgentContextSnapshot(options)
   const response = await createSluvoAgentSession(projectId, {
     canvasId: activeCanvas.value?.id || null,
-    title: '创作总监',
-    agentProfile: agentPanel.profile,
-    modelCode: agentPanel.modelCode,
+    targetNodeId: targetNode?.id || null,
+    title: targetNode?.title || contextSnapshot.agentName || '创作总监',
+    agentProfile: contextSnapshot.agentTemplateId || contextSnapshot.agentProfile || agentPanel.profile,
+    modelCode: contextSnapshot.modelCode || agentPanel.modelCode,
     mode: 'semi_auto',
-    contextSnapshot: buildAgentContextSnapshot()
+    contextSnapshot
   })
   agentPanel.sessionId = response?.session?.id || ''
+  agentPanel.targetNodeId = targetNode?.id || ''
+  agentPanel.sourceSurface = contextSnapshot.sourceSurface || 'panel'
   return agentPanel.sessionId
 }
 
@@ -2424,21 +2606,27 @@ async function startAgentWithSelection(content) {
   await runAgentPrompt(content)
 }
 
-async function runAgentPrompt(content) {
+async function runAgentPrompt(content, options = {}) {
   setAgentPanelVisible(true)
   agentPanel.busy = true
   agentPanel.error = ''
+  agentPanel.pendingAction = null
+  agentPanel.targetNodeId = options.targetNode?.id || ''
+  agentPanel.sourceSurface = options.sourceSurface || 'panel'
   try {
     await saveCanvasNow()
-    const sessionId = await ensureAgentSession()
+    const resolvedOptions = options.targetNode ? { ...options, targetNode: resolveLatestDirectNode(options.targetNode) || options.targetNode } : options
+    const sessionId = await ensureAgentSession(resolvedOptions)
+    const contextSnapshot = buildAgentContextSnapshot(resolvedOptions)
     const localMessageId = `user-${Date.now()}`
     agentPanel.messages.push({ id: localMessageId, role: 'user', content })
     const response = await sendSluvoAgentMessage(sessionId, {
       content,
       payload: {
-        contextSnapshot: buildAgentContextSnapshot(),
-        agentProfile: agentPanel.profile,
-        modelCode: agentPanel.modelCode
+        contextSnapshot,
+        agentProfile: contextSnapshot.agentTemplateId || contextSnapshot.agentProfile || agentPanel.profile,
+        modelCode: contextSnapshot.modelCode || agentPanel.modelCode,
+        sourceSurface: contextSnapshot.sourceSurface
       },
       turnId: `turn-${Date.now()}`
     })
@@ -2450,6 +2638,7 @@ async function runAgentPrompt(content) {
       routing: getAgentEventRoutingLabel(response?.agentEvent?.payload)
     })
     agentPanel.pendingAction = normalizeAgentAction(response?.action)
+    await loadAgentHistory()
     agentPanel.input = ''
   } catch (error) {
     agentPanel.error = error instanceof Error ? error.message : 'Agent 提案生成失败'
@@ -2459,12 +2648,16 @@ async function runAgentPrompt(content) {
   }
 }
 
+function resolveLatestDirectNode(node) {
+  return directNodes.value.find((item) => item.id === node.id || (node.clientId && item.clientId === node.clientId)) || null
+}
+
 function normalizeAgentAction(action) {
   if (!action) return null
   const contextSummary = action.input?.contextSummary || {}
   return {
     ...action,
-    summary: action.result?.summary || contextSummary.resolvedProfileLabel || contextSummary.profile || getAgentActionSummary(action.actionType)
+    summary: action.result?.summary || contextSummary.agentName || contextSummary.resolvedProfileLabel || contextSummary.profile || getAgentActionSummary(action.actionType)
   }
 }
 
@@ -2482,12 +2675,14 @@ function getAgentActionStats(action) {
   const patch = action?.patch || {}
   const nodeCount = Array.isArray(patch.nodes) ? patch.nodes.length : 0
   const edgeCount = Array.isArray(patch.edges) ? patch.edges.length : 0
-  return `${nodeCount} 个节点 · ${edgeCount} 条连线 · 待批准`
+  const summary = action?.input?.contextSummary || {}
+  const source = summary.sourceSurface === 'node' ? 'Agent 节点' : '创作总监'
+  return `${nodeCount} 个节点 · ${edgeCount} 条连线 · ${source} · ${getAgentActionStatusLabel(action.status)}`
 }
 
 function getAgentEventRoutingLabel(payload) {
   if (!payload) return ''
-  const profile = payload.resolvedProfileLabel || getAgentProfileLabel(payload.resolvedProfile || payload.profile)
+  const profile = payload.agentName || payload.resolvedProfileLabel || getAgentProfileLabel(payload.agentTemplateId || payload.resolvedProfile || payload.profile)
   const model = getAgentModelLabel(payload.modelCode)
   const reason = payload.routingReason || ''
   return [profile ? `主导：${profile}` : '', model, reason].filter(Boolean).join(' · ')
@@ -2495,14 +2690,14 @@ function getAgentEventRoutingLabel(payload) {
 
 function getAgentRoutingLabel(action) {
   const summary = action?.input?.contextSummary || {}
-  const profile = summary.resolvedProfileLabel || getAgentProfileLabel(summary.resolvedProfile || summary.profile)
+  const profile = summary.agentName || summary.resolvedProfileLabel || getAgentProfileLabel(summary.agentTemplateId || summary.resolvedProfile || summary.profile)
   const model = getAgentModelLabel(summary.modelCode)
   const reason = summary.routingReason || ''
   return [profile ? `主导：${profile}` : '', model, reason].filter(Boolean).join(' · ')
 }
 
 function getAgentProfileLabel(profileId) {
-  return agentProfiles.find((profile) => profile.id === profileId)?.label || profileId || ''
+  return agentPanel.templates.find((agent) => agent.id === profileId)?.name || agentProfiles.find((profile) => profile.id === profileId)?.label || profileId || ''
 }
 
 function getAgentModelLabel(modelCode) {
@@ -2511,11 +2706,264 @@ function getAgentModelLabel(modelCode) {
 
 function getAgentActionPreviewNodes(action) {
   const nodes = Array.isArray(action?.patch?.nodes) ? action.patch.nodes : []
-  return nodes.slice(0, 5).map((node, index) => ({
+  return nodes.slice(0, 8).map((node, index) => ({
     key: node.id || node.clientId || node.data?.clientId || `${index}`,
     title: node.title || node.data?.title || `节点 ${index + 1}`,
     type: node.nodeType || node.data?.directType || 'node'
   }))
+}
+
+function getAgentActionPreviewEdges(action) {
+  const edges = Array.isArray(action?.patch?.edges) ? action.patch.edges : []
+  return edges.slice(0, 6).map((edge, index) => ({
+    key: edge.id || `${edge.data?.sourceClientId || edge.sourceNodeId || 'source'}-${edge.data?.targetClientId || edge.targetNodeId || 'target'}-${index}`,
+    label: edge.label || `连线 ${index + 1}`,
+    type: edge.edgeType || 'reference'
+  }))
+}
+
+function getAgentActionStatusLabel(status) {
+  const map = {
+    proposed: '待批准',
+    approved: '待写入',
+    running: '写入中',
+    succeeded: '已写入',
+    failed: '写入失败',
+    cancelled: '已取消'
+  }
+  return map[status] || '待批准'
+}
+
+function getAgentPanelModeSummary() {
+  const template = getSelectedAgentTemplate()
+  const contextText = selectedDirectNodeIds.value.length > 0 ? `已带入 ${selectedDirectNodeIds.value.length} 个选区节点` : '未选择节点，将基于项目画布理解需求'
+  return template ? `${template.name} · ${contextText}` : contextText
+}
+
+function getSelectedAgentTemplate() {
+  return agentPanel.templates.find((item) => item.id === agentPanel.profile) || null
+}
+
+function getAgentHistorySummary(item) {
+  const action = item?.pendingAction || item?.latestAction
+  const event = item?.events?.at?.(-1)
+  const status = action ? getAgentActionStatusLabel(action.status) : '无提案'
+  const count = action ? getAgentActionStats(action).split(' · ').slice(0, 2).join(' · ') : event?.payload?.content || '暂无消息'
+  return `${status} · ${count}`
+}
+
+function restoreAgentSession(item) {
+  if (!item?.session?.id) return
+  suppressAgentSelectionWatch = true
+  agentPanel.sessionId = item.session.id
+  agentPanel.profile = item.session.contextSnapshot?.agentTemplateId || item.session.agentProfile || 'auto'
+  agentPanel.modelCode = item.session.contextSnapshot?.modelCode || agentPanel.modelCode
+  agentPanel.targetNodeId = item.session.targetNodeId || ''
+  agentPanel.sourceSurface = item.session.contextSnapshot?.sourceSurface || 'panel'
+  nextTick(() => {
+    suppressAgentSelectionWatch = false
+  })
+  agentPanel.messages = (item.events || []).map((event) => ({
+    id: event.id,
+    role: event.role === 'user' ? 'user' : 'agent',
+    content: event.payload?.content || (event.eventType === 'proposal' ? 'Agent 已生成一条可审阅提案。' : ''),
+    routing: getAgentEventRoutingLabel(event.payload)
+  })).filter((message) => message.content)
+  agentPanel.pendingAction = normalizeAgentAction(item.pendingAction || (item.latestAction?.status === 'failed' ? item.latestAction : null))
+  setAgentPanelVisible(true)
+}
+
+async function loadAgentTemplates() {
+  if (agentPanel.loadingTemplates) return
+  agentPanel.loadingTemplates = true
+  try {
+    agentPanel.templates = await fetchSluvoAgents()
+  } catch (error) {
+    if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
+  } finally {
+    agentPanel.loadingTemplates = false
+  }
+}
+
+async function loadAgentHistory() {
+  const projectId = projectStore.activeProject?.id || String(route.params.projectId || '')
+  if (!projectId || agentPanel.loadingHistory) return
+  agentPanel.loadingHistory = true
+  try {
+    agentPanel.history = await fetchSluvoProjectAgentSessions(projectId, { limit: 12 })
+    if (!agentPanel.sessionId) {
+      const restorable = agentPanel.history.find((item) => item.pendingAction || item.events?.length)
+      if (restorable) restoreAgentSession(restorable)
+    }
+  } catch (error) {
+    if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
+  } finally {
+    agentPanel.loadingHistory = false
+  }
+}
+
+function openAgentTemplateEditor(agent = null) {
+  agentPanel.agentEditorOpen = true
+  agentPanel.editingAgentId = agent?.id || ''
+  agentPanel.agentForm.name = agent?.name || ''
+  agentPanel.agentForm.description = agent?.description || ''
+  agentPanel.agentForm.modelCode = agent?.modelCode || agentPanel.modelCode || 'deepseek-v4-flash'
+  agentPanel.agentForm.rolePrompt = agent?.rolePrompt || ''
+  agentPanel.agentForm.useCasesText = (agent?.useCases || []).join(', ')
+  agentPanel.agentForm.inputTypesText = (agent?.inputTypes || []).join(', ')
+  agentPanel.agentForm.outputTypesText = (agent?.outputTypes || []).join(', ')
+  agentPanel.agentForm.toolsText = (agent?.tools || ['read_canvas', 'propose_canvas_patch']).join(', ')
+}
+
+function closeAgentTemplateEditor() {
+  agentPanel.agentEditorOpen = false
+  agentPanel.editingAgentId = ''
+}
+
+async function createAgentFromStarter() {
+  const starter = agentStarterTemplates[agentPanel.templates.length % agentStarterTemplates.length]
+  try {
+    const response = await createSluvoAgent({
+      ...starter,
+      modelCode: agentPanel.modelCode,
+      approvalPolicy: { mode: 'always_review' },
+      examples: []
+    })
+    await loadAgentTemplates()
+    agentPanel.profile = response?.agent?.id || agentPanel.templates[0]?.id || agentPanel.profile
+    showToast('已从 starter 创建 Agent')
+  } catch (error) {
+    agentPanel.error = error instanceof Error ? error.message : '创建 Agent 失败'
+  }
+}
+
+async function saveAgentTemplate() {
+  const payload = {
+    name: agentPanel.agentForm.name.trim() || '未命名 Agent',
+    description: agentPanel.agentForm.description.trim(),
+    profileKey: 'custom_agent',
+    modelCode: agentPanel.agentForm.modelCode,
+    rolePrompt: agentPanel.agentForm.rolePrompt.trim(),
+    useCases: splitCsv(agentPanel.agentForm.useCasesText),
+    inputTypes: splitCsv(agentPanel.agentForm.inputTypesText),
+    outputTypes: splitCsv(agentPanel.agentForm.outputTypesText),
+    tools: splitCsv(agentPanel.agentForm.toolsText),
+    approvalPolicy: { mode: 'always_review' },
+    examples: []
+  }
+  try {
+    const response = agentPanel.editingAgentId
+      ? await updateSluvoAgent(agentPanel.editingAgentId, payload)
+      : await createSluvoAgent(payload)
+    await loadAgentTemplates()
+    agentPanel.profile = response?.agent?.id || agentPanel.profile
+    agentPanel.modelCode = response?.agent?.modelCode || agentPanel.modelCode
+    closeAgentTemplateEditor()
+    showToast('Agent 已保存')
+  } catch (error) {
+    agentPanel.error = error instanceof Error ? error.message : '保存 Agent 失败'
+  }
+}
+
+async function deleteSelectedAgentTemplate() {
+  const template = getSelectedAgentTemplate()
+  if (!template) return
+  try {
+    await deleteSluvoAgent(template.id)
+    agentPanel.profile = 'auto'
+    await loadAgentTemplates()
+    showToast('Agent 已删除')
+  } catch (error) {
+    agentPanel.error = error instanceof Error ? error.message : '删除 Agent 失败'
+  }
+}
+
+function splitCsv(value) {
+  return String(value || '')
+    .split(/[,，\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function getUpstreamAgentContextNodeIds(agentNode) {
+  const upstreamIds = directEdges.value
+    .filter((edge) => edge.targetId === agentNode.id)
+    .map((edge) => edge.sourceId)
+    .filter((id) => id && id !== agentNode.id)
+  return [...new Set(upstreamIds)]
+}
+
+function getAgentNodeContextSummary(node) {
+  const count = getUpstreamAgentContextNodeIds(node).length
+  return count > 0 ? `已连接 ${count} 个上游节点` : '未连接上游，将读取自身指令'
+}
+
+function syncAgentNodeFromPanel(node) {
+  const template = getSelectedAgentTemplate()
+  rememberHistory()
+  updateDirectNode(node.id, {
+    agentTemplateId: template?.id || '',
+    agentName: template?.name || getAgentProfileLabel(agentPanel.profile),
+    agentProfile: agentPanel.profile,
+    agentModelCode: agentPanel.modelCode,
+    agentRolePromptSummary: summarizeAgentRolePrompt(template?.rolePrompt || ''),
+    agentInputTypes: template?.inputTypes || [],
+    agentOutputTypes: template?.outputTypes || []
+  })
+  scheduleCanvasSave(180)
+  showToast('Agent 节点已同步面板设置')
+}
+
+function applyAgentTemplateToNode(node) {
+  const template = agentPanel.templates.find((item) => item.id === node.agentTemplateId)
+  node.agentName = template?.name || ''
+  node.agentProfile = node.agentTemplateId || 'auto'
+  node.agentModelCode = template?.modelCode || node.agentModelCode || 'deepseek-v4-flash'
+  node.agentRolePromptSummary = summarizeAgentRolePrompt(template?.rolePrompt || '')
+  node.agentInputTypes = template?.inputTypes || []
+  node.agentOutputTypes = template?.outputTypes || []
+  scheduleCanvasSave(180)
+}
+
+function summarizeAgentRolePrompt(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  return text.length > 88 ? `${text.slice(0, 88)}...` : text
+}
+
+async function runAgentNode(node) {
+  if (!node?.id || agentPanel.busy) return
+  const upstreamIds = getUpstreamAgentContextNodeIds(node)
+  const contextNodeIds = upstreamIds.length ? upstreamIds : [node.id]
+  const template = agentPanel.templates.find((item) => item.id === node.agentTemplateId)
+  const content = node.prompt.trim() || `请读取 ${node.title} 的上游节点，生成可审阅的画布提案。`
+  rememberHistory()
+  updateDirectNode(node.id, {
+    generationStatus: 'running',
+    generationMessage: 'Agent 正在读取连接上下文',
+    agentLastActionStatus: 'running',
+    agentLastMessage: '提案生成中'
+  })
+  scheduleCanvasSave(180)
+  await runAgentPrompt(content, {
+    forceNew: true,
+    targetNode: node,
+    sourceSurface: 'node',
+    contextNodeIds,
+    agentProfile: node.agentTemplateId || node.agentProfile || 'auto',
+    agentTemplateId: node.agentTemplateId || '',
+    agentName: template?.name || node.agentName || node.title,
+    modelCode: node.agentModelCode || template?.modelCode || agentPanel.modelCode
+  })
+  const latestNode = resolveLatestDirectNode(node) || node
+  updateDirectNode(latestNode.id, {
+    generationStatus: agentPanel.pendingAction ? 'idle' : 'error',
+    generationMessage: agentPanel.pendingAction ? '提案待批准' : (agentPanel.error || 'Agent 提案生成失败'),
+    agentLastActionId: agentPanel.pendingAction?.id || node.agentLastActionId,
+    agentLastActionStatus: agentPanel.pendingAction?.status || 'failed',
+    agentLastProposal: agentPanel.pendingAction?.summary || node.agentLastProposal,
+    agentLastMessage: agentPanel.pendingAction ? '提案待批准' : (agentPanel.error || '提案生成失败')
+  })
+  scheduleCanvasSave(180)
 }
 
 function writeTextComposerToNode(node) {
@@ -2640,9 +3088,20 @@ async function approveAgentAction() {
   agentPanel.busy = true
   agentPanel.error = ''
   try {
-    await approveSluvoAgentAction(agentPanel.pendingAction.id)
+    const targetNodeId = agentPanel.pendingAction.targetNodeId || agentPanel.pendingAction.input?.contextSummary?.targetNodeId || ''
+    const response = await approveSluvoAgentAction(agentPanel.pendingAction.id)
+    if (targetNodeId) {
+      updateDirectNode(targetNodeId, {
+        generationStatus: 'idle',
+        generationMessage: '提案已写入画布',
+        agentLastActionStatus: response?.action?.status || 'succeeded',
+        agentLastActionId: response?.action?.id || agentPanel.pendingAction.id,
+        agentLastMessage: '提案已写入画布'
+      })
+    }
     agentPanel.messages.push({ id: `approved-${Date.now()}`, role: 'agent', content: '提案已写入画布。' })
     agentPanel.pendingAction = null
+    await loadAgentHistory()
     await loadProjectCanvas()
     showToast('Agent 提案已写入画布')
   } catch (error) {
@@ -2657,9 +3116,20 @@ async function cancelAgentAction() {
   agentPanel.busy = true
   agentPanel.error = ''
   try {
+    const targetNodeId = agentPanel.pendingAction.targetNodeId || agentPanel.pendingAction.input?.contextSummary?.targetNodeId || ''
     await cancelSluvoAgentAction(agentPanel.pendingAction.id)
+    if (targetNodeId) {
+      updateDirectNode(targetNodeId, {
+        generationStatus: 'idle',
+        generationMessage: '提案已取消',
+        agentLastActionStatus: 'cancelled',
+        agentLastActionId: agentPanel.pendingAction.id,
+        agentLastMessage: '提案已取消'
+      })
+    }
     agentPanel.messages.push({ id: `cancelled-${Date.now()}`, role: 'agent', content: '提案已取消，画布未改变。' })
     agentPanel.pendingAction = null
+    await loadAgentHistory()
   } catch (error) {
     agentPanel.error = error instanceof Error ? error.message : '取消失败'
   } finally {
@@ -2849,8 +3319,17 @@ function mapBackendNodeToDirectNode(node) {
     audioEstimatePoints: Number.isFinite(Number(data.audioEstimatePoints)) ? Number(data.audioEstimatePoints) : null,
     audioEstimateStatus: data.audioEstimateStatus || 'idle',
     agentProfile: data.agentProfile || 'canvas_agent',
+    agentTemplateId: data.agentTemplateId || '',
+    agentName: data.agentName || '',
+    agentRolePromptSummary: data.agentRolePromptSummary || '',
+    agentInputTypes: Array.isArray(data.agentInputTypes) ? data.agentInputTypes : [],
+    agentOutputTypes: Array.isArray(data.agentOutputTypes) ? data.agentOutputTypes : [],
     agentModelCode: data.modelCode || data.agentModelCode || 'deepseek-v4-flash',
     agentLastProposal: data.lastProposal || '',
+    agentLastActionId: data.agentLastActionId || '',
+    agentLastActionStatus: data.agentLastActionStatus || '',
+    agentLastMessage: data.agentLastMessage || '',
+    agentLastRunAt: data.agentLastRunAt || '',
     aspectRatio: data.aspectRatio || fallbackImageAspectRatioOptions[0],
     referenceImages: normalizeManualReferenceImages(data.referenceImages),
     referenceOrder: Array.isArray(data.referenceOrder) ? data.referenceOrder : [],
@@ -3547,9 +4026,18 @@ function serializeDirectNodeForSave(node, index = 0) {
       audioEstimatePoints: node.audioEstimatePoints ?? null,
       audioEstimateStatus: node.audioEstimateStatus || 'idle',
       agentProfile: node.agentProfile || '',
+      agentTemplateId: node.agentTemplateId || '',
+      agentName: node.agentName || '',
+      agentRolePromptSummary: node.agentRolePromptSummary || '',
+      agentInputTypes: Array.isArray(node.agentInputTypes) ? node.agentInputTypes : [],
+      agentOutputTypes: Array.isArray(node.agentOutputTypes) ? node.agentOutputTypes : [],
       agentModelCode: node.agentModelCode || '',
       modelCode: node.agentModelCode || '',
       lastProposal: node.agentLastProposal || '',
+      agentLastActionId: node.agentLastActionId || '',
+      agentLastActionStatus: node.agentLastActionStatus || '',
+      agentLastMessage: node.agentLastMessage || '',
+      agentLastRunAt: node.agentLastRunAt || '',
       aspectRatio: node.aspectRatio || '',
       referenceImages: normalizeManualReferenceImages(node.referenceImages)
         .filter((item) => item.status !== 'uploading')
@@ -8831,6 +9319,18 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
     audioSettingsOpen: Boolean(patch.audioSettingsOpen),
     audioEstimatePoints: Number.isFinite(Number(patch.audioEstimatePoints)) ? Number(patch.audioEstimatePoints) : null,
     audioEstimateStatus: patch.audioEstimateStatus || 'idle',
+    agentProfile: patch.agentProfile || 'auto',
+    agentTemplateId: patch.agentTemplateId || '',
+    agentName: patch.agentName || '',
+    agentRolePromptSummary: patch.agentRolePromptSummary || '',
+    agentInputTypes: Array.isArray(patch.agentInputTypes) ? patch.agentInputTypes : [],
+    agentOutputTypes: Array.isArray(patch.agentOutputTypes) ? patch.agentOutputTypes : [],
+    agentModelCode: patch.agentModelCode || patch.modelCode || 'deepseek-v4-flash',
+    agentLastProposal: patch.agentLastProposal || patch.lastProposal || '',
+    agentLastActionId: patch.agentLastActionId || '',
+    agentLastActionStatus: patch.agentLastActionStatus || '',
+    agentLastMessage: patch.agentLastMessage || '',
+    agentLastRunAt: patch.agentLastRunAt || '',
     aspectRatio: patch.aspectRatio || fallbackImageAspectRatioOptions[0],
     referenceImages: normalizeManualReferenceImages(patch.referenceImages),
     referenceOrder: Array.isArray(patch.referenceOrder) ? patch.referenceOrder : [],

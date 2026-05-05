@@ -196,7 +196,7 @@ Standalone Sluvo:
 | Upload persistent canvas asset | `POST /api/sluvo/canvases/{canvas_id}/assets/upload` |
 | Upload persistent canvas asset as base64 | `POST /api/sluvo/canvases/{canvas_id}/assets/upload/base64` |
 | Manage project members | `/api/sluvo/projects/{project_id}/members` |
-| Canvas Agent persistence | `/api/sluvo/projects/{project_id}/agent/sessions`, `/api/sluvo/agent/*` |
+| Canvas Agent persistence | `GET/POST /api/sluvo/projects/{project_id}/agent/sessions`, `/api/sluvo/agent/*` |
 | Text node local model analysis | `POST /api/sluvo/projects/{project_id}/text-node/analyze` |
 | My Agent templates | `GET/POST /api/sluvo/agents`, `GET/PATCH/DELETE /api/sluvo/agents/{agent_id}` |
 | Agent community templates | `GET /api/sluvo/community/agents`, publish/fork/unpublish under `/api/sluvo/*/agents/*` |
@@ -213,7 +213,9 @@ Frontend implementation note:
 - Sluvo upload objects are stored under the existing per-user OSS namespace, then grouped by Sluvo project and canvas: `users/{namespace}/sluvo/projects/{project}/canvases/{canvas}/{mediaType}/...`. Sluvo upload quota uses the existing storage accounting system and enforces the current `5GB` free-user quota for this upload path.
 - Community canvas list is public card metadata; detail and fork require login. Forked projects reuse original OSS media URLs for v1.
 - Canvas Agent sessions support selectable model codes `deepseek-v4-flash` and `deepseek-v4-pro`. The frontend defaults to `agentProfile: "auto"` and sends the selected model in session creation and message context; the backend normalizes unknown models to `deepseek-v4-flash`. If `DEEPSEEK_API_KEY` is configured, proposals use the selected DeepSeek model and safely fall back to deterministic canvas proposals on model/API failure.
-- Canvas Agent messages create proposed `SluvoAgentAction` records. In auto mode, the backend resolves the specialist Agent/action type from the user request and context, returning `resolvedProfile`, `resolvedActionType`, `routingReason`, and `modelCode` for UI display. Approved actions apply `patch` payloads through the existing canvas batch endpoint semantics and write an Agent-linked mutation audit record.
+- `GET /api/sluvo/projects/{project_id}/agent/sessions` returns project-local Agent session timelines with recent events and actions so the canvas can restore prior conversations and pending/failed proposals after refresh.
+- Canvas Agent messages create proposed `SluvoAgentAction` records. In auto mode, the backend resolves the specialist Agent/action type from the user request and context, returning `resolvedProfile`, `resolvedActionType`, `routingReason`, `modelCode`, optional `agentTemplateId`, `agentName`, `sourceSurface`, and `targetNodeId` for UI display. Approved actions apply `patch` payloads through the existing canvas batch endpoint semantics and write an Agent-linked mutation audit record.
+- Agent nodes run through the same session/action lifecycle with `sourceSurface: "node"` and `targetNodeId`; connected upstream nodes become selected context, and backend approval updates the target Agent node's last action state.
 - Text node local analysis is intentionally separate from Canvas Agent sessions. `POST /api/sluvo/projects/{project_id}/text-node/analyze` returns Markdown content for the current text node only and does not create Agent events, actions, or canvas mutations; the frontend writes the returned content into that node and saves the canvas.
 - User-created Agent templates are no-code prompt/config packages. Community Agent publications are sanitized snapshots and do not include private memory.
 

@@ -119,6 +119,10 @@ Community canvas cards are visible on the public and logged-in home. Guests can 
 
 Canvas Agent controls live inside `CanvasWorkspaceView.vue` for the MVP. The view provides a right-side collapsible 创作总监 panel, creates Agent sessions, sends selected-node context, shows proposed actions, and approves/cancels them through `src/api/sluvoApi.js`.
 
+The Agent panel now also owns the minimum "我的 Agent" template loop: list/create/edit/delete user Agent templates, copy starter templates into editable custom Agents, choose a template for the panel or an Agent node, and restore project-local Agent session history through `GET /api/sluvo/projects/{projectId}/agent/sessions`.
+
+Agent nodes are saved as normal canvas nodes with Agent metadata in node `data`: template id/name, model code, role prompt summary, input/output type hints, and last action status. Running an Agent node sends connected upstream nodes as Agent context and uses the same proposal approval lifecycle as the panel.
+
 The default Agent profile is `auto`, with manual specialist Agent selection and `deepseek-v4-flash` / `deepseek-v4-pro` model choice under advanced settings. Future model additions should be driven by the backend model/catalog policy.
 
 ## 6. Canvas State Rule

@@ -150,6 +150,13 @@ export function createSluvoAgentSession(projectId, payload) {
   })
 }
 
+export async function fetchSluvoProjectAgentSessions(projectId, { limit = 12 } = {}) {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  const payload = await apiFetch(`/api/sluvo/projects/${projectId}/agent/sessions?${params.toString()}`)
+  return Array.isArray(payload?.items) ? payload.items : []
+}
+
 export function sendSluvoAgentMessage(sessionId, payload) {
   return apiFetch(`/api/sluvo/agent/sessions/${sessionId}/messages`, {
     method: 'POST',
