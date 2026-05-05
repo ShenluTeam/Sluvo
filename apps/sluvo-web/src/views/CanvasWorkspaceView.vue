@@ -1140,7 +1140,7 @@
         </section>
 
         <section class="canvas-agent-run">
-          <div v-if="agentPanel.activeRun" class="canvas-agent-run__status">
+          <div v-if="agentPanel.activeRun && !isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-run__status">
             <div>
               <span>{{ getAgentRunStatusLabel(agentPanel.activeRun.run.status) }}</span>
               <small>{{ getAgentRunMeta(agentPanel.activeRun) }}</small>
@@ -1155,11 +1155,31 @@
               </span>
             </div>
           </div>
-          <article v-if="agentPanel.activeRun?.run?.goal" class="canvas-agent-user-message">
+          <article v-if="agentPanel.activeRun?.run?.goal" class="canvas-agent-user-message" :class="{ 'is-question': isAgentQuestionRun(agentPanel.activeRun) }">
             <span>你</span>
             <p>{{ agentPanel.activeRun.run.goal }}</p>
           </article>
-          <div v-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-conversation">
+          <div v-if="isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-qa-thread">
+            <article class="canvas-agent-answer-card">
+              <div class="canvas-agent-answer-card__avatar">
+                <Bot :size="16" />
+              </div>
+              <div class="canvas-agent-answer-card__body">
+                <header>
+                  <div>
+                    <span>创作总监</span>
+                    <strong>直接回答</strong>
+                  </div>
+                  <b>{{ getAgentQuestionStatusLabel(agentPanel.activeRun) }}</b>
+                </header>
+                <p>{{ getAgentQuestionAnswerText(agentPanel.activeRun) }}</p>
+                <footer>
+                  <span>{{ getAgentQuestionMeta(agentPanel.activeRun) }}</span>
+                </footer>
+              </div>
+            </article>
+          </div>
+          <div v-else-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-conversation">
             <article v-for="step in agentPanel.activeRun.steps" :key="step.id" class="canvas-agent-message" :class="`is-${step.status}`">
               <div class="canvas-agent-message__avatar">
                 <span>{{ getAgentStepNumber(step) }}</span>
@@ -3110,12 +3130,41 @@ function getAgentRunGoalTitle() {
 
 function getAgentRunPlainSummary() {
   if (!agentPanel.activeRun?.run) return getAgentPanelModeSummary()
+  if (isAgentQuestionRun(agentPanel.activeRun)) return '已识别为普通询问'
   const run = agentPanel.activeRun.run
   const steps = agentPanel.activeRun.steps || []
   const doneCount = steps.filter((step) => step.status === 'succeeded').length
   const artifactCount = steps.reduce((sum, step) => sum + (step.artifacts?.length || 0), 0)
   const costText = run.status === 'waiting_cost_confirmation' ? ' · 媒体待确认' : ''
   return `${doneCount}/${steps.length || 0} 阶段 · ${artifactCount} 产物${costText}`
+}
+
+function isAgentQuestionRun(timeline) {
+  if (!timeline?.run) return false
+  const summaryIntent = timeline.run.summary?.intent
+  const contextIntent = timeline.run.contextSnapshot?.intent
+  const stepIntent = timeline.steps?.[0]?.input?.intent
+  const intent = summaryIntent || contextIntent || stepIntent
+  return intent?.intent === 'question' || (timeline.steps || []).some((step) => step.stepKey === 'answer_question')
+}
+
+function getAgentQuestionAnswerText(timeline) {
+  const answerArtifact = (timeline?.steps || [])
+    .flatMap((step) => step.artifacts || [])
+    .find((artifact) => artifact.artifactType === 'report' || artifact.writePolicy === 'readonly')
+  const body = String(answerArtifact?.payload?.body || answerArtifact?.payload?.prompt || '').trim()
+  if (body) return body
+  return '我会先判断你的输入是普通询问、创作灵感还是已有剧本，再决定直接回答或进入创作拆解。'
+}
+
+function getAgentQuestionStatusLabel(timeline) {
+  return getAgentRunStatusLabel(timeline?.run?.status || 'succeeded')
+}
+
+function getAgentQuestionMeta(timeline) {
+  const summary = timeline?.run?.summary || {}
+  const model = getAgentModelLabel(summary.modelCode || agentPanel.modelCode)
+  return [summary.agentName || '创作总监', model, '无需写入画布'].filter(Boolean).join(' · ')
 }
 
 function setActiveAgentRun(timeline) {

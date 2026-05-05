@@ -5,6 +5,22 @@
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed ordinary 创作总监 question replies into a compact direct-answer conversation card instead of rendering them as staged production steps.
+- Kept creative inspiration and script inputs on the existing staged Agent Team timeline.
+
+Verification suggestions:
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
 - `backend/services/sluvo_service.py`
 - `backend/tests/test_sluvo_service.py`
 - `doc/API_DEVELOPMENT.md`
