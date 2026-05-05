@@ -1065,38 +1065,71 @@
         </section>
 
         <section class="canvas-agent-panel__context">
-          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请分析当前选区，并给出下一步创作建议。')">分析选区</button>
-          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请根据当前选区生成下游分镜、首帧和视频生成链路。')">生成下游节点</button>
-          <button type="button" @click="startAgentWithSelection('请优化当前画布或选区中的提示词，让它更适合图片和视频生成。')">优化提示词</button>
-          <button type="button" @click="startAgentWithSelection('请把当前故事或选区拆成分镜计划。')">拆分分镜</button>
+          <button type="button" @click="startAgentWithSelection('请把当前故事目标拆成故事总览、角色场景、分镜计划和生成占位。')">拆故事</button>
+          <button type="button" @click="startAgentWithSelection('请提取当前目标或选区里的角色、场景、道具和一致性锚点。')">提角色场景</button>
+          <button type="button" @click="startAgentWithSelection('请根据当前选区生成分镜链路、首帧图片占位和视频生成占位。')">生成分镜链路</button>
           <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请检查当前选区的角色、场景、道具和风格一致性。')">检查一致性</button>
-          <button type="button" @click="startAgentWithSelection('请整理当前画布的创作工作流，指出缺口和下一步任务。')">整理工作流</button>
+          <button type="button" @click="startAgentWithSelection('请创建下一批图片和视频生成任务，但所有扣费媒体任务必须先等待确认。')">创建生成任务</button>
         </section>
 
-        <section v-if="agentSessionHistory.length" class="canvas-agent-history">
+        <section v-if="agentRunHistory.length" class="canvas-agent-history">
           <header>
-            <strong>项目内历史</strong>
-            <button type="button" :disabled="agentPanel.loadingHistory" @click="loadAgentHistory">刷新</button>
+            <strong>Run 历史</strong>
+            <button type="button" :disabled="agentPanel.loadingRuns" @click="loadAgentRuns({ restore: false })">刷新</button>
           </header>
           <button
-            v-for="item in agentSessionHistory"
-            :key="item.session.id"
+            v-for="item in agentRunHistory"
+            :key="item.run.id"
             type="button"
-            :class="{ 'is-active': item.session.id === agentPanel.sessionId }"
-            @click="restoreAgentSession(item)"
+            :class="{ 'is-active': item.run.id === agentPanel.runId }"
+            @click="restoreAgentRun(item)"
           >
-            <span>{{ item.session.title || getAgentProfileLabel(item.session.agentProfile) || 'Agent 会话' }}</span>
-            <small>{{ getAgentHistorySummary(item) }}</small>
+            <span>{{ item.run.title || 'Agent Run' }}</span>
+            <small>{{ getAgentRunHistorySummary(item) }}</small>
           </button>
         </section>
 
-        <section class="canvas-agent-panel__messages">
-          <article v-for="message in agentPanel.messages" :key="message.id" :class="`is-${message.role}`">
-            <span>{{ message.role === 'user' ? '你' : '创作总监' }}</span>
-            <p>{{ message.content }}</p>
-            <small v-if="message.routing">{{ message.routing }}</small>
-          </article>
-          <p v-if="agentPanel.messages.length === 0" class="canvas-agent-panel__empty">直接输入灵感或剧本，创作总监会先在对话里分析，再把角色、场景、道具、分镜和生成链路作为画布提案。</p>
+        <section class="canvas-agent-run">
+          <div v-if="agentPanel.activeRun" class="canvas-agent-run__summary">
+            <span>{{ getAgentRunStatusLabel(agentPanel.activeRun.run.status) }}</span>
+            <strong>{{ agentPanel.activeRun.run.goal }}</strong>
+            <small>{{ getAgentRunMeta(agentPanel.activeRun) }}</small>
+          </div>
+          <div v-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-timeline">
+            <article v-for="step in agentPanel.activeRun.steps" :key="step.id" class="canvas-agent-step">
+              <header>
+                <div>
+                  <span>{{ step.agentName || 'Agent' }} · {{ getAgentModelLabel(step.modelCode) }}</span>
+                  <strong>{{ step.title }}</strong>
+                </div>
+                <b :class="`is-${step.status}`">{{ getAgentStepStatusLabel(step.status) }}</b>
+              </header>
+              <p v-if="getAgentStepInputSummary(step)">{{ getAgentStepInputSummary(step) }}</p>
+              <div v-if="step.artifacts?.length" class="canvas-agent-artifacts">
+                <section v-for="artifact in step.artifacts" :key="artifact.id" class="canvas-agent-artifact">
+                  <header>
+                    <strong>{{ artifact.title }}</strong>
+                    <span>{{ getAgentArtifactTypeLabel(artifact.artifactType) }} · {{ getAgentArtifactStatusLabel(artifact.status) }}</span>
+                  </header>
+                  <p>{{ getAgentArtifactPreview(artifact) }}</p>
+                  <small v-if="artifact.canvasNodeId">已写入画布节点</small>
+                  <small v-if="artifact.generationRecordId">生成记录 {{ artifact.generationRecordId }}</small>
+                </section>
+              </div>
+              <footer v-if="step.status === 'failed'">
+                <span>{{ step.error?.message || '阶段执行失败' }}</span>
+                <button type="button" :disabled="agentPanel.busy" @click="retryAgentRunStep(step)">重试阶段</button>
+              </footer>
+            </article>
+          </div>
+          <p v-else class="canvas-agent-panel__empty">输入一个目标后，创作总监会按 Run → Step → Artifact 展开多 Agent 时间线，并把文本与媒体占位节点写入画布。</p>
+          <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_cost_confirmation'" class="canvas-agent-run__cost">
+            <span>媒体生成等待确认，预计消耗 {{ getAgentRunEstimatePoints(agentPanel.activeRun) }} 灵感值。</span>
+            <button type="button" :disabled="agentPanel.confirmingCost" @click="confirmAgentRunCost">
+              <Check :size="16" />
+              确认并提交生成
+            </button>
+          </footer>
         </section>
 
         <section v-if="agentPanel.pendingAction" class="canvas-agent-action">
@@ -1503,16 +1536,22 @@ import {
   analyzeSluvoTextNode,
   approveSluvoAgentAction,
   cancelSluvoAgentAction,
+  confirmSluvoAgentRunCost,
+  continueSluvoAgentRun,
   createSluvoAgent,
+  createSluvoAgentRun,
   createSluvoAgentSession,
   deleteSluvoAgent,
   fetchSluvoAgents,
+  fetchSluvoAgentRun,
+  fetchSluvoProjectAgentRuns,
   fetchSluvoProjectAgentSessions,
   fetchSluvoProjectCanvas,
   publishSluvoProjectToCommunity,
   saveSluvoCanvasBatch,
   sendSluvoAgentMessage,
   SluvoRevisionConflictError,
+  retrySluvoAgentStep,
   updateSluvoAgent,
   unpublishSluvoCommunityCanvas,
   uploadSluvoCanvasAsset
@@ -1742,6 +1781,11 @@ const agentPanel = reactive({
   targetNodeId: '',
   sourceSurface: 'panel',
   pendingAction: null,
+  activeRun: null,
+  runId: '',
+  runs: [],
+  loadingRuns: false,
+  confirmingCost: false,
   messages: [],
   templates: [],
   history: [],
@@ -2069,9 +2113,10 @@ const canUndo = computed(() => historyStack.value.length > 0)
 const canRedo = computed(() => redoStack.value.length > 0)
 const zoomLabel = computed(() => `${Math.round((viewport.value?.zoom || 1) * 100)}%`)
 const isCompactCanvas = computed(() => frameSize.width <= 900)
-const pendingAgentActionCount = computed(() => (agentPanel.pendingAction ? 1 : 0))
+const pendingAgentActionCount = computed(() => (agentPanel.pendingAction ? 1 : 0) + (agentPanel.activeRun?.status === 'waiting_cost_confirmation' ? 1 : 0))
 const hasAgentTemplateSelection = computed(() => Boolean(getSelectedAgentTemplate()))
 const agentSessionHistory = computed(() => agentPanel.history.slice(0, 8))
+const agentRunHistory = computed(() => agentPanel.runs.slice(0, 8))
 const showStarterStrip = computed(
   () =>
     !canvasActivated.value &&
@@ -2296,6 +2341,8 @@ watch(
   (next, previous = []) => {
     if (suppressAgentSelectionWatch) return
     agentPanel.sessionId = ''
+    agentPanel.runId = ''
+    agentPanel.activeRun = null
     agentPanel.pendingAction = null
     agentPanel.targetNodeId = ''
     const template = getSelectedAgentTemplate()
@@ -2416,7 +2463,7 @@ async function loadProjectCanvas() {
     const workspace = await fetchSluvoProjectCanvas(projectId)
     projectStore.setWorkspace(workspace)
     hydrateCanvasWorkspace(workspace)
-    await Promise.allSettled([loadAgentTemplates(), loadAgentHistory()])
+    await Promise.allSettled([loadAgentTemplates(), loadAgentHistory(), loadAgentRuns()])
     saveStatus.value = 'idle'
   } catch (error) {
     saveStatus.value = 'error'
@@ -2617,7 +2664,11 @@ async function ensureAgentSession(options = {}) {
 async function sendAgentPrompt() {
   const content = agentPanel.input.trim()
   if (!content || agentPanel.busy) return
-  await runAgentPrompt(content)
+  if (agentPanel.runId && agentPanel.activeRun) {
+    await continueAgentRun(content)
+  } else {
+    await runAgentPrompt(content)
+  }
 }
 
 async function startAgentWithSelection(content) {
@@ -2635,33 +2686,45 @@ async function runAgentPrompt(content, options = {}) {
   try {
     await saveCanvasNow()
     const resolvedOptions = options.targetNode ? { ...options, targetNode: resolveLatestDirectNode(options.targetNode) || options.targetNode } : options
-    const sessionId = await ensureAgentSession(resolvedOptions)
     const contextSnapshot = buildAgentContextSnapshot(resolvedOptions)
-    const localMessageId = `user-${Date.now()}`
-    agentPanel.messages.push({ id: localMessageId, role: 'user', content })
-    const response = await sendSluvoAgentMessage(sessionId, {
-      content,
-      payload: {
-        contextSnapshot,
-        agentProfile: contextSnapshot.agentTemplateId || contextSnapshot.agentProfile || agentPanel.profile,
-        modelCode: contextSnapshot.modelCode || agentPanel.modelCode,
-        sourceSurface: contextSnapshot.sourceSurface
-      },
-      turnId: `turn-${Date.now()}`
+    const projectId = projectStore.activeProject?.id || String(route.params.projectId || '')
+    const response = await createSluvoAgentRun(projectId, {
+      canvasId: activeCanvas.value?.id || null,
+      targetNodeId: resolvedOptions.targetNode?.id || null,
+      goal: content,
+      sourceSurface: contextSnapshot.sourceSurface,
+      agentProfile: contextSnapshot.agentProfile || agentPanel.profile,
+      agentTemplateId: contextSnapshot.agentTemplateId || null,
+      modelCode: contextSnapshot.modelCode || agentPanel.modelCode,
+      mode: 'semi_auto',
+      contextSnapshot
     })
-    const agentContent = response?.agentEvent?.payload?.content || 'Agent 已生成一条可审阅提案。'
-    agentPanel.messages.push({
-      id: response?.agentEvent?.id || `agent-${Date.now()}`,
-      role: 'agent',
-      content: agentContent,
-      routing: getAgentEventRoutingLabel(response?.agentEvent?.payload)
-    })
-    agentPanel.pendingAction = normalizeAgentAction(response?.action)
-    await loadAgentHistory()
+    setActiveAgentRun(response)
+    await Promise.allSettled([loadAgentRuns({ restore: false }), loadAgentHistory(), loadProjectCanvas()])
     agentPanel.input = ''
   } catch (error) {
-    agentPanel.error = error instanceof Error ? error.message : 'Agent 提案生成失败'
+    agentPanel.error = error instanceof Error ? error.message : 'Agent Run 创建失败'
     if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
+  } finally {
+    agentPanel.busy = false
+  }
+}
+
+async function continueAgentRun(content) {
+  if (!agentPanel.runId || agentPanel.busy) return
+  agentPanel.busy = true
+  agentPanel.error = ''
+  try {
+    await saveCanvasNow()
+    const response = await continueSluvoAgentRun(agentPanel.runId, {
+      content,
+      contextSnapshot: buildAgentContextSnapshot({ sourceSurface: agentPanel.sourceSurface || 'panel' })
+    })
+    setActiveAgentRun(response)
+    await Promise.allSettled([loadAgentRuns({ restore: false }), loadProjectCanvas()])
+    agentPanel.input = ''
+  } catch (error) {
+    agentPanel.error = error instanceof Error ? error.message : '继续补充失败'
   } finally {
     agentPanel.busy = false
   }
@@ -2769,6 +2832,165 @@ function getAgentHistorySummary(item) {
   const status = action ? getAgentActionStatusLabel(action.status) : '无提案'
   const count = action ? getAgentActionStats(action).split(' · ').slice(0, 2).join(' · ') : event?.payload?.content || '暂无消息'
   return `${status} · ${count}`
+}
+
+function setActiveAgentRun(timeline) {
+  if (!timeline?.run?.id) return
+  agentPanel.activeRun = timeline
+  agentPanel.runId = timeline.run.id
+  agentPanel.sessionId = timeline.run.sessionId || timeline.latestSession?.id || agentPanel.sessionId
+  agentPanel.targetNodeId = timeline.run.targetNodeId || ''
+  agentPanel.sourceSurface = timeline.run.sourceSurface || 'panel'
+}
+
+function getAgentRunHistorySummary(item) {
+  const run = item?.run || {}
+  const summary = run.summary || {}
+  const status = getAgentRunStatusLabel(run.status)
+  const stepCount = Array.isArray(item?.steps) ? item.steps.length : 0
+  const artifactCount = summary.artifactCount || item?.steps?.reduce?.((sum, step) => sum + (step.artifacts?.length || 0), 0) || 0
+  return `${status} · ${stepCount} 阶段 · ${artifactCount} 产物`
+}
+
+function getAgentRunStatusLabel(status) {
+  return {
+    drafting: '起草中',
+    running: '运行中',
+    waiting_user: '等待确认',
+    waiting_cost_confirmation: '等待扣费确认',
+    succeeded: '已完成',
+    failed: '失败',
+    cancelled: '已取消'
+  }[status] || status || '未知'
+}
+
+function getAgentStepStatusLabel(status) {
+  return {
+    queued: '排队',
+    running: '运行中',
+    waiting_user: '等待确认',
+    waiting_cost_confirmation: '等待扣费确认',
+    succeeded: '已完成',
+    failed: '失败',
+    skipped: '已跳过',
+    cancelled: '已取消'
+  }[status] || status || '未知'
+}
+
+function getAgentArtifactStatusLabel(status) {
+  return {
+    draft: '草稿',
+    ready: '已准备',
+    written: '已写入',
+    waiting_cost_confirmation: '待确认',
+    submitted: '已提交',
+    failed: '失败'
+  }[status] || status || '未知'
+}
+
+function getAgentArtifactTypeLabel(type) {
+  return {
+    text_node: '文本节点',
+    storyboard_plan: '分镜计划',
+    character_brief: '角色设定',
+    scene_brief: '场景设定',
+    prompt: 'Prompt',
+    image_placeholder: '图片占位',
+    video_placeholder: '视频占位',
+    audio_placeholder: '音频占位',
+    media_result: '媒体结果',
+    report: '报告'
+  }[type] || type || '产物'
+}
+
+function getAgentRunMeta(timeline) {
+  const run = timeline?.run || {}
+  const summary = run.summary || {}
+  const contextCount = summary.contextCount ?? run.contextSnapshot?.selectedNodes?.length ?? 0
+  const artifactCount = summary.artifactCount || timeline?.steps?.reduce?.((sum, step) => sum + (step.artifacts?.length || 0), 0) || 0
+  return `${summary.agentName || 'Agent Team'} · ${getAgentModelLabel(summary.modelCode || agentPanel.modelCode)} · 上下文 ${contextCount} · 产物 ${artifactCount}`
+}
+
+function getAgentStepInputSummary(step) {
+  const input = step?.input || {}
+  if (input.content) return input.content
+  if (input.goal) return `目标：${input.goal}`
+  if (Number.isFinite(Number(input.contextCount))) return `上下文 ${input.contextCount} 个节点`
+  return ''
+}
+
+function getAgentArtifactPreview(artifact) {
+  const payload = artifact?.payload || {}
+  const text = String(payload.body || payload.prompt || '').replace(/\s+/g, ' ').trim()
+  return text.length > 140 ? `${text.slice(0, 140)}...` : text || '暂无预览'
+}
+
+function getAgentRunEstimatePoints(timeline) {
+  const fromSummary = Number(timeline?.run?.summary?.estimatePoints)
+  if (Number.isFinite(fromSummary) && fromSummary > 0) return fromSummary
+  return (timeline?.steps || []).reduce((sum, step) => sum + (step.artifacts || []).reduce((itemSum, artifact) => itemSum + Number(artifact.preview?.estimatePoints || 0), 0), 0)
+}
+
+async function confirmAgentRunCost() {
+  if (!agentPanel.runId || agentPanel.confirmingCost) return
+  agentPanel.confirmingCost = true
+  agentPanel.error = ''
+  try {
+    const artifactIds = (agentPanel.activeRun?.steps || [])
+      .flatMap((step) => step.artifacts || [])
+      .filter((artifact) => artifact.status === 'waiting_cost_confirmation')
+      .map((artifact) => artifact.id)
+    const response = await confirmSluvoAgentRunCost(agentPanel.runId, { artifactIds, confirmed: true })
+    setActiveAgentRun(response)
+    await Promise.allSettled([loadAgentRuns({ restore: false }), loadProjectCanvas()])
+    showToast('媒体生成已确认，任务进入队列')
+  } catch (error) {
+    agentPanel.error = error instanceof Error ? error.message : '确认媒体生成失败'
+  } finally {
+    agentPanel.confirmingCost = false
+  }
+}
+
+async function retryAgentRunStep(step) {
+  if (!step?.id || agentPanel.busy) return
+  agentPanel.busy = true
+  agentPanel.error = ''
+  try {
+    const response = await retrySluvoAgentStep(step.id)
+    setActiveAgentRun(response)
+    await Promise.allSettled([loadAgentRuns({ restore: false }), loadProjectCanvas()])
+  } catch (error) {
+    agentPanel.error = error instanceof Error ? error.message : '重试阶段失败'
+  } finally {
+    agentPanel.busy = false
+  }
+}
+
+function restoreAgentRun(item) {
+  setActiveAgentRun(item)
+  agentPanel.error = ''
+  setAgentPanelVisible(true)
+}
+
+async function loadAgentRuns({ restore = true } = {}) {
+  const projectId = projectStore.activeProject?.id || String(route.params.projectId || '')
+  if (!projectId || agentPanel.loadingRuns) return
+  agentPanel.loadingRuns = true
+  try {
+    agentPanel.runs = await fetchSluvoProjectAgentRuns(projectId, { limit: 12 })
+    if (restore && !agentPanel.runId) {
+      const restorable = agentPanel.runs.find((item) => !['failed', 'cancelled'].includes(item.run?.status))
+        || agentPanel.runs[0]
+      if (restorable) setActiveAgentRun(restorable)
+    } else if (agentPanel.runId) {
+      const current = agentPanel.runs.find((item) => item.run?.id === agentPanel.runId)
+      if (current) setActiveAgentRun(current)
+    }
+  } catch (error) {
+    if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
+  } finally {
+    agentPanel.loadingRuns = false
+  }
 }
 
 function restoreAgentSession(item) {
@@ -2979,13 +3201,14 @@ async function runAgentNode(node) {
     modelCode: node.agentModelCode || template?.modelCode || agentPanel.modelCode
   })
   const latestNode = resolveLatestDirectNode(node) || node
+  const runSucceeded = Boolean(agentPanel.activeRun?.run?.id)
   updateDirectNode(latestNode.id, {
-    generationStatus: agentPanel.pendingAction ? 'idle' : 'error',
-    generationMessage: agentPanel.pendingAction ? '提案待批准' : (agentPanel.error || 'Agent 提案生成失败'),
-    agentLastActionId: agentPanel.pendingAction?.id || node.agentLastActionId,
-    agentLastActionStatus: agentPanel.pendingAction?.status || 'failed',
-    agentLastProposal: agentPanel.pendingAction?.summary || node.agentLastProposal,
-    agentLastMessage: agentPanel.pendingAction ? '提案待批准' : (agentPanel.error || '提案生成失败')
+    generationStatus: runSucceeded ? 'idle' : 'error',
+    generationMessage: runSucceeded ? 'Agent Run 已写入时间线' : (agentPanel.error || 'Agent Run 创建失败'),
+    agentLastActionId: agentPanel.activeRun?.run?.id || node.agentLastActionId,
+    agentLastActionStatus: agentPanel.activeRun?.run?.status || 'failed',
+    agentLastProposal: agentPanel.activeRun?.run?.title || node.agentLastProposal,
+    agentLastMessage: runSucceeded ? 'Run 时间线已生成' : (agentPanel.error || 'Run 创建失败')
   })
   scheduleCanvasSave(180)
 }

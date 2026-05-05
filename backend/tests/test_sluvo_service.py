@@ -12,7 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.security import encode_id
 from models import (
+    GenerationRecord,
     RoleEnum,
+    SluvoAgentArtifact,
+    SluvoAgentRun,
+    SluvoAgentStep,
     SluvoCanvasAsset,
     SluvoCanvasEdge,
     SluvoCanvasMutation,
@@ -46,6 +50,7 @@ from services.sluvo_service import (
     approve_sluvo_agent_action,
     build_sluvo_agent_action_payload,
     create_sluvo_agent_action,
+    create_sluvo_agent_run,
     create_sluvo_agent_session,
     create_sluvo_agent_template,
     create_sluvo_canvas_asset_upload,
@@ -53,7 +58,9 @@ from services.sluvo_service import (
     create_sluvo_node,
     create_sluvo_project,
     get_or_create_main_canvas,
+    confirm_sluvo_agent_run_cost,
     list_sluvo_project_agent_sessions,
+    list_sluvo_project_agent_runs,
     require_sluvo_project_access,
     resolve_sluvo_agent_route,
     update_sluvo_node,
@@ -435,6 +442,80 @@ def test_sluvo_agent_auto_route_selects_specialist_profiles():
         assert explicit_route["actionType"] == "agent.report"
         assert story_route["profile"] == "story_director"
         assert story_route["actionType"] == "workflow.plan"
+
+
+def test_sluvo_agent_run_creates_timeline_canvas_writes_and_cost_records():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Agent Run Project"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+        context_node = create_sluvo_node(
+            session,
+            canvas,
+            SluvoCanvasNodeCreateRequest(
+                nodeType="text",
+                title="雨夜信号",
+                position={"x": 10, "y": 20},
+                data={"clientId": "ctx-1", "directType": "prompt_note", "prompt": "雨夜少年追逐神秘信号"},
+            ),
+            user=owner,
+        )
+
+        timeline = create_sluvo_agent_run(
+            session,
+            project=project,
+            user=owner,
+            team=team,
+            canvas_id=canvas.id,
+            target_node_id=None,
+            goal="拆成角色、场景、分镜和生成占位",
+            source_surface="panel",
+            agent_profile="auto",
+            agent_template_id=None,
+            model_code="deepseek-v4-flash",
+            mode="semi_auto",
+            context_snapshot={
+                "selectedNodes": [
+                    {
+                        "id": encode_id(context_node.id),
+                        "clientId": "ctx-1",
+                        "title": "雨夜信号",
+                        "position": {"x": 10, "y": 20},
+                        "prompt": "雨夜少年追逐神秘信号",
+                    }
+                ]
+            },
+        )
+
+        assert timeline["run"]["status"] == "waiting_cost_confirmation"
+        assert len(timeline["steps"]) >= 4
+        assert session.exec(select(SluvoAgentRun)).first()
+        assert session.exec(select(SluvoAgentStep)).first()
+        assert session.exec(select(SluvoAgentArtifact)).first()
+        assert session.exec(select(SluvoCanvasMutation).where(SluvoCanvasMutation.actor_type == "agent")).first()
+
+        runs = list_sluvo_project_agent_runs(session, project=project, limit=12)
+        assert runs[0]["run"]["id"] == timeline["run"]["id"]
+
+        run = session.exec(select(SluvoAgentRun)).first()
+        media_artifacts = session.exec(
+            select(SluvoAgentArtifact).where(
+                SluvoAgentArtifact.run_id == run.id,
+                SluvoAgentArtifact.write_policy == "requires_cost_confirmation",
+            )
+        ).all()
+        assert media_artifacts
+        confirmed = confirm_sluvo_agent_run_cost(
+            session,
+            run=run,
+            user=owner,
+            team=team,
+            artifact_ids=[item.id for item in media_artifacts],
+            confirmed=True,
+        )
+        assert confirmed["run"]["status"] == "running"
+        assert session.exec(select(GenerationRecord)).first()
 
 
 def test_sluvo_agent_panel_patch_writes_products_not_agent_nodes():

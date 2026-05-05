@@ -3,6 +3,34 @@
 ## 2026-05-05
 
 Changed files:
+- `backend/models.py`
+- `backend/database.py`
+- `backend/schemas.py`
+- `backend/services/sluvo_service.py`
+- `backend/routers/sluvo.py`
+- `backend/tests/test_sluvo_service.py`
+- `apps/sluvo-web/src/api/sluvoApi.js`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/API_DEVELOPMENT.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added `SluvoAgentRun`, `SluvoAgentStep`, and `SluvoAgentArtifact` persistence plus lightweight create-table migrations.
+- Added Agent Run APIs for create/list/read/continue/confirm-cost/retry while keeping legacy session/action proposal endpoints compatible.
+- The right-side 创作总监 panel now starts OiiOii-style Agent Team workflow runs and renders a stage timeline with artifacts, automatic text/placeholder canvas writes, run history restore, media cost confirmation, and failed-step retry affordances.
+
+Verification suggestions:
+- `python3 -m py_compile backend/models.py backend/schemas.py backend/services/sluvo_service.py backend/routers/sluvo.py`
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-05
+
+Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `backend/routers/sluvo.py`
 - `backend/services/sluvo_service.py`

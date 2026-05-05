@@ -1207,6 +1207,70 @@ class SluvoAgentAction(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 
+class SluvoAgentRun(SQLModel, table=True):
+    __tablename__ = "sluvo_agent_run"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="sluvo_project.id", index=True)
+    canvas_id: int = Field(foreign_key="sluvo_canvas.id", index=True)
+    session_id: Optional[int] = Field(default=None, foreign_key="sluvo_agent_session.id", index=True)
+    target_node_id: Optional[int] = Field(default=None, foreign_key="sluvo_canvas_node.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    team_id: int = Field(foreign_key="team.id", index=True)
+    title: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    goal: str = Field(default="", sa_column=Column(LONGTEXT))
+    source_surface: str = Field(default="panel", sa_column=Column(String(32), nullable=False, index=True))
+    status: str = Field(default="drafting", sa_column=Column(String(32), nullable=False, index=True))
+    mode: str = Field(default="semi_auto", sa_column=Column(String(32), nullable=False, index=True))
+    approval_policy_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    context_snapshot_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    summary_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    finished_at: Optional[datetime] = Field(default=None, index=True)
+
+
+class SluvoAgentStep(SQLModel, table=True):
+    __tablename__ = "sluvo_agent_step"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: int = Field(foreign_key="sluvo_agent_run.id", index=True)
+    session_id: Optional[int] = Field(default=None, foreign_key="sluvo_agent_session.id", index=True)
+    agent_template_id: Optional[int] = Field(default=None, foreign_key="sluvo_agent_template.id", index=True)
+    action_id: Optional[int] = Field(default=None, foreign_key="sluvo_agent_action.id", index=True)
+    step_key: str = Field(sa_column=Column(String(64), nullable=False, index=True))
+    agent_name: str = Field(default="", sa_column=Column(String(255)))
+    agent_profile: str = Field(default="canvas_agent", sa_column=Column(String(64), nullable=False, index=True))
+    model_code: str = Field(default="deepseek-v4-flash", sa_column=Column(String(64), nullable=False, index=True))
+    title: str = Field(default="", sa_column=Column(String(255)))
+    status: str = Field(default="queued", sa_column=Column(String(32), nullable=False, index=True))
+    input_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    output_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    error_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    order_index: int = Field(default=0, sa_column=Column(Integer, nullable=False, default=0, index=True))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    finished_at: Optional[datetime] = Field(default=None, index=True)
+
+
+class SluvoAgentArtifact(SQLModel, table=True):
+    __tablename__ = "sluvo_agent_artifact"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: int = Field(foreign_key="sluvo_agent_run.id", index=True)
+    step_id: int = Field(foreign_key="sluvo_agent_step.id", index=True)
+    canvas_node_id: Optional[int] = Field(default=None, foreign_key="sluvo_canvas_node.id", index=True)
+    generation_record_id: Optional[int] = Field(default=None, foreign_key="generationrecord.id", index=True)
+    title: str = Field(default="", sa_column=Column(String(255)))
+    artifact_type: str = Field(sa_column=Column(String(64), nullable=False, index=True))
+    status: str = Field(default="draft", sa_column=Column(String(32), nullable=False, index=True))
+    payload_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    preview_json: str = Field(default="{}", sa_column=Column(LONGTEXT))
+    write_policy: str = Field(default="readonly", sa_column=Column(String(64), nullable=False, index=True))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
 class SluvoCanvasMutation(SQLModel, table=True):
     __tablename__ = "sluvo_canvas_mutation"
 

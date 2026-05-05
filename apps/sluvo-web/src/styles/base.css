@@ -351,6 +351,139 @@ body {
   white-space: pre-wrap;
 }
 
+.canvas-agent-run {
+  display: grid;
+  gap: 12px;
+  min-height: 180px;
+  flex: 1;
+  overflow: auto;
+  padding: 14px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-run__summary,
+.canvas-agent-step,
+.canvas-agent-artifact {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.canvas-agent-run__summary {
+  padding: 11px;
+}
+
+.canvas-agent-run__summary span,
+.canvas-agent-run__summary small,
+.canvas-agent-step header span,
+.canvas-agent-step p,
+.canvas-agent-artifact span,
+.canvas-agent-artifact p,
+.canvas-agent-artifact small,
+.canvas-agent-run__cost span {
+  margin: 0;
+  color: rgba(242, 242, 234, 0.64);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.canvas-agent-run__summary strong {
+  color: #f6f6ef;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.canvas-agent-timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.canvas-agent-step {
+  padding: 10px;
+}
+
+.canvas-agent-step > header,
+.canvas-agent-artifact > header,
+.canvas-agent-step footer,
+.canvas-agent-run__cost {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.canvas-agent-step > header div {
+  display: grid;
+  gap: 3px;
+}
+
+.canvas-agent-step strong,
+.canvas-agent-artifact strong {
+  color: #f6f6ef;
+}
+
+.canvas-agent-step b {
+  flex: 0 0 auto;
+  border: 1px solid rgba(205, 244, 124, 0.24);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #edf7d0;
+  background: rgba(205, 244, 124, 0.1);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.canvas-agent-step b.is-failed,
+.canvas-agent-step b.is-cancelled {
+  border-color: rgba(255, 115, 115, 0.36);
+  color: #ffd1d1;
+  background: rgba(255, 115, 115, 0.11);
+}
+
+.canvas-agent-step b.is-waiting_cost_confirmation {
+  border-color: rgba(255, 207, 112, 0.34);
+  color: #ffe2a5;
+  background: rgba(255, 207, 112, 0.11);
+}
+
+.canvas-agent-artifacts {
+  display: grid;
+  gap: 8px;
+}
+
+.canvas-agent-artifact {
+  padding: 9px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.canvas-agent-artifact p {
+  color: rgba(242, 242, 234, 0.78);
+}
+
+.canvas-agent-run__cost {
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(255, 207, 112, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 207, 112, 0.09);
+}
+
+.canvas-agent-run__cost button,
+.canvas-agent-step footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #151812;
+  background: #cdf47c;
+}
+
 .canvas-agent-action {
   display: grid;
   gap: 12px;

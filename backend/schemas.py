@@ -1446,6 +1446,28 @@ class SluvoAgentSessionCreateRequest(BaseModel):
     contextSnapshot: Dict[str, Any] = PydanticField(default_factory=dict)
 
 
+class SluvoAgentRunCreateRequest(BaseModel):
+    canvasId: Optional[str] = None
+    targetNodeId: Optional[str] = None
+    goal: str
+    sourceSurface: str = "panel"
+    agentProfile: str = "auto"
+    agentTemplateId: Optional[str] = None
+    modelCode: str = "deepseek-v4-flash"
+    mode: str = "semi_auto"
+    contextSnapshot: Dict[str, Any] = PydanticField(default_factory=dict)
+
+
+class SluvoAgentRunContinueRequest(BaseModel):
+    content: str
+    contextSnapshot: Dict[str, Any] = PydanticField(default_factory=dict)
+
+
+class SluvoAgentRunConfirmCostRequest(BaseModel):
+    artifactIds: List[str] = PydanticField(default_factory=list)
+    confirmed: bool = True
+
+
 class SluvoAgentMessageSendRequest(BaseModel):
     content: Optional[str] = None
     payload: Dict[str, Any] = PydanticField(default_factory=dict)

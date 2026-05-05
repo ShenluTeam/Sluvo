@@ -80,6 +80,12 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | Patch/remove project member | PATCH/DELETE | `/api/sluvo/projects/{project_id}/members/{user_id}` |
 | Create canvas Agent session | POST | `/api/sluvo/projects/{project_id}/agent/sessions` |
 | List project Agent sessions | GET | `/api/sluvo/projects/{project_id}/agent/sessions` |
+| Create Agent workflow run | POST | `/api/sluvo/projects/{project_id}/agent/runs` |
+| List project Agent workflow runs | GET | `/api/sluvo/projects/{project_id}/agent/runs` |
+| Read Agent workflow run timeline | GET | `/api/sluvo/agent/runs/{run_id}` |
+| Continue Agent workflow run | POST | `/api/sluvo/agent/runs/{run_id}/continue` |
+| Confirm Agent media cost | POST | `/api/sluvo/agent/runs/{run_id}/confirm-cost` |
+| Retry Agent workflow step | POST | `/api/sluvo/agent/steps/{step_id}/retry` |
 | Read canvas Agent session | GET | `/api/sluvo/agent/sessions/{session_id}` |
 | Send Agent message/proposed action | POST | `/api/sluvo/agent/sessions/{session_id}/messages` |
 | Analyze text node locally | POST | `/api/sluvo/projects/{project_id}/text-node/analyze` |
@@ -156,6 +162,9 @@ Sluvo standalone product terms map to new `sluvo_*` backend models.
 | Agent session | `SluvoAgentSession` |
 | Agent event | `SluvoAgentEvent` |
 | Agent action | `SluvoAgentAction` |
+| Agent workflow run | `SluvoAgentRun` |
+| Agent workflow step | `SluvoAgentStep` |
+| Agent workflow artifact | `SluvoAgentArtifact` |
 | Canvas mutation/audit log | `SluvoCanvasMutation` |
 | User/account/team | existing `User`, `Team`, `TeamMemberLink` |
 

@@ -62,7 +62,7 @@ MVP canvas interactions:
 - Open inspector from node click
 - Run node action from node or inspector
 - Upload image, video, and audio files into a canvas asset node with instant preview and visible upload state
-- Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, let the system auto-route to a specialist Agent, review the proposed action, then approve or cancel it.
+- Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, and review an OiiOii-style Agent Team timeline made of stages, artifacts, canvas writes, and media confirmation controls.
 - Use the text-node local composer below a text node to analyze, expand, or rewrite only that node; the response should render as Markdown inside the same node and should not appear in the right-side Agent panel.
 - Select and copy rendered Markdown text inside text nodes without triggering node drag or canvas selection.
 - Add an Agent node to the canvas and connect it to creative inputs/outputs like other workflow nodes.
@@ -132,9 +132,9 @@ Upload capacity errors should use user-facing copy that explains the storage lim
 
 Publishing to community must make clear that it creates a shareable snapshot. Updating the original project after publishing should not visually imply the community version changes until the creator publishes again.
 
-Agent proposals must make clear that they are not written to the canvas until the user approves them. The default Agent profile is automatic 创作总监 routing; manual Agent and model controls belong in advanced settings. The initial selectable Agent models are `DeepSeek v4 Flash` and `DeepSeek v4 Pro`; model choice should appear as a creative control, not as a raw provider-debug field. Text-node local model controls are scoped to the selected text node and should be visually centered with that node frame.
+Agent workflow runs may automatically write low-cost text nodes and media placeholder nodes to the canvas through audited Agent mutations. Any image/video/audio generation that may consume points must stay in a visible confirmation state with explicit estimated points before it submits a generation record. The default Agent profile is automatic 创作总监 routing; manual Agent and model controls belong in Agent Team settings. The initial selectable Agent models are `DeepSeek v4 Flash` and `DeepSeek v4 Pro`; model choice should appear as a creative control, not as a raw provider-debug field. Text-node local model controls are scoped to the selected text node and should be visually centered with that node frame.
 
-The right-side 创作总监 panel should work as an Agent Team control surface: users can select automatic routing, copy starter Agents into "我的 Agent", create/edit/delete custom Agents, restore project-local Agent history, and review proposed nodes/edges as a list before approval.
+The right-side 创作总监 panel should work as an Agent Team control surface: users can select automatic routing, copy starter Agents into "我的 Agent", create/edit/delete custom Agents, restore project-local Run history, and inspect each Step/Artifact card with text labels for status, model, source context, canvas write state, retry, and cost confirmation.
 
 Agent nodes should be runnable canvas units. A selected Agent node can choose a custom Agent template, inherit the panel Agent settings, read connected upstream nodes as context, and generate a proposal that still requires user approval before writing.
 

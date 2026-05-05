@@ -10,10 +10,14 @@ from sqlmodel import Session, select
 from core.config import settings
 from core.security import decode_id, encode_id
 from models import (
+    GenerationRecord,
     RoleEnum,
     SluvoAgentAction,
+    SluvoAgentArtifact,
     SluvoAgentEvent,
+    SluvoAgentRun,
     SluvoAgentSession,
+    SluvoAgentStep,
     SluvoAgentTemplate,
     SluvoCanvas,
     SluvoCanvasAsset,
@@ -543,6 +547,115 @@ def serialize_sluvo_agent_action(action: SluvoAgentAction) -> Dict[str, Any]:
     }
 
 
+def _serialize_sluvo_generation_record(record: Optional[GenerationRecord]) -> Optional[Dict[str, Any]]:
+    if not record:
+        return None
+    return {
+        "id": encode_id(record.id),
+        "recordType": record.record_type,
+        "status": record.status,
+        "targetType": record.target_type,
+        "targetId": encode_id(record.target_id) if record.target_id else None,
+        "taskId": record.task_id,
+        "prompt": record.prompt,
+        "previewUrl": record.preview_url,
+        "thumbnailUrl": record.thumbnail_url,
+        "estimatePoints": record.estimate_points,
+        "pointsStatus": record.points_status,
+        "errorMessage": record.error_message_public,
+        "createdAt": record.created_at.isoformat() if record.created_at else None,
+        "updatedAt": record.updated_at.isoformat() if record.updated_at else None,
+    }
+
+
+def serialize_sluvo_agent_artifact(session: Session, artifact: SluvoAgentArtifact) -> Dict[str, Any]:
+    record = session.get(GenerationRecord, artifact.generation_record_id) if artifact.generation_record_id else None
+    return {
+        "id": encode_id(artifact.id),
+        "runId": encode_id(artifact.run_id),
+        "stepId": encode_id(artifact.step_id),
+        "canvasNodeId": encode_id(artifact.canvas_node_id) if artifact.canvas_node_id else None,
+        "generationRecordId": encode_id(artifact.generation_record_id) if artifact.generation_record_id else None,
+        "generationRecord": _serialize_sluvo_generation_record(record),
+        "title": artifact.title,
+        "artifactType": artifact.artifact_type,
+        "status": artifact.status,
+        "payload": _json_load(artifact.payload_json, {}),
+        "preview": _json_load(artifact.preview_json, {}),
+        "writePolicy": artifact.write_policy,
+        "createdAt": artifact.created_at.isoformat() if artifact.created_at else None,
+        "updatedAt": artifact.updated_at.isoformat() if artifact.updated_at else None,
+    }
+
+
+def serialize_sluvo_agent_step(session: Session, step: SluvoAgentStep) -> Dict[str, Any]:
+    artifacts = session.exec(
+        select(SluvoAgentArtifact)
+        .where(SluvoAgentArtifact.step_id == step.id)
+        .order_by(SluvoAgentArtifact.id.asc())
+    ).all()
+    action = session.get(SluvoAgentAction, step.action_id) if step.action_id else None
+    return {
+        "id": encode_id(step.id),
+        "runId": encode_id(step.run_id),
+        "sessionId": encode_id(step.session_id) if step.session_id else None,
+        "agentTemplateId": encode_id(step.agent_template_id) if step.agent_template_id else None,
+        "actionId": encode_id(step.action_id) if step.action_id else None,
+        "action": serialize_sluvo_agent_action(action) if action else None,
+        "stepKey": step.step_key,
+        "agentName": step.agent_name,
+        "agentProfile": step.agent_profile,
+        "modelCode": step.model_code,
+        "title": step.title,
+        "status": step.status,
+        "input": _json_load(step.input_json, {}),
+        "output": _json_load(step.output_json, {}),
+        "error": _json_load(step.error_json, {}),
+        "orderIndex": step.order_index,
+        "artifacts": [serialize_sluvo_agent_artifact(session, item) for item in artifacts],
+        "createdAt": step.created_at.isoformat() if step.created_at else None,
+        "updatedAt": step.updated_at.isoformat() if step.updated_at else None,
+        "finishedAt": step.finished_at.isoformat() if step.finished_at else None,
+    }
+
+
+def serialize_sluvo_agent_run(run: SluvoAgentRun) -> Dict[str, Any]:
+    return {
+        "id": encode_id(run.id),
+        "projectId": encode_id(run.project_id),
+        "canvasId": encode_id(run.canvas_id),
+        "sessionId": encode_id(run.session_id) if run.session_id else None,
+        "targetNodeId": encode_id(run.target_node_id) if run.target_node_id else None,
+        "userId": encode_id(run.user_id),
+        "teamId": encode_id(run.team_id),
+        "title": run.title,
+        "goal": run.goal,
+        "sourceSurface": run.source_surface,
+        "status": run.status,
+        "mode": run.mode,
+        "approvalPolicy": _json_load(run.approval_policy_json, {}),
+        "contextSnapshot": _json_load(run.context_snapshot_json, {}),
+        "summary": _json_load(run.summary_json, {}),
+        "createdAt": run.created_at.isoformat() if run.created_at else None,
+        "updatedAt": run.updated_at.isoformat() if run.updated_at else None,
+        "finishedAt": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+def _serialize_agent_run_timeline(session: Session, run: SluvoAgentRun) -> Dict[str, Any]:
+    steps = session.exec(
+        select(SluvoAgentStep)
+        .where(SluvoAgentStep.run_id == run.id)
+        .order_by(SluvoAgentStep.order_index.asc(), SluvoAgentStep.id.asc())
+    ).all()
+    session_item = session.get(SluvoAgentSession, run.session_id) if run.session_id else None
+    return {
+        "run": serialize_sluvo_agent_run(run),
+        "steps": [serialize_sluvo_agent_step(session, item) for item in steps],
+        "latestSession": serialize_sluvo_agent_session(session_item) if session_item else None,
+    }
+
+
 def serialize_sluvo_agent_template(template: SluvoAgentTemplate) -> Dict[str, Any]:
     return {
         "id": encode_id(template.id),
@@ -799,6 +912,534 @@ def list_sluvo_project_agent_sessions(
         .limit(limit)
     ).all()
     return [_serialize_agent_session_timeline(session, item) for item in items]
+
+
+def list_sluvo_project_agent_runs(
+    session: Session,
+    *,
+    project: SluvoProject,
+    limit: int = 12,
+) -> List[Dict[str, Any]]:
+    limit = max(1, min(int(limit or 12), 40))
+    items = session.exec(
+        select(SluvoAgentRun)
+        .where(SluvoAgentRun.project_id == project.id)
+        .order_by(SluvoAgentRun.updated_at.desc(), SluvoAgentRun.id.desc())
+        .limit(limit)
+    ).all()
+    return [_serialize_agent_run_timeline(session, item) for item in items]
+
+
+def require_sluvo_agent_run(session: Session, run_id: int) -> SluvoAgentRun:
+    run = session.get(SluvoAgentRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Sluvo Agent Run 不存在")
+    return run
+
+
+def require_sluvo_agent_step(session: Session, step_id: int) -> SluvoAgentStep:
+    step = session.get(SluvoAgentStep, step_id)
+    if not step:
+        raise HTTPException(status_code=404, detail="Sluvo Agent Step 不存在")
+    return step
+
+
+def get_sluvo_agent_run_timeline(session: Session, run: SluvoAgentRun) -> Dict[str, Any]:
+    return _serialize_agent_run_timeline(session, run)
+
+
+def _agent_run_prompt(goal: str, context_snapshot: Dict[str, Any]) -> str:
+    selected_nodes = context_snapshot.get("selectedNodes") if isinstance(context_snapshot, dict) else []
+    node_lines = []
+    if isinstance(selected_nodes, list):
+        for item in selected_nodes[:6]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "未命名节点").strip()
+            prompt = str(item.get("prompt") or "").strip()
+            node_lines.append(f"- {title}: {prompt[:180]}")
+    source = "\n".join(node_lines) or "暂无选区，按项目画布目标展开。"
+    return f"{goal.strip()}\n\n上下文：\n{source}"
+
+
+def _agent_run_context_count(context_snapshot: Dict[str, Any]) -> int:
+    selected = context_snapshot.get("selectedNodes") if isinstance(context_snapshot, dict) else []
+    return len(selected) if isinstance(selected, list) else 0
+
+
+def _agent_run_origin(context_snapshot: Dict[str, Any]) -> tuple[float, float]:
+    selected = context_snapshot.get("selectedNodes") if isinstance(context_snapshot, dict) else []
+    if isinstance(selected, list):
+        return _agent_patch_origin(selected)
+    return 180.0, 180.0
+
+
+def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
+    prompt = _agent_run_prompt(goal, context_snapshot)
+    if artifact_type == "text_node":
+        return f"创作目标\n{goal.strip()}\n\n理解摘要\n- 核心任务：把目标拆成可执行画布产物。\n- 上下文数量：{_agent_run_context_count(context_snapshot)} 个节点。\n- 建议流程：先确定故事/角色/场景，再进入分镜与生成链路。"
+    if artifact_type == "character_brief":
+        return f"角色设定草稿\n- 主角：围绕目标中的核心人物建立外观、欲望、阻力和标志性道具。\n- 关系：把冲突双方、协作者和环境压力拆为后续可复用节点。\n- 一致性：记录服装、色彩、年龄感和镜头可识别特征。\n\n来源：{goal.strip()}"
+    if artifact_type == "scene_brief":
+        return f"场景设定草稿\n- 主场景：从目标里提取时间、地点、天气、光线和情绪。\n- 可生成元素：环境道具、空间层次、色彩气氛、镜头运动约束。\n- 连续性：为后续图片/视频节点保留统一场景锚点。"
+    if artifact_type == "storyboard_plan":
+        return _build_storyboard_plan(prompt, model_code)
+    if artifact_type == "prompt":
+        return f"精修 Prompt\n{_build_image_prompt(prompt)}"
+    if artifact_type == "image_placeholder":
+        return _build_image_prompt(prompt)
+    if artifact_type == "video_placeholder":
+        return _build_video_prompt(prompt)
+    return prompt
+
+
+def _create_agent_run_step(
+    session: Session,
+    *,
+    run: SluvoAgentRun,
+    step_key: str,
+    agent_name: str,
+    agent_profile: str,
+    model_code: str,
+    title: str,
+    order_index: int,
+    agent_template_id: Optional[int] = None,
+    input_payload: Optional[Dict[str, Any]] = None,
+) -> SluvoAgentStep:
+    now = _utc_now()
+    step = SluvoAgentStep(
+        run_id=run.id,
+        session_id=run.session_id,
+        agent_template_id=agent_template_id,
+        step_key=step_key,
+        agent_name=agent_name,
+        agent_profile=agent_profile,
+        model_code=normalize_sluvo_agent_model_code(model_code),
+        title=title,
+        status="running",
+        input_json=_json_dump(input_payload or {}),
+        output_json="{}",
+        error_json="{}",
+        order_index=order_index,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(step)
+    session.flush()
+    return step
+
+
+def _create_agent_run_artifact(
+    session: Session,
+    *,
+    run: SluvoAgentRun,
+    step: SluvoAgentStep,
+    title: str,
+    artifact_type: str,
+    body: str,
+    write_policy: str,
+    status: str = "ready",
+    preview: Optional[Dict[str, Any]] = None,
+) -> SluvoAgentArtifact:
+    now = _utc_now()
+    artifact = SluvoAgentArtifact(
+        run_id=run.id,
+        step_id=step.id,
+        title=title,
+        artifact_type=artifact_type,
+        status=status,
+        payload_json=_json_dump({"body": body, "prompt": body}),
+        preview_json=_json_dump(preview or {}),
+        write_policy=write_policy,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(artifact)
+    session.flush()
+    return artifact
+
+
+def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin: tuple[float, float]) -> Dict[str, Any]:
+    payload = _json_load(artifact.payload_json, {})
+    body = str(payload.get("body") or payload.get("prompt") or "").strip()
+    x, y = origin
+    position = {"x": x + (index % 2) * 360, "y": y + (index // 2) * 260}
+    common = {
+        "agentRunId": encode_id(artifact.run_id),
+        "agentArtifactId": encode_id(artifact.id),
+        "writePolicy": artifact.write_policy,
+    }
+    if artifact.artifact_type == "image_placeholder":
+        return _agent_patch_node(
+            client_id=f"agent-run-{artifact.run_id}-artifact-{artifact.id}",
+            node_type="image",
+            direct_type="image_unit",
+            title=artifact.title,
+            icon="▧",
+            position=position,
+            prompt=body,
+            size={"width": 420, "height": 340},
+            data={**common, "generationStatus": "waiting_confirmation", "generationMessage": "等待确认灵感值后生成图片", "imageEstimatePoints": 8},
+        )
+    if artifact.artifact_type == "video_placeholder":
+        return _agent_patch_node(
+            client_id=f"agent-run-{artifact.run_id}-artifact-{artifact.id}",
+            node_type="video",
+            direct_type="video_unit",
+            title=artifact.title,
+            icon="▣",
+            position=position,
+            prompt=body,
+            size={"width": 420, "height": 340},
+            data={**common, "generationStatus": "waiting_confirmation", "generationMessage": "等待确认灵感值后生成视频", "videoEstimatePoints": 20},
+        )
+    return _agent_patch_node(
+        client_id=f"agent-run-{artifact.run_id}-artifact-{artifact.id}",
+        node_type="text",
+        direct_type="prompt_note",
+        title=artifact.title,
+        icon="✦",
+        position=position,
+        prompt=body,
+        size={"width": 330, "height": 230},
+        data=common,
+    )
+
+
+def _write_agent_run_artifacts_to_canvas(
+    session: Session,
+    *,
+    run: SluvoAgentRun,
+    user: User,
+    artifacts: List[SluvoAgentArtifact],
+) -> None:
+    writable = [item for item in artifacts if item.write_policy in {"auto_canvas", "requires_cost_confirmation"} and not item.canvas_node_id]
+    if not writable:
+        return
+    canvas = _require_canvas(session, run.canvas_id)
+    context_snapshot = _json_load(run.context_snapshot_json, {})
+    origin = _agent_run_origin(context_snapshot)
+    nodes = [_agent_run_node_payload(item, index=index, origin=origin) for index, item in enumerate(writable)]
+    edges = []
+    for index in range(1, len(nodes)):
+        edges.append(_agent_patch_edge(nodes[index - 1]["clientId"], nodes[index]["clientId"], "dependency", "Agent 产物"))
+    batch = SluvoCanvasBatchRequest(expectedRevision=canvas.revision, nodes=nodes, edges=edges)
+    result = apply_sluvo_canvas_batch(
+        session,
+        canvas,
+        batch,
+        user=user,
+        actor_type="agent",
+        agent_session_id=run.session_id,
+    )
+    node_map: Dict[str, str] = {}
+    for node in result.get("nodes", []):
+        data = node.get("data") if isinstance(node.get("data"), dict) else {}
+        client_id = str(data.get("clientId") or node.get("clientId") or "").strip()
+        if client_id:
+            node_map[client_id] = node.get("id")
+    now = _utc_now()
+    for artifact in writable:
+        node_id = _decode_optional_safe(node_map.get(f"agent-run-{artifact.run_id}-artifact-{artifact.id}"))
+        if node_id:
+            artifact.canvas_node_id = node_id
+            artifact.status = "waiting_cost_confirmation" if artifact.write_policy == "requires_cost_confirmation" else "written"
+            artifact.updated_at = now
+            session.add(artifact)
+    session.commit()
+
+
+def _finish_agent_run_step(session: Session, step: SluvoAgentStep, *, output: Optional[Dict[str, Any]] = None, status: str = "succeeded") -> None:
+    now = _utc_now()
+    step.status = status
+    step.output_json = _json_dump(output or {})
+    step.updated_at = now
+    step.finished_at = now
+    session.add(step)
+
+
+def create_sluvo_agent_run(
+    session: Session,
+    *,
+    project: SluvoProject,
+    user: User,
+    team: Team,
+    canvas_id: Optional[int],
+    target_node_id: Optional[int],
+    goal: str,
+    source_surface: str,
+    agent_profile: str,
+    agent_template_id: Optional[int],
+    model_code: str,
+    mode: str,
+    context_snapshot: Dict[str, Any],
+) -> Dict[str, Any]:
+    clean_goal = str(goal or "").strip()
+    if not clean_goal:
+        raise HTTPException(status_code=400, detail="Agent Run 目标不能为空")
+    resolved_agent_profile = encode_id(agent_template_id) if agent_template_id else (agent_profile or "auto")
+    agent_session = create_sluvo_agent_session(
+        session,
+        project=project,
+        user=user,
+        team=team,
+        canvas_id=canvas_id,
+        target_node_id=target_node_id,
+        title=clean_goal[:80],
+        agent_profile=resolved_agent_profile,
+        model_code=model_code,
+        mode=mode,
+        context_snapshot={**(context_snapshot or {}), "sourceSurface": source_surface, "targetNodeId": encode_id(target_node_id) if target_node_id else (context_snapshot or {}).get("targetNodeId")},
+    )
+    normalized_model = normalize_sluvo_agent_model_code(model_code)
+    template = session.get(SluvoAgentTemplate, agent_template_id) if agent_template_id else _resolve_agent_template(session, agent_profile)
+    agent_name = template.name if template else _agent_profile_label(session, agent_profile or "auto", _resolve_agent_profile_key(session, agent_profile or "auto"))
+    now = _utc_now()
+    run = SluvoAgentRun(
+        project_id=project.id,
+        canvas_id=agent_session.canvas_id,
+        session_id=agent_session.id,
+        target_node_id=target_node_id,
+        user_id=user.id,
+        team_id=team.id,
+        title=clean_goal[:80],
+        goal=clean_goal,
+        source_surface=str(source_surface or "panel").strip() or "panel",
+        status="running",
+        mode=mode or "semi_auto",
+        approval_policy_json=_json_dump({"autoCanvas": True, "costConfirmation": True}),
+        context_snapshot_json=_json_dump(context_snapshot or {}),
+        summary_json=_json_dump({"contextCount": _agent_run_context_count(context_snapshot or {}), "agentName": agent_name, "modelCode": normalized_model}),
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    append_sluvo_agent_event(session, agent_session=agent_session, role="user", event_type="run_goal", payload={"content": clean_goal, "runId": encode_id(run.id)})
+
+    all_artifacts: List[SluvoAgentArtifact] = []
+    step_specs = [
+        ("understand_story", agent_name or "创作总监", "canvas_agent", "理解目标", [("故事总览", "text_node", "auto_canvas")]),
+        ("extract_assets", "角色场景 Agent", "story_director", "提取角色与场景", [("角色设定", "character_brief", "auto_canvas"), ("场景设定", "scene_brief", "auto_canvas")]),
+        ("plan_storyboard", "分镜导演 Agent", "storyboard_director", "规划分镜链路", [("分镜计划", "storyboard_plan", "auto_canvas"), ("首帧 Prompt", "prompt", "auto_canvas")]),
+        ("prepare_generation", "制片调度 Agent", "production_planner", "创建媒体占位", [("首帧图片占位", "image_placeholder", "requires_cost_confirmation"), ("视频生成占位", "video_placeholder", "requires_cost_confirmation")]),
+    ]
+    for order_index, (step_key, step_agent_name, step_profile, title, artifact_specs) in enumerate(step_specs):
+        step = _create_agent_run_step(
+            session,
+            run=run,
+            step_key=step_key,
+            agent_name=step_agent_name,
+            agent_profile=step_profile,
+            model_code=normalized_model,
+            title=title,
+            order_index=order_index,
+            agent_template_id=template.id if template and order_index == 0 else None,
+            input_payload={"goal": clean_goal, "contextCount": _agent_run_context_count(context_snapshot or {})},
+        )
+        step_artifacts = [
+            _create_agent_run_artifact(
+                session,
+                run=run,
+                step=step,
+                title=artifact_title,
+                artifact_type=artifact_type,
+                body=_artifact_body(artifact_type, clean_goal, context_snapshot or {}, normalized_model),
+                write_policy=policy,
+                preview={"estimatedWrite": "canvas_node", "estimatePoints": 20 if artifact_type == "video_placeholder" else 8 if artifact_type == "image_placeholder" else 0},
+            )
+            for artifact_title, artifact_type, policy in artifact_specs
+        ]
+        all_artifacts.extend(step_artifacts)
+        _finish_agent_run_step(session, step, output={"artifactCount": len(step_artifacts)}, status="waiting_cost_confirmation" if step_key == "prepare_generation" else "succeeded")
+    session.commit()
+    try:
+        _write_agent_run_artifacts_to_canvas(session, run=run, user=user, artifacts=all_artifacts)
+        run.status = "waiting_cost_confirmation"
+        run.summary_json = _json_dump({
+            "contextCount": _agent_run_context_count(context_snapshot or {}),
+            "agentName": agent_name,
+            "modelCode": normalized_model,
+            "artifactCount": len(all_artifacts),
+            "nodeCount": len(all_artifacts),
+            "edgeCount": max(0, len(all_artifacts) - 1),
+            "estimatePoints": 28,
+        })
+        run.updated_at = _utc_now()
+        session.add(run)
+        session.commit()
+        append_sluvo_agent_event(
+            session,
+            agent_session=agent_session,
+            role="agent",
+            event_type="run_timeline",
+            payload={"content": "Agent Team 已完成文本产物和媒体占位写入，媒体生成等待确认。", "runId": encode_id(run.id)},
+        )
+    except Exception as exc:
+        session.rollback()
+        run = require_sluvo_agent_run(session, run.id)
+        run.status = "failed"
+        run.summary_json = _json_dump({"error": str(exc)})
+        run.updated_at = _utc_now()
+        run.finished_at = run.updated_at
+        session.add(run)
+        session.commit()
+    session.refresh(run)
+    return _serialize_agent_run_timeline(session, run)
+
+
+def continue_sluvo_agent_run(
+    session: Session,
+    *,
+    run: SluvoAgentRun,
+    user: User,
+    content: str,
+    context_snapshot: Dict[str, Any],
+) -> Dict[str, Any]:
+    clean_content = str(content or "").strip()
+    if not clean_content:
+        raise HTTPException(status_code=400, detail="补充需求不能为空")
+    existing_count = session.exec(select(SluvoAgentStep).where(SluvoAgentStep.run_id == run.id)).all()
+    model_code = _json_load(run.summary_json, {}).get("modelCode") or "deepseek-v4-flash"
+    step = _create_agent_run_step(
+        session,
+        run=run,
+        step_key=f"continue_{len(existing_count) + 1}",
+        agent_name="创作总监",
+        agent_profile="canvas_agent",
+        model_code=model_code,
+        title="继续补充",
+        order_index=len(existing_count),
+        input_payload={"content": clean_content},
+    )
+    artifact = _create_agent_run_artifact(
+        session,
+        run=run,
+        step=step,
+        title="补充建议",
+        artifact_type="text_node",
+        body=_artifact_body("text_node", clean_content, context_snapshot or _json_load(run.context_snapshot_json, {}), model_code),
+        write_policy="auto_canvas",
+    )
+    _finish_agent_run_step(session, step, output={"artifactCount": 1})
+    run.status = "running"
+    run.updated_at = _utc_now()
+    session.add(run)
+    session.commit()
+    _write_agent_run_artifacts_to_canvas(session, run=run, user=user, artifacts=[artifact])
+    run.status = "waiting_cost_confirmation" if session.exec(select(SluvoAgentArtifact).where(SluvoAgentArtifact.run_id == run.id, SluvoAgentArtifact.status == "waiting_cost_confirmation")).first() else "succeeded"
+    run.updated_at = _utc_now()
+    if run.status == "succeeded":
+        run.finished_at = run.updated_at
+    session.add(run)
+    session.commit()
+    if run.session_id:
+        agent_session = require_sluvo_agent_session(session, run.session_id)
+        append_sluvo_agent_event(session, agent_session=agent_session, role="user", event_type="run_continue", payload={"content": clean_content, "runId": encode_id(run.id)})
+    session.refresh(run)
+    return _serialize_agent_run_timeline(session, run)
+
+
+def confirm_sluvo_agent_run_cost(
+    session: Session,
+    *,
+    run: SluvoAgentRun,
+    user: User,
+    team: Team,
+    artifact_ids: List[int],
+    confirmed: bool,
+) -> Dict[str, Any]:
+    if not confirmed:
+        run.status = "cancelled"
+        run.finished_at = _utc_now()
+        run.updated_at = run.finished_at
+        session.add(run)
+        session.commit()
+        return _serialize_agent_run_timeline(session, run)
+    statement = select(SluvoAgentArtifact).where(
+        SluvoAgentArtifact.run_id == run.id,
+        SluvoAgentArtifact.write_policy == "requires_cost_confirmation",
+    )
+    artifacts = session.exec(statement).all()
+    if artifact_ids:
+        allowed = set(artifact_ids)
+        artifacts = [item for item in artifacts if item.id in allowed]
+    now = _utc_now()
+    for artifact in artifacts:
+        if artifact.generation_record_id:
+            continue
+        payload = _json_load(artifact.payload_json, {})
+        preview = _json_load(artifact.preview_json, {})
+        record_type = "video" if artifact.artifact_type == "video_placeholder" else "image" if artifact.artifact_type == "image_placeholder" else "asset"
+        record = GenerationRecord(
+            user_id=user.id,
+            team_id=team.id,
+            record_type=record_type,
+            ownership_mode="sluvo",
+            script_id=None,
+            target_type="sluvo_canvas_node",
+            target_id=artifact.canvas_node_id,
+            status="queued",
+            prompt=str(payload.get("prompt") or payload.get("body") or ""),
+            params_internal_json=_json_dump({"source": "sluvo_agent_run", "runId": encode_id(run.id), "artifactId": encode_id(artifact.id)}),
+            params_public_json=_json_dump({"title": artifact.title, "artifactType": artifact.artifact_type}),
+            estimate_points=int(preview.get("estimatePoints") or (20 if record_type == "video" else 8)),
+            points_status="confirmed",
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(record)
+        session.flush()
+        artifact.generation_record_id = record.id
+        artifact.status = "submitted"
+        artifact.updated_at = now
+        session.add(artifact)
+        if artifact.canvas_node_id:
+            node = session.get(SluvoCanvasNode, artifact.canvas_node_id)
+            if node:
+                data = _json_load(node.data_json, {})
+                if isinstance(data, dict):
+                    data.update({
+                        "generationStatus": "queued",
+                        "generationMessage": "媒体生成已确认，等待生成队列处理",
+                        "generationRecordId": encode_id(record.id),
+                    })
+                    if record_type == "image":
+                        data["imageEstimateStatus"] = "confirmed"
+                    if record_type == "video":
+                        data["videoEstimateStatus"] = "confirmed"
+                    node.data_json = _json_dump(data)
+                    node.status = "queued"
+                    node.revision = int(node.revision or 1) + 1
+                    node.updated_at = now
+                    session.add(node)
+    run.status = "running"
+    run.updated_at = now
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return _serialize_agent_run_timeline(session, run)
+
+
+def retry_sluvo_agent_step(session: Session, *, step: SluvoAgentStep, user: User) -> Dict[str, Any]:
+    run = require_sluvo_agent_run(session, step.run_id)
+    if step.status not in {"failed", "cancelled"}:
+        return _serialize_agent_run_timeline(session, run)
+    now = _utc_now()
+    step.status = "running"
+    step.error_json = "{}"
+    step.updated_at = now
+    session.add(step)
+    artifacts = session.exec(select(SluvoAgentArtifact).where(SluvoAgentArtifact.step_id == step.id)).all()
+    _write_agent_run_artifacts_to_canvas(session, run=run, user=user, artifacts=artifacts)
+    _finish_agent_run_step(session, step, output={"retried": True, "artifactCount": len(artifacts)})
+    run.status = "waiting_cost_confirmation" if any(item.write_policy == "requires_cost_confirmation" for item in artifacts) else "succeeded"
+    run.updated_at = _utc_now()
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return _serialize_agent_run_timeline(session, run)
 
 
 def create_sluvo_agent_template(

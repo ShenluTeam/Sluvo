@@ -157,6 +157,44 @@ export async function fetchSluvoProjectAgentSessions(projectId, { limit = 12 } =
   return Array.isArray(payload?.items) ? payload.items : []
 }
 
+export function createSluvoAgentRun(projectId, payload) {
+  return apiFetch(`/api/sluvo/projects/${projectId}/agent/runs`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export async function fetchSluvoProjectAgentRuns(projectId, { limit = 12 } = {}) {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  const payload = await apiFetch(`/api/sluvo/projects/${projectId}/agent/runs?${params.toString()}`)
+  return Array.isArray(payload?.items) ? payload.items : []
+}
+
+export function fetchSluvoAgentRun(runId) {
+  return apiFetch(`/api/sluvo/agent/runs/${runId}`)
+}
+
+export function continueSluvoAgentRun(runId, payload) {
+  return apiFetch(`/api/sluvo/agent/runs/${runId}/continue`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function confirmSluvoAgentRunCost(runId, payload) {
+  return apiFetch(`/api/sluvo/agent/runs/${runId}/confirm-cost`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function retrySluvoAgentStep(stepId) {
+  return apiFetch(`/api/sluvo/agent/steps/${stepId}/retry`, {
+    method: 'POST'
+  })
+}
+
 export function sendSluvoAgentMessage(sessionId, payload) {
   return apiFetch(`/api/sluvo/agent/sessions/${sessionId}/messages`, {
     method: 'POST',

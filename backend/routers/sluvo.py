@@ -13,6 +13,9 @@ from dependencies import get_current_team, get_current_team_member, get_current_
 from models import Team, TeamMemberLink, User
 from schemas import (
     SluvoAgentMessageSendRequest,
+    SluvoAgentRunConfirmCostRequest,
+    SluvoAgentRunContinueRequest,
+    SluvoAgentRunCreateRequest,
     SluvoAgentSessionCreateRequest,
     SluvoAgentTemplateCreateRequest,
     SluvoAgentTemplateUpdateRequest,
@@ -44,6 +47,7 @@ from services.sluvo_service import (
     cancel_sluvo_agent_action,
     canvas_bundle,
     create_sluvo_agent_action,
+    create_sluvo_agent_run,
     create_sluvo_agent_session,
     create_sluvo_agent_template,
     create_sluvo_canvas_asset_upload,
@@ -55,6 +59,7 @@ from services.sluvo_service import (
     fork_sluvo_community_canvas,
     get_sluvo_community_agent_detail,
     get_or_create_main_canvas,
+    get_sluvo_agent_run_timeline,
     get_sluvo_community_canvas_detail,
     get_sluvo_project_community_publication,
     get_sluvo_project_first_image_url,
@@ -63,6 +68,7 @@ from services.sluvo_service import (
     list_sluvo_community_agents,
     list_sluvo_community_canvases,
     list_sluvo_project_agent_sessions,
+    list_sluvo_project_agent_runs,
     list_sluvo_project_members,
     list_sluvo_projects,
     process_sluvo_agent_message,
@@ -71,6 +77,8 @@ from services.sluvo_service import (
     permanently_delete_sluvo_project,
     remove_sluvo_project_member,
     require_sluvo_agent_template,
+    require_sluvo_agent_run,
+    require_sluvo_agent_step,
     require_sluvo_community_agent,
     require_sluvo_community_canvas,
     require_sluvo_agent_action,
@@ -79,6 +87,9 @@ from services.sluvo_service import (
     serialize_sluvo_agent_action,
     serialize_sluvo_agent_event,
     serialize_sluvo_agent_session,
+    confirm_sluvo_agent_run_cost,
+    continue_sluvo_agent_run,
+    retry_sluvo_agent_step,
     serialize_sluvo_edge,
     serialize_sluvo_member,
     serialize_sluvo_node,
@@ -766,6 +777,49 @@ async def get_sluvo_project_agent_sessions(
     return {"items": list_sluvo_project_agent_sessions(session, project=project, limit=limit)}
 
 
+@router.post("/api/sluvo/projects/{project_id}/agent/runs")
+async def post_sluvo_agent_run(
+    project_id: str,
+    payload: SluvoAgentRunCreateRequest,
+    _: TeamMemberLink = Depends(require_team_permission("generate:run")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    project, _ = _access_project(session, user=user, team=team, team_member=team_member, project_id=project_id, permission=SLUVO_PERMISSION_AGENT)
+    template_id = _decode_optional_request_id(payload.agentTemplateId)
+    return create_sluvo_agent_run(
+        session,
+        project=project,
+        user=user,
+        team=team,
+        canvas_id=_decode_optional_request_id(payload.canvasId),
+        target_node_id=_decode_optional_request_id(payload.targetNodeId),
+        goal=payload.goal,
+        source_surface=payload.sourceSurface,
+        agent_profile=payload.agentTemplateId or payload.agentProfile,
+        agent_template_id=template_id,
+        model_code=payload.modelCode,
+        mode=payload.mode,
+        context_snapshot=payload.contextSnapshot,
+    )
+
+
+@router.get("/api/sluvo/projects/{project_id}/agent/runs")
+async def get_sluvo_project_agent_runs(
+    project_id: str,
+    limit: int = 12,
+    _: TeamMemberLink = Depends(require_team_permission("project:read")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    project, _ = _access_project(session, user=user, team=team, team_member=team_member, project_id=project_id, permission=SLUVO_PERMISSION_READ)
+    return {"items": list_sluvo_project_agent_runs(session, project=project, limit=limit)}
+
+
 @router.post("/api/sluvo/projects/{project_id}/text-node/analyze")
 async def post_sluvo_text_node_analyze(
     project_id: str,
@@ -792,6 +846,66 @@ async def get_sluvo_agent_session(
     item = require_sluvo_agent_session(session, decode_id(session_id))
     _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(item.project_id), permission=SLUVO_PERMISSION_READ)
     return {"session": serialize_sluvo_agent_session(item)}
+
+
+@router.get("/api/sluvo/agent/runs/{run_id}")
+async def get_sluvo_agent_run(
+    run_id: str,
+    _: TeamMemberLink = Depends(require_team_permission("project:read")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    run = require_sluvo_agent_run(session, decode_id(run_id))
+    _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_READ)
+    return get_sluvo_agent_run_timeline(session, run)
+
+
+@router.post("/api/sluvo/agent/runs/{run_id}/continue")
+async def continue_sluvo_run(
+    run_id: str,
+    payload: SluvoAgentRunContinueRequest,
+    _: TeamMemberLink = Depends(require_team_permission("generate:run")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    run = require_sluvo_agent_run(session, decode_id(run_id))
+    _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_AGENT)
+    return continue_sluvo_agent_run(session, run=run, user=user, content=payload.content, context_snapshot=payload.contextSnapshot)
+
+
+@router.post("/api/sluvo/agent/runs/{run_id}/confirm-cost")
+async def confirm_sluvo_run_cost(
+    run_id: str,
+    payload: SluvoAgentRunConfirmCostRequest,
+    _: TeamMemberLink = Depends(require_team_permission("generate:run")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    run = require_sluvo_agent_run(session, decode_id(run_id))
+    _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_AGENT)
+    artifact_ids = [decode_id(item) for item in payload.artifactIds if item]
+    return confirm_sluvo_agent_run_cost(session, run=run, user=user, team=team, artifact_ids=artifact_ids, confirmed=payload.confirmed)
+
+
+@router.post("/api/sluvo/agent/steps/{step_id}/retry")
+async def retry_sluvo_step(
+    step_id: str,
+    _: TeamMemberLink = Depends(require_team_permission("generate:run")),
+    user: User = Depends(get_current_user),
+    team: Team = Depends(get_current_team),
+    team_member: TeamMemberLink = Depends(get_current_team_member),
+    session: Session = Depends(get_session),
+):
+    step = require_sluvo_agent_step(session, decode_id(step_id))
+    run = require_sluvo_agent_run(session, step.run_id)
+    _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_AGENT)
+    return retry_sluvo_agent_step(session, step=step, user=user)
 
 
 @router.post("/api/sluvo/agent/sessions/{session_id}/messages")
