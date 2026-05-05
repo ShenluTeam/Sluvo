@@ -1006,20 +1006,28 @@
           <div>
             <span>Canvas Agent Studio</span>
             <h2>创作总监</h2>
-            <p>{{ agentPanel.busy ? '正在协调专业 Agent' : '对话驱动画布产物' }}</p>
+            <p>{{ getAgentPanelSubtitle() }}</p>
           </div>
           <button type="button" aria-label="收起 Agent 面板" @click="setAgentPanelVisible(false)">
             <X :size="22" />
           </button>
         </header>
 
-        <section class="canvas-agent-panel__mode">
-          <strong>自由画布</strong>
-          <span>{{ getAgentPanelModeSummary() }}</span>
-          <button type="button" @click="agentPanel.advancedOpen = !agentPanel.advancedOpen">
-            <SlidersHorizontal :size="15" />
-            Agent Team
-          </button>
+        <section class="canvas-agent-panel__brief">
+          <div>
+            <span>当前任务</span>
+            <strong>{{ getAgentRunGoalTitle() }}</strong>
+            <small>{{ getAgentRunPlainSummary() }}</small>
+          </div>
+          <footer>
+            <button type="button" @click="agentPanel.advancedOpen = !agentPanel.advancedOpen">
+              <SlidersHorizontal :size="15" />
+              Agent Team
+            </button>
+            <button type="button" @click="agentPanel.historyOpen = !agentPanel.historyOpen">
+              历史
+            </button>
+          </footer>
         </section>
 
         <section v-if="agentPanel.advancedOpen" class="canvas-agent-panel__controls">
@@ -1068,11 +1076,10 @@
           <button type="button" @click="startAgentWithSelection('请把当前故事目标拆成故事总览、角色场景、分镜计划和生成占位。')">拆故事</button>
           <button type="button" @click="startAgentWithSelection('请提取当前目标或选区里的角色、场景、道具和一致性锚点。')">提角色场景</button>
           <button type="button" @click="startAgentWithSelection('请根据当前选区生成分镜链路、首帧图片占位和视频生成占位。')">生成分镜链路</button>
-          <button type="button" :disabled="selectedDirectNodeIds.length === 0" @click="startAgentWithSelection('请检查当前选区的角色、场景、道具和风格一致性。')">检查一致性</button>
           <button type="button" @click="startAgentWithSelection('请创建下一批图片和视频生成任务，但所有扣费媒体任务必须先等待确认。')">创建生成任务</button>
         </section>
 
-        <section v-if="agentRunHistory.length" class="canvas-agent-history">
+        <section v-if="agentPanel.historyOpen && agentRunHistory.length" class="canvas-agent-history">
           <header>
             <strong>Run 历史</strong>
             <button type="button" :disabled="agentPanel.loadingRuns" @click="loadAgentRuns({ restore: false })">刷新</button>
@@ -1092,29 +1099,32 @@
         <section class="canvas-agent-run">
           <div v-if="agentPanel.activeRun" class="canvas-agent-run__summary">
             <span>{{ getAgentRunStatusLabel(agentPanel.activeRun.run.status) }}</span>
-            <strong>{{ agentPanel.activeRun.run.goal }}</strong>
+            <strong>{{ getAgentRunNextAction(agentPanel.activeRun) }}</strong>
             <small>{{ getAgentRunMeta(agentPanel.activeRun) }}</small>
+            <div v-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-progress">
+              <span
+                v-for="step in agentPanel.activeRun.steps"
+                :key="step.id"
+                :class="`is-${step.status}`"
+              >
+                {{ getAgentStepIndexLabel(step) }}
+              </span>
+            </div>
           </div>
           <div v-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-timeline">
             <article v-for="step in agentPanel.activeRun.steps" :key="step.id" class="canvas-agent-step">
               <header>
                 <div>
-                  <span>{{ step.agentName || 'Agent' }} · {{ getAgentModelLabel(step.modelCode) }}</span>
+                  <span>{{ getAgentStepIndexLabel(step) }} · {{ step.agentName || 'Agent' }}</span>
                   <strong>{{ step.title }}</strong>
                 </div>
                 <b :class="`is-${step.status}`">{{ getAgentStepStatusLabel(step.status) }}</b>
               </header>
-              <p v-if="getAgentStepInputSummary(step)">{{ getAgentStepInputSummary(step) }}</p>
+              <p>{{ getAgentStepArtifactSummary(step) }}</p>
               <div v-if="step.artifacts?.length" class="canvas-agent-artifacts">
-                <section v-for="artifact in step.artifacts" :key="artifact.id" class="canvas-agent-artifact">
-                  <header>
-                    <strong>{{ artifact.title }}</strong>
-                    <span>{{ getAgentArtifactTypeLabel(artifact.artifactType) }} · {{ getAgentArtifactStatusLabel(artifact.status) }}</span>
-                  </header>
-                  <p>{{ getAgentArtifactPreview(artifact) }}</p>
-                  <small v-if="artifact.canvasNodeId">已写入画布节点</small>
-                  <small v-if="artifact.generationRecordId">生成记录 {{ artifact.generationRecordId }}</small>
-                </section>
+                <span v-for="artifact in step.artifacts" :key="artifact.id" :class="`is-${artifact.status}`">
+                  {{ artifact.title }} · {{ getAgentArtifactStatusLabel(artifact.status) }}
+                </span>
               </div>
               <footer v-if="step.status === 'failed'">
                 <span>{{ step.error?.message || '阶段执行失败' }}</span>
@@ -1786,6 +1796,7 @@ const agentPanel = reactive({
   runs: [],
   loadingRuns: false,
   confirmingCost: false,
+  historyOpen: false,
   messages: [],
   templates: [],
   history: [],
@@ -2834,6 +2845,28 @@ function getAgentHistorySummary(item) {
   return `${status} · ${count}`
 }
 
+function getAgentPanelSubtitle() {
+  if (agentPanel.busy) return '正在协调 Agent Team'
+  if (agentPanel.activeRun?.run?.status) return getAgentRunStatusLabel(agentPanel.activeRun.run.status)
+  return '把目标拆成可执行画布产物'
+}
+
+function getAgentRunGoalTitle() {
+  const goal = String(agentPanel.activeRun?.run?.goal || '').trim()
+  if (!goal) return '说出一个创作目标'
+  return goal.length > 42 ? `${goal.slice(0, 42)}...` : goal
+}
+
+function getAgentRunPlainSummary() {
+  if (!agentPanel.activeRun?.run) return getAgentPanelModeSummary()
+  const run = agentPanel.activeRun.run
+  const steps = agentPanel.activeRun.steps || []
+  const doneCount = steps.filter((step) => step.status === 'succeeded').length
+  const artifactCount = steps.reduce((sum, step) => sum + (step.artifacts?.length || 0), 0)
+  const costText = run.status === 'waiting_cost_confirmation' ? ' · 媒体待确认' : ''
+  return `${doneCount}/${steps.length || 0} 阶段 · ${artifactCount} 产物${costText}`
+}
+
 function setActiveAgentRun(timeline) {
   if (!timeline?.run?.id) return
   agentPanel.activeRun = timeline
@@ -2911,12 +2944,38 @@ function getAgentRunMeta(timeline) {
   return `${summary.agentName || 'Agent Team'} · ${getAgentModelLabel(summary.modelCode || agentPanel.modelCode)} · 上下文 ${contextCount} · 产物 ${artifactCount}`
 }
 
+function getAgentRunNextAction(timeline) {
+  const run = timeline?.run || {}
+  if (run.status === 'waiting_cost_confirmation') return '下一步：确认媒体生成'
+  if (run.status === 'running') return 'Agent Team 正在推进'
+  if (run.status === 'succeeded') return '工作流已完成'
+  if (run.status === 'failed') return '需要处理失败阶段'
+  if (run.status === 'cancelled') return '工作流已取消'
+  return '等待新的创作目标'
+}
+
+function getAgentStepIndexLabel(step) {
+  const index = Number(step?.orderIndex)
+  return Number.isFinite(index) ? `阶段 ${index + 1}` : '阶段'
+}
+
 function getAgentStepInputSummary(step) {
   const input = step?.input || {}
   if (input.content) return input.content
   if (input.goal) return `目标：${input.goal}`
   if (Number.isFinite(Number(input.contextCount))) return `上下文 ${input.contextCount} 个节点`
   return ''
+}
+
+function getAgentStepArtifactSummary(step) {
+  const artifacts = step?.artifacts || []
+  if (!artifacts.length) return getAgentStepInputSummary(step) || '等待产物'
+  const written = artifacts.filter((artifact) => artifact.canvasNodeId).length
+  const waiting = artifacts.filter((artifact) => artifact.status === 'waiting_cost_confirmation').length
+  const names = artifacts.slice(0, 3).map((artifact) => getAgentArtifactTypeLabel(artifact.artifactType)).join('、')
+  const extra = artifacts.length > 3 ? `等 ${artifacts.length} 项` : ''
+  const suffix = waiting ? `，${waiting} 项待确认` : written ? `，${written} 项已写入` : ''
+  return `${names}${extra}${suffix}`
 }
 
 function getAgentArtifactPreview(artifact) {

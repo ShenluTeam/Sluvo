@@ -244,12 +244,55 @@ body {
   background: #cdf47c !important;
 }
 
+.canvas-agent-panel__brief,
 .canvas-agent-panel__mode,
 .canvas-agent-panel__controls,
 .canvas-agent-panel__context,
 .canvas-agent-action,
 .canvas-agent-panel__composer {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-panel__brief {
+  display: grid;
+  gap: 10px;
+  padding: 13px 16px;
+  background: rgba(205, 244, 124, 0.035);
+}
+
+.canvas-agent-panel__brief > div {
+  display: grid;
+  gap: 5px;
+}
+
+.canvas-agent-panel__brief span,
+.canvas-agent-panel__brief small {
+  color: rgba(242, 242, 234, 0.62);
+  font-size: 12px;
+}
+
+.canvas-agent-panel__brief strong {
+  color: #f6f6ef;
+  font-size: 15px;
+  line-height: 1.32;
+}
+
+.canvas-agent-panel__brief footer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.canvas-agent-panel__brief button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f6f6ef;
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .canvas-agent-history {
@@ -299,8 +342,8 @@ body {
 .canvas-agent-panel__context {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 7px;
+  padding: 10px 16px;
 }
 
 .canvas-agent-panel__context button {
@@ -353,11 +396,12 @@ body {
 
 .canvas-agent-run {
   display: grid;
-  gap: 12px;
+  align-content: start;
+  gap: 10px;
   min-height: 180px;
   flex: 1;
   overflow: auto;
-  padding: 14px 16px;
+  padding: 12px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -372,7 +416,8 @@ body {
 }
 
 .canvas-agent-run__summary {
-  padding: 11px;
+  padding: 10px;
+  background: rgba(205, 244, 124, 0.08);
 }
 
 .canvas-agent-run__summary span,
@@ -395,13 +440,39 @@ body {
   line-height: 1.35;
 }
 
+.canvas-agent-progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.canvas-agent-progress span {
+  overflow: hidden;
+  border-radius: 999px;
+  padding: 4px 6px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.canvas-agent-progress span.is-succeeded {
+  color: #dff7aa;
+  background: rgba(205, 244, 124, 0.14);
+}
+
+.canvas-agent-progress span.is-waiting_cost_confirmation {
+  color: #ffe2a5;
+  background: rgba(255, 207, 112, 0.14);
+}
+
 .canvas-agent-timeline {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .canvas-agent-step {
-  padding: 10px;
+  padding: 9px;
 }
 
 .canvas-agent-step > header,
@@ -416,7 +487,7 @@ body {
 
 .canvas-agent-step > header div {
   display: grid;
-  gap: 3px;
+  gap: 2px;
 }
 
 .canvas-agent-step strong,
@@ -449,12 +520,37 @@ body {
 }
 
 .canvas-agent-artifacts {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.canvas-agent-artifacts > span {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: rgba(242, 242, 234, 0.7);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-artifacts > span.is-written,
+.canvas-agent-artifacts > span.is-submitted {
+  border-color: rgba(205, 244, 124, 0.2);
+  color: #dff7aa;
+}
+
+.canvas-agent-artifacts > span.is-waiting_cost_confirmation {
+  border-color: rgba(255, 207, 112, 0.28);
+  color: #ffe2a5;
 }
 
 .canvas-agent-artifact {
-  padding: 9px;
+  padding: 8px;
   background: rgba(0, 0, 0, 0.18);
 }
 

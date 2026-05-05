@@ -3,6 +3,22 @@
 ## 2026-05-05
 
 Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Simplified the 创作总监 panel into a clearer OiiOii-like brief: current task, progress, next action, compact run history, and stage summaries.
+- Collapsed verbose artifact bodies into short status chips so the Agent timeline reads at a glance instead of like raw logs.
+- Reduced quick actions and visual noise while keeping Agent Team settings, history restore, step retry, and media confirmation available.
+
+Verification suggestions:
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-05
+
+Changed files:
 - `backend/models.py`
 - `backend/database.py`
 - `backend/schemas.py`
