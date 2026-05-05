@@ -1022,50 +1022,12 @@
           <footer>
             <button type="button" @click="agentPanel.advancedOpen = !agentPanel.advancedOpen">
               <SlidersHorizontal :size="15" />
-              Agent Team
+              团队
             </button>
             <button type="button" @click="agentPanel.historyOpen = !agentPanel.historyOpen">
               历史
             </button>
           </footer>
-        </section>
-
-        <section class="canvas-agent-team-roster">
-          <header>
-            <div>
-              <strong>官方协作流程</strong>
-              <small>按创作阶段接力；可用我的 Agent 替换任意阶段。</small>
-            </div>
-            <span>我的 {{ agentPanel.templates.length }}</span>
-          </header>
-          <div class="canvas-agent-flow">
-            <article
-              v-for="(agent, index) in officialAgentCards"
-              :key="agent.stepKey"
-              :class="{ 'is-active': getAssignedAgentId(agent.stepKey) || agentPanel.profile === agent.profileKey }"
-            >
-              <div class="canvas-agent-flow__body">
-                <span>{{ index + 1 }}</span>
-                <div>
-                  <small>{{ getAgentStageLabel(agent.stage) }} · {{ agent.output }}</small>
-                  <b>{{ getAssignedAgentName(agent) }}</b>
-                  <p>{{ agent.description }}</p>
-                </div>
-              </div>
-              <div class="canvas-agent-flow__assign">
-                <select v-if="agentPanel.templates.length" v-model="agentPanel.agentAssignments[agent.stepKey]" :aria-label="`${agent.output} Agent`">
-                  <option value="">官方：{{ agent.name }}</option>
-                  <option v-for="template in agentPanel.templates" :key="template.id" :value="template.id">
-                    我的：{{ template.name }}
-                  </option>
-                </select>
-                <div class="canvas-agent-flow__actions">
-                  <button type="button" @click="selectOfficialAgent(agent)">设为入口</button>
-                  <button type="button" @click="createAgentFromStarter(agent)">复制</button>
-                </div>
-              </div>
-            </article>
-          </div>
         </section>
 
         <section v-if="agentPanel.advancedOpen" class="canvas-agent-panel__controls">
@@ -1108,6 +1070,43 @@
               <button class="canvas-agent-template-form__primary" type="submit">{{ agentPanel.editingAgentId ? '保存 Agent' : '创建 Agent' }}</button>
             </footer>
           </form>
+          <section class="canvas-agent-team-roster">
+            <header>
+              <div>
+                <strong>官方协作流程</strong>
+                <small>按创作阶段接力；可用我的 Agent 替换任意阶段。</small>
+              </div>
+              <span>我的 {{ agentPanel.templates.length }}</span>
+            </header>
+            <div class="canvas-agent-flow">
+              <article
+                v-for="(agent, index) in officialAgentCards"
+                :key="agent.stepKey"
+                :class="{ 'is-active': getAssignedAgentId(agent.stepKey) || agentPanel.profile === agent.profileKey }"
+              >
+                <div class="canvas-agent-flow__body">
+                  <span>{{ index + 1 }}</span>
+                  <div>
+                    <small>{{ getAgentStageLabel(agent.stage) }} · {{ agent.output }}</small>
+                    <b>{{ getAssignedAgentName(agent) }}</b>
+                    <p>{{ agent.description }}</p>
+                  </div>
+                </div>
+                <div class="canvas-agent-flow__assign">
+                  <select v-if="agentPanel.templates.length" v-model="agentPanel.agentAssignments[agent.stepKey]" :aria-label="`${agent.output} Agent`">
+                    <option value="">官方：{{ agent.name }}</option>
+                    <option v-for="template in agentPanel.templates" :key="template.id" :value="template.id">
+                      我的：{{ template.name }}
+                    </option>
+                  </select>
+                  <div class="canvas-agent-flow__actions">
+                    <button type="button" @click="selectOfficialAgent(agent)">设为入口</button>
+                    <button type="button" @click="createAgentFromStarter(agent)">复制</button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
         </section>
 
         <section class="canvas-agent-panel__context">
@@ -1140,38 +1139,44 @@
             <strong>{{ getAgentRunNextAction(agentPanel.activeRun) }}</strong>
             <small>{{ getAgentRunMeta(agentPanel.activeRun) }}</small>
             <small v-if="getAgentRunTeamLine(agentPanel.activeRun)">{{ getAgentRunTeamLine(agentPanel.activeRun) }}</small>
-            <div v-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-progress">
+            <div v-if="getAgentStageProgress(agentPanel.activeRun).length" class="canvas-agent-stage-strip">
               <span
-                v-for="step in agentPanel.activeRun.steps"
-                :key="step.id"
-                :class="`is-${step.status}`"
+                v-for="stage in getAgentStageProgress(agentPanel.activeRun)"
+                :key="stage.key"
+                :class="[`is-${stage.status}`, { 'is-current': stage.current }]"
               >
-                {{ getAgentStepIndexLabel(step) }}
+                {{ stage.label }}
               </span>
             </div>
           </div>
-          <div v-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-timeline">
-            <article v-for="step in agentPanel.activeRun.steps" :key="step.id" class="canvas-agent-step">
-              <header>
-                <div>
-                  <span>{{ getAgentStepIndexLabel(step) }} · {{ getAgentStageLabel(step.input?.stage || step.output?.stage) }} · {{ step.agentName || 'Agent' }}</span>
-                  <strong>{{ step.title }}</strong>
-                </div>
-                <b :class="`is-${step.status}`">{{ getAgentStepStatusLabel(step.status) }}</b>
-              </header>
-              <p>{{ getAgentStepArtifactSummary(step) }}</p>
-              <div v-if="step.artifacts?.length" class="canvas-agent-artifacts">
-                <span v-for="artifact in step.artifacts" :key="artifact.id" :class="`is-${artifact.status}`">
-                  {{ artifact.title }} · {{ getAgentArtifactStatusLabel(artifact.status) }}
-                </span>
+          <div v-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-conversation">
+            <article v-for="step in agentPanel.activeRun.steps" :key="step.id" class="canvas-agent-message" :class="`is-${step.status}`">
+              <div class="canvas-agent-message__avatar">
+                <span>{{ getAgentStepNumber(step) }}</span>
               </div>
-              <footer v-if="step.status === 'failed'">
-                <span>{{ step.error?.message || '阶段执行失败' }}</span>
-                <button type="button" :disabled="agentPanel.busy" @click="retryAgentRunStep(step)">重试阶段</button>
-              </footer>
+              <div class="canvas-agent-message__bubble">
+                <header>
+                  <div>
+                    <span>{{ getAgentStageLabel(step.input?.stage || step.output?.stage) }}</span>
+                    <strong>{{ step.agentName || 'Agent' }}</strong>
+                  </div>
+                  <b :class="`is-${step.status}`">{{ getAgentStepStatusLabel(step.status) }}</b>
+                </header>
+                <h3>{{ step.title }}</h3>
+                <p>{{ getAgentStepConversationText(step) }}</p>
+                <div v-if="step.artifacts?.length" class="canvas-agent-artifacts">
+                  <span v-for="artifact in step.artifacts" :key="artifact.id" :class="`is-${artifact.status}`">
+                    {{ artifact.title }} · {{ getAgentArtifactStatusLabel(artifact.status) }}
+                  </span>
+                </div>
+                <footer v-if="getAgentStepHandoff(step) || step.status === 'failed'">
+                  <span>{{ step.status === 'failed' ? (step.error?.message || '阶段执行失败') : getAgentStepHandoff(step) }}</span>
+                  <button v-if="step.status === 'failed'" type="button" :disabled="agentPanel.busy" @click="retryAgentRunStep(step)">重试</button>
+                </footer>
+              </div>
             </article>
           </div>
-          <p v-else class="canvas-agent-panel__empty">输入目标后，Agent Team 会生成阶段时间线，并把文本与媒体占位写入画布。</p>
+          <p v-else class="canvas-agent-panel__empty">输入目标后，Agent Team 会按阶段接力，并把结果同步到画布。</p>
           <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_cost_confirmation'" class="canvas-agent-run__cost">
             <span>媒体生成等待确认，预计消耗 {{ getAgentRunEstimatePoints(agentPanel.activeRun) }} 灵感值。</span>
             <button type="button" :disabled="agentPanel.confirmingCost" @click="confirmAgentRunCost">
@@ -3109,6 +3114,30 @@ function getAgentRunTeamLine(timeline) {
   return `${names}${extra}${customText}`
 }
 
+function getAgentStageProgress(timeline) {
+  const steps = Array.isArray(timeline?.steps) ? timeline.steps : []
+  const stageOrder = ['ideate', 'visualize', 'animate', 'deploy']
+  const stages = stageOrder
+    .map((stage) => ({
+      key: stage,
+      label: getAgentStageLabel(stage),
+      steps: steps.filter((step) => (step.input?.stage || step.output?.stage) === stage)
+    }))
+    .filter((stage) => stage.steps.length || stage.key !== 'deploy')
+  const currentStage = [...steps].reverse().find((step) => !['succeeded', 'skipped'].includes(step.status))?.input?.stage
+    || [...steps].reverse().find((step) => step.status === 'succeeded')?.input?.stage
+  return stages.map((stage) => {
+    const failed = stage.steps.some((step) => step.status === 'failed')
+    const waiting = stage.steps.some((step) => ['waiting_user', 'waiting_cost_confirmation', 'running', 'queued'].includes(step.status))
+    const succeeded = stage.steps.length > 0 && stage.steps.every((step) => ['succeeded', 'skipped'].includes(step.status))
+    return {
+      ...stage,
+      current: currentStage === stage.key,
+      status: failed ? 'failed' : waiting ? 'waiting' : succeeded ? 'succeeded' : 'idle'
+    }
+  })
+}
+
 function getLatestAgentHandoffStep(timeline) {
   const steps = Array.isArray(timeline?.steps) ? timeline.steps : []
   return [...steps].reverse().find((step) => step?.output?.question || step?.output?.next || step?.output?.completed) || null
@@ -3130,6 +3159,11 @@ function getAgentStepIndexLabel(step) {
   return Number.isFinite(index) ? `阶段 ${index + 1}` : '阶段'
 }
 
+function getAgentStepNumber(step) {
+  const index = Number(step?.orderIndex)
+  return Number.isFinite(index) ? index + 1 : ''
+}
+
 function getAgentStepInputSummary(step) {
   const input = step?.input || {}
   if (input.content) return input.content
@@ -3149,6 +3183,21 @@ function getAgentStepArtifactSummary(step) {
   const extra = artifacts.length > 3 ? `等 ${artifacts.length} 项` : ''
   const suffix = waiting ? `，${waiting} 项待确认` : written ? `，${written} 项已写入` : ''
   return `${completed || names}${completed ? `；产物：${names}${extra}${suffix}` : `${extra}${suffix}`}${next ? `；${next}` : ''}`
+}
+
+function getAgentStepConversationText(step) {
+  const completed = String(step?.output?.completed || '').trim()
+  const inputSummary = getAgentStepInputSummary(step)
+  const artifactSummary = getAgentStepArtifactSummary(step)
+  if (completed) return artifactSummary
+  return inputSummary || artifactSummary || '等待 Agent 输出'
+}
+
+function getAgentStepHandoff(step) {
+  const handoffTo = String(step?.output?.handoffTo || '').trim()
+  const next = String(step?.output?.next || '').trim()
+  if (handoffTo) return `下一棒：${handoffTo}`
+  return next
 }
 
 function getAgentArtifactPreview(artifact) {

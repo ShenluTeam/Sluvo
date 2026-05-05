@@ -302,6 +302,11 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.canvas-agent-panel__controls .canvas-agent-team-roster {
+  grid-column: 1 / -1;
+  padding: 4px 0 0;
+}
+
 .canvas-agent-team-roster > header {
   display: flex;
   align-items: flex-start;
@@ -550,7 +555,7 @@ body {
 }
 
 .canvas-agent-run__summary,
-.canvas-agent-step,
+.canvas-agent-message__bubble,
 .canvas-agent-artifact {
   display: grid;
   gap: 8px;
@@ -566,8 +571,8 @@ body {
 
 .canvas-agent-run__summary span,
 .canvas-agent-run__summary small,
-.canvas-agent-step header span,
-.canvas-agent-step p,
+.canvas-agent-message__bubble header span,
+.canvas-agent-message__bubble p,
 .canvas-agent-artifact span,
 .canvas-agent-artifact p,
 .canvas-agent-artifact small,
@@ -584,44 +589,104 @@ body {
   line-height: 1.35;
 }
 
-.canvas-agent-progress {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 5px;
+.canvas-agent-stage-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 1px;
 }
 
-.canvas-agent-progress span {
+.canvas-agent-stage-strip span {
+  flex: 1 0 64px;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 999px;
-  padding: 4px 6px;
+  padding: 5px 7px;
+  color: rgba(242, 242, 234, 0.62);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background: rgba(255, 255, 255, 0.07);
 }
 
-.canvas-agent-progress span.is-succeeded {
+.canvas-agent-stage-strip span.is-succeeded {
+  border-color: rgba(205, 244, 124, 0.2);
   color: #dff7aa;
-  background: rgba(205, 244, 124, 0.14);
+  background: rgba(205, 244, 124, 0.13);
 }
 
-.canvas-agent-progress span.is-waiting_cost_confirmation {
+.canvas-agent-stage-strip span.is-waiting,
+.canvas-agent-stage-strip span.is-current {
+  border-color: rgba(255, 207, 112, 0.28);
   color: #ffe2a5;
-  background: rgba(255, 207, 112, 0.14);
+  background: rgba(255, 207, 112, 0.12);
 }
 
-.canvas-agent-timeline {
+.canvas-agent-stage-strip span.is-failed {
+  border-color: rgba(255, 115, 115, 0.36);
+  color: #ffd1d1;
+  background: rgba(255, 115, 115, 0.11);
+}
+
+.canvas-agent-conversation {
   display: grid;
+  gap: 5px;
+}
+
+.canvas-agent-message {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
   gap: 8px;
+  align-items: start;
 }
 
-.canvas-agent-step {
+.canvas-agent-message__avatar {
+  position: relative;
+  display: grid;
+  justify-items: center;
+}
+
+.canvas-agent-message__avatar::after {
+  width: 1px;
+  min-height: 18px;
+  margin-top: 4px;
+  background: rgba(205, 244, 124, 0.22);
+  content: "";
+}
+
+.canvas-agent-message__avatar span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(205, 244, 124, 0.28);
+  border-radius: 999px;
+  color: #151812;
+  background: #cdf47c;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.canvas-agent-message__bubble {
   padding: 9px;
+  background: rgba(255, 255, 255, 0.052);
 }
 
-.canvas-agent-step > header,
+.canvas-agent-message.is-waiting_cost_confirmation .canvas-agent-message__bubble {
+  border-color: rgba(255, 207, 112, 0.2);
+  background: rgba(255, 207, 112, 0.07);
+}
+
+.canvas-agent-message.is-failed .canvas-agent-message__bubble {
+  border-color: rgba(255, 115, 115, 0.24);
+  background: rgba(255, 115, 115, 0.07);
+}
+
+.canvas-agent-message__bubble > header,
 .canvas-agent-artifact > header,
-.canvas-agent-step footer,
+.canvas-agent-message__bubble footer,
 .canvas-agent-run__cost {
   display: flex;
   align-items: flex-start;
@@ -629,17 +694,29 @@ body {
   gap: 10px;
 }
 
-.canvas-agent-step > header div {
+.canvas-agent-message__bubble > header div {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
-.canvas-agent-step strong,
+.canvas-agent-message__bubble header strong,
 .canvas-agent-artifact strong {
+  overflow: hidden;
   color: #f6f6ef;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.canvas-agent-step b {
+.canvas-agent-message__bubble h3 {
+  margin: 0;
+  color: #f6f6ef;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.canvas-agent-message__bubble b {
   flex: 0 0 auto;
   border: 1px solid rgba(205, 244, 124, 0.24);
   border-radius: 999px;
@@ -650,17 +727,29 @@ body {
   font-weight: 700;
 }
 
-.canvas-agent-step b.is-failed,
-.canvas-agent-step b.is-cancelled {
+.canvas-agent-message__bubble b.is-failed,
+.canvas-agent-message__bubble b.is-cancelled {
   border-color: rgba(255, 115, 115, 0.36);
   color: #ffd1d1;
   background: rgba(255, 115, 115, 0.11);
 }
 
-.canvas-agent-step b.is-waiting_cost_confirmation {
+.canvas-agent-message__bubble b.is-waiting_cost_confirmation {
   border-color: rgba(255, 207, 112, 0.34);
   color: #ffe2a5;
   background: rgba(255, 207, 112, 0.11);
+}
+
+.canvas-agent-message__bubble footer {
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 7px;
+}
+
+.canvas-agent-message__bubble footer span {
+  color: rgba(242, 242, 234, 0.62);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .canvas-agent-artifacts {
@@ -711,7 +800,7 @@ body {
 }
 
 .canvas-agent-run__cost button,
-.canvas-agent-step footer button {
+.canvas-agent-message__bubble footer button {
   display: inline-flex;
   align-items: center;
   justify-content: center;

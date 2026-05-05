@@ -1118,3 +1118,17 @@ Verification suggestions:
 - Run `npm run build --workspace sluvo-web`.
 - Create or copy a custom Agent, assign it to one official stage, start a run, and verify the timeline shows that custom Agent participating in the team handoff.
 
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Reworked the right-side Agent panel into a cleaner task conversation: the default view now emphasizes the current goal, stage progress, and Agent handoff messages.
+- Moved official team configuration and per-stage custom Agent replacement into the team settings area so the conversation stays readable by default.
+- Replaced dense timeline cards with compact Agent message bubbles, status chips, artifact chips, handoff hints, and inline retry for failed stages.
+
+Verification suggestions:
+- Run `npm run build --workspace sluvo-web`.
+- Start an Agent run from the canvas and confirm the panel reads as a staged conversation with team settings collapsed by default.
+
