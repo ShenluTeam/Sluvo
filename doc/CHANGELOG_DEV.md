@@ -4,6 +4,38 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Improved Agent-written text nodes with an artifact chip, preserved Agent artifact metadata through frontend persistence, and added denser script/setting Markdown styling.
+- Script, character, scene, prop, and storyboard nodes now read more like production cards instead of oversized generic text blocks.
+
+Verification suggestions:
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed Agent workflow artifacts so inspiration inputs become concrete script, character, scene, prop, and storyboard content instead of workflow-template text.
+- Added an LLM-backed artifact drafting path with a specific non-template fallback when the model key is unavailable.
+- Covered short inspiration input like `雨夜迈巴赫` so the first text node contains a usable script draft and no model/debug labels.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/tests/test_sluvo_service.py`
+- `python3 -m pytest backend/tests/test_sluvo_service.py -q`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:

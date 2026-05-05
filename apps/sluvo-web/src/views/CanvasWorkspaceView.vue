@@ -121,7 +121,7 @@
           :key="node.id"
           :ref="(element) => registerDirectNodeElement(node.id, element)"
           class="direct-workflow-node"
-          :class="[`direct-workflow-node--${node.type}`, { 'is-selected': selectedDirectNodeIds.includes(node.id), 'has-open-video-settings': activeVideoSettingsNodeId === node.id }]"
+          :class="[`direct-workflow-node--${node.type}`, { 'is-selected': selectedDirectNodeIds.includes(node.id), 'has-open-video-settings': activeVideoSettingsNodeId === node.id, 'is-agent-artifact': isAgentArtifactNode(node) }]"
           :style="{ left: `${node.x}px`, top: `${node.y}px`, zIndex: getDirectNodeZIndex(node, index) }"
           :data-direct-node-id="node.id"
           draggable="false"
@@ -138,6 +138,7 @@
           <div class="direct-workflow-node__title" :class="{ 'direct-workflow-node__title--uploaded': node.type === 'uploaded_asset' }">
             <span>{{ node.icon }}</span>
             <span class="direct-workflow-node__title-text">{{ node.title }}</span>
+            <span v-if="getAgentArtifactKindLabel(node)" class="direct-workflow-node__artifact-chip">{{ getAgentArtifactKindLabel(node) }}</span>
             <span v-if="node.type === 'uploaded_asset'" class="direct-workflow-node__dimensions">
               {{ getUploadedAssetDimensions(node) }}
             </span>
@@ -312,6 +313,7 @@
               <div
                 v-if="node.type === 'prompt_note' && node.prompt.trim()"
                 class="direct-workflow-node__markdown"
+                :class="{ 'direct-workflow-node__markdown--agent': isAgentArtifactNode(node) }"
                 tabindex="0"
                 v-html="renderDirectMarkdown(node.prompt)"
                 @keydown="handleMarkdownKeydown"
@@ -3755,6 +3757,22 @@ function renderMarkdownInline(value) {
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
 }
 
+function isAgentArtifactNode(node) {
+  return Boolean(node?.agentArtifactId || node?.agentRunId)
+}
+
+function getAgentArtifactKindLabel(node) {
+  if (!isAgentArtifactNode(node)) return ''
+  const title = String(node?.title || '')
+  if (title.includes('剧本')) return 'Script'
+  if (title.includes('角色')) return 'Cast'
+  if (title.includes('场景')) return 'Scene'
+  if (title.includes('道具')) return 'Prop'
+  if (title.includes('分镜')) return 'Shot'
+  if (title.includes('Prompt')) return 'Prompt'
+  return 'Agent'
+}
+
 function escapeHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -4001,6 +4019,9 @@ function mapBackendNodeToDirectNode(node) {
     audioSettingsOpen: Boolean(data.audioSettingsOpen),
     audioEstimatePoints: Number.isFinite(Number(data.audioEstimatePoints)) ? Number(data.audioEstimatePoints) : null,
     audioEstimateStatus: data.audioEstimateStatus || 'idle',
+    agentRunId: data.agentRunId || '',
+    agentArtifactId: data.agentArtifactId || '',
+    writePolicy: data.writePolicy || '',
     agentProfile: data.agentProfile || 'canvas_agent',
     agentTemplateId: data.agentTemplateId || '',
     agentName: data.agentName || '',
@@ -4788,6 +4809,9 @@ function serializeDirectNodeForSave(node, index = 0) {
       audioSettingsOpen: Boolean(node.audioSettingsOpen),
       audioEstimatePoints: node.audioEstimatePoints ?? null,
       audioEstimateStatus: node.audioEstimateStatus || 'idle',
+      agentRunId: node.agentRunId || '',
+      agentArtifactId: node.agentArtifactId || '',
+      writePolicy: node.writePolicy || '',
       agentProfile: node.agentProfile || '',
       agentTemplateId: node.agentTemplateId || '',
       agentName: node.agentName || '',

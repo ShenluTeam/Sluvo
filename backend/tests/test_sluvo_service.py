@@ -519,6 +519,39 @@ def test_sluvo_agent_run_creates_timeline_canvas_writes_and_cost_records():
         assert session.exec(select(GenerationRecord)).first()
 
 
+def test_sluvo_agent_run_turns_inspiration_into_specific_script_artifact():
+    with _make_session() as session:
+        team, owner, _editor, _viewer, _admin, _links = _seed_team(session)
+        create_sluvo_project(session, user=owner, team=team, payload=SluvoProjectCreateRequest(title="Inspiration Script"))
+        project = session.exec(select(SluvoProject)).first()
+        canvas = get_or_create_main_canvas(session, project)
+
+        timeline = create_sluvo_agent_run(
+            session,
+            project=project,
+            user=owner,
+            team=team,
+            canvas_id=canvas.id,
+            target_node_id=None,
+            goal="雨夜迈巴赫",
+            source_surface="panel",
+            agent_profile="auto",
+            agent_template_id=None,
+            model_code="deepseek-v4-flash",
+            mode="semi_auto",
+            context_snapshot={"selectedNodes": []},
+        )
+
+        first_artifact = timeline["steps"][0]["artifacts"][0]
+        body = first_artifact["payload"]["body"]
+        assert "迈巴赫" in body
+        assert "剧本" in body
+        assert "场 1" in body or "场次" in body
+        assert "核心输入：" not in body
+        assert "故事钩子：保留用户原始表达" not in body
+        assert "模型：" not in body
+
+
 def test_sluvo_agent_panel_patch_writes_products_not_agent_nodes():
     with _make_session() as session:
         team, owner, _editor, _viewer, _admin, _links = _seed_team(session)

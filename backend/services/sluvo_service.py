@@ -1004,18 +1004,109 @@ def _agent_question_answer(goal: str) -> str:
     return f"我先按普通询问处理：{text}\n\n如果你想进入创作流程，可以直接输入一个灵感或贴一段剧本，我会先识别意图，再决定是否扩写剧本、提取角色/场景/道具或继续做分镜。"
 
 
+def _story_title_from_goal(goal: str) -> str:
+    source = re.sub(r"\s+", "", str(goal or "").strip())
+    source = re.sub(r"[#*_`《》\"“”'，。！？、：；,.!?;:]", "", source)
+    if not source:
+        return "未命名故事"
+    if len(source) <= 12:
+        return source
+    return source[:12]
+
+
+def _story_mood_from_goal(goal: str) -> str:
+    text = str(goal or "")
+    if any(word in text for word in ("雨", "夜", "凌晨", "霓虹")):
+        return "潮湿、低照度、带一点危险感和都市悬疑感"
+    if any(word in text for word in ("校园", "少年", "夏")):
+        return "青春、明亮，但有尚未说出口的秘密"
+    if any(word in text for word in ("废墟", "末日", "逃")):
+        return "压迫、荒凉、动作节奏强"
+    return "保留原始灵感的情绪，把它转成可被镜头捕捉的悬念"
+
+
+def _story_scene_anchor_from_goal(goal: str) -> str:
+    text = str(goal or "")
+    if "迈巴赫" in text:
+        return "雨夜街口、黑色迈巴赫车内外、被雨水拉长的车灯反光"
+    if "雨" in text or "夜" in text:
+        return "雨夜街道、昏暗灯牌、湿冷反光的路面"
+    if "校园" in text:
+        return "放学后的校园、走廊、操场边缘或天台"
+    return "从输入中最有画面感的地点建立主场景，并固定时间、天气和光线"
+
+
+def _story_prop_from_goal(goal: str) -> str:
+    text = str(goal or "")
+    if "迈巴赫" in text:
+        return "黑色迈巴赫、后座半开的车窗、车内冷光、被雨水打湿的车门把手"
+    if "信号" in text:
+        return "异常信号、手机屏幕、闪烁的定位点"
+    if "钥匙" in text:
+        return "钥匙、门禁卡或能打开秘密空间的小物件"
+    return "提取输入里最能推动剧情的物件，作为角色行动和镜头特写的核心"
+
+
+def _story_protagonist_from_goal(goal: str) -> str:
+    text = str(goal or "")
+    if any(word in text for word in ("少年", "男孩", "女孩", "少女")):
+        return "一个被夜色和秘密推着向前的年轻主角"
+    if "迈巴赫" in text:
+        return "一个在雨夜撞见豪车秘密的人，身份可以是代驾、学生、记者或被追踪者"
+    return "一个必须在短时间内做选择的人，目标要和输入中的核心意象直接相关"
+
+
+def _story_concept_from_goal(goal: str) -> str:
+    title = _story_title_from_goal(goal)
+    if "迈巴赫" in goal:
+        return f"雨夜里，一辆不该出现的迈巴赫停在主角面前。它像邀请，也像陷阱。主角必须弄清车里藏着的人、信息或交易，才知道自己是旁观者还是已经被卷入局中。"
+    return f"围绕「{goal.strip() or title}」建立一个可拍摄的短片开端：主角先被一个强画面吸引，随后发现它背后有更具体的目标、阻碍和危险。"
+
+
+def _story_scene_from_goal(goal: str) -> str:
+    title = _story_title_from_goal(goal)
+    scene = _story_scene_anchor_from_goal(goal)
+    prop = _story_prop_from_goal(goal)
+    protagonist = _story_protagonist_from_goal(goal)
+    mood = _story_mood_from_goal(goal)
+    return (
+        f"### 场 1：{scene}\n"
+        f"雨声或环境声压低城市的底噪。{protagonist}停在画面边缘，注意到{prop}。镜头先不解释原因，只让观众看到主角的迟疑。\n\n"
+        f"### 场 2：接近\n"
+        "主角试图绕开，却发现这件事和自己有关：一条消息、一个熟悉的名字、或车内一瞬间露出的影子，把主角拉回现场。"
+        f"画面情绪保持{mood}。\n\n"
+        f"### 场 3：转折\n"
+        f"当主角靠近「{title}」的核心线索时，车灯、手机或环境突然变化。主角意识到这不是偶遇，而是有人故意让自己看见。"
+    )
+
+
 def _build_script_seed(goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
     classification = context_snapshot.get("intent") if isinstance(context_snapshot, dict) else {}
     intent = classification.get("intent") if isinstance(classification, dict) else "inspiration"
-    title = "剧本整理" if intent == "script" else "灵感扩写剧本"
+    source = _compact_story_source(goal, 900)
+    title = _story_title_from_goal(source)
+    if intent == "script":
+        return (
+            f"# 《{title}》剧本整理\n\n"
+            "## 故事核心\n"
+            f"{source}\n\n"
+            "## 可拍摄场次\n"
+            f"1. 开场：用一个强画面建立「{title}」的地点、时间和情绪。\n"
+            "2. 对抗：让主角在具体动作中遭遇阻力，冲突需要能被镜头看见。\n"
+            "3. 转折：用人物选择、关键道具或环境变化留下下一场的钩子。\n\n"
+            "## 下一步拆解\n"
+            "从这版剧本继续提取角色、场景、道具和分镜。"
+        )
     return (
-        f"{title}\n"
-        f"- 核心输入：{goal.strip()}\n"
-        "- 故事钩子：保留用户原始表达里的核心冲突，把它扩成一个可拍摄的短片开端。\n"
-        "- 主角目标：明确主角想得到什么，以及阻碍来自人物、环境或秘密信息。\n"
-        "- 三段结构：开端建立处境，中段升级冲突，结尾留下清晰转折或生成下一镜的悬念。\n"
-        "- 可视化线索：记录关键场景、可识别道具、光线气氛和动作节奏，方便后续拆角色、场景、道具和分镜。\n"
-        f"\n模型：{model_code}"
+        f"# 《{title}》短片剧本草案\n\n"
+        f"## 概念\n{_story_concept_from_goal(source)}\n\n"
+        "## 剧本\n"
+        f"{_story_scene_from_goal(source)}\n\n"
+        "## 继续拆解锚点\n"
+        f"- 主角：{_story_protagonist_from_goal(source)}\n"
+        f"- 场景：{_story_scene_anchor_from_goal(source)}\n"
+        f"- 道具：{_story_prop_from_goal(source)}\n"
+        f"- 情绪：{_story_mood_from_goal(source)}"
     )
 
 
@@ -1262,16 +1353,50 @@ def _append_agent_workflow_step(
 
 def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
     prompt = _agent_run_prompt(goal, context_snapshot)
+    llm_body = _try_deepseek_agent_artifact_body(
+        artifact_type=artifact_type,
+        goal=goal,
+        context_snapshot=context_snapshot,
+        model_code=model_code,
+    )
+    if llm_body:
+        return llm_body
     if artifact_type == "text_node":
         return _build_script_seed(goal, context_snapshot, model_code)
     if artifact_type == "report":
         return _agent_question_answer(goal)
     if artifact_type == "character_brief":
-        return f"角色设定草稿\n- 主角：围绕目标中的核心人物建立外观、欲望、阻力和标志性道具。\n- 关系：把冲突双方、协作者和环境压力拆为后续可复用节点。\n- 一致性：记录服装、色彩、年龄感和镜头可识别特征。\n\n来源：{goal.strip()}"
+        return (
+            "# 角色设定\n\n"
+            f"## 主角\n{_story_protagonist_from_goal(goal)}。外观应能匹配「{_story_mood_from_goal(goal)}」的气质，动作目标围绕「{goal.strip()}」展开。\n\n"
+            "## 对手 / 压力\n"
+            "对手不一定马上露脸，可以先表现为车内影子、陌生来电、监控视角、追踪者或环境压力。\n\n"
+            "## 一致性锚点\n"
+            f"- 服装与色彩：贴合{_story_mood_from_goal(goal)}。\n"
+            f"- 关键物件：{_story_prop_from_goal(goal)}。\n"
+            "- 表演重点：先克制观察，再被迫行动。"
+        )
     if artifact_type == "scene_brief":
-        return f"场景设定草稿\n- 主场景：从目标里提取时间、地点、天气、光线和情绪。\n- 可生成元素：环境道具、空间层次、色彩气氛、镜头运动约束。\n- 连续性：为后续图片/视频节点保留统一场景锚点。"
+        return (
+            "# 场景设定\n\n"
+            f"## 主场景\n{_story_scene_anchor_from_goal(goal)}。\n\n"
+            "## 光线与空间\n"
+            "使用低照度、局部高亮和前后景遮挡，让观众先看到线索，再看到人物反应。\n\n"
+            "## 连续性锚点\n"
+            f"- 情绪：{_story_mood_from_goal(goal)}。\n"
+            f"- 核心道具：{_story_prop_from_goal(goal)}。\n"
+            "- 镜头约束：湿润反光、近景表情、车窗/门缝/屏幕等框中框构图。"
+        )
     if artifact_type == "prop_brief":
-        return f"道具设定草稿\n- 核心道具：提取推动剧情的信息物、信物、工具或环境装置。\n- 视觉特征：记录形状、材质、颜色、磨损痕迹和可识别细节。\n- 剧情功能：说明道具如何制造线索、冲突、误会或转折。\n\n来源：{goal.strip()}"
+        return (
+            "# 道具设定\n\n"
+            f"## 核心道具\n{_story_prop_from_goal(goal)}。\n\n"
+            "## 剧情功能\n"
+            "道具不是背景装饰，而是让主角接近真相或陷入危险的触发器。\n\n"
+            "## 特写建议\n"
+            "- 水滴、反光、指纹、屏幕亮光或门把手动作。\n"
+            "- 先给局部细节，再用反应镜头说明它对主角的意义。"
+        )
     if artifact_type == "storyboard_plan":
         return _build_storyboard_plan(prompt, model_code)
     if artifact_type == "prompt":
@@ -1281,6 +1406,82 @@ def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, An
     if artifact_type == "video_placeholder":
         return _build_video_prompt(prompt)
     return prompt
+
+
+def _try_deepseek_agent_artifact_body(
+    *,
+    artifact_type: str,
+    goal: str,
+    context_snapshot: Dict[str, Any],
+    model_code: str,
+) -> Optional[str]:
+    if not settings.DEEPSEEK_API_KEY:
+        return None
+    if artifact_type in {"image_placeholder", "video_placeholder", "report"}:
+        return None
+    type_labels = {
+        "text_node": "短片剧本草案",
+        "storyboard_plan": "故事结构或分镜计划",
+        "character_brief": "角色设定",
+        "scene_brief": "场景设定",
+        "prop_brief": "道具设定",
+        "prompt": "首帧/视频生成提示词",
+    }
+    label = type_labels.get(artifact_type, "创作产物")
+    selected_nodes = context_snapshot.get("selectedNodes") if isinstance(context_snapshot, dict) else []
+    context_lines = []
+    if isinstance(selected_nodes, list):
+        for item in selected_nodes[:6]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "未命名节点").strip()
+            content = str(item.get("prompt") or item.get("body") or item.get("content") or "").strip()
+            if content:
+                context_lines.append(f"- {title}: {content[:600]}")
+    context_text = "\n".join(context_lines) or "暂无上游节点。"
+    try:
+        payload = chat_json(
+            model=normalize_sluvo_agent_model_code(model_code),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 Sluvo 画布 Agent Team 的创作成员。"
+                        "请输出 JSON 对象，字段只有 body。body 是可直接写入画布文本节点的 Markdown 正文。"
+                        "不要写模板说明、不要写占位指令、不要提模型、不要提“下一步由谁处理”。"
+                        "必须围绕用户输入生成具体故事内容、角色/场景/道具或分镜信息。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"用户输入：{goal.strip()}\n"
+                        f"当前要生成的产物类型：{label}\n"
+                        f"上游上下文：\n{context_text}\n\n"
+                        "要求：\n"
+                        "1. 内容要具体，能被画面拍出来。\n"
+                        "2. 如果是剧本草案，要包含故事概念、2-4 个场次或剧情段落、角色/场景/道具锚点。\n"
+                        "3. 如果是角色/场景/道具设定，要从输入里提取具体名称、外观、功能和一致性锚点。\n"
+                        "4. 如果是分镜计划，要列出镜号、景别、画面、动作、声音/情绪和生成提示。\n"
+                    ),
+                },
+            ],
+            thinking_enabled=normalize_sluvo_agent_model_code(model_code) == "deepseek-v4-pro",
+            max_tokens=1800,
+            temperature=0.36,
+            route_tag="sluvo_agent_artifact",
+        )
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    body = str(payload.get("body") or "").strip()
+    if not body or len(body) < 24:
+        return None
+    forbidden = ("核心输入：", "故事钩子：保留用户原始表达", "模型：", "模板", "占位")
+    if any(item in body for item in forbidden):
+        return None
+    return body[:16000]
 
 
 def _create_agent_run_step(
@@ -3925,11 +4126,11 @@ def _selected_node_titles(selected_nodes: List[Dict[str, Any]]) -> str:
 
 
 def _build_canvas_suggestion(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:
-    return f"基于「{_selected_node_titles(selected_nodes)}」的创作建议：\n1. 明确故事目标和主要情绪。\n2. 把可复用角色、场景、风格拆成独立参考节点。\n3. 从关键镜头开始生成图片，再连接视频节点。\n\n用户需求：{prompt}\n模型：{model_code}"
+    return f"基于「{_selected_node_titles(selected_nodes)}」的创作建议：\n1. 明确故事目标和主要情绪。\n2. 把可复用角色、场景、风格拆成独立参考节点。\n3. 从关键镜头开始生成图片，再连接视频节点。\n\n用户需求：{prompt}"
 
 
 def _build_consistency_report(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:
-    return f"一致性检查报告：\n- 检查对象：{_selected_node_titles(selected_nodes)}。\n- 建议固定角色外观、服装、道具和光线风格。\n- 后续生成前，请把角色参考图连接到每个图片/视频节点。\n\n检查要求：{prompt}\n模型：{model_code}"
+    return f"一致性检查报告：\n- 检查对象：{_selected_node_titles(selected_nodes)}。\n- 建议固定角色外观、服装、道具和光线风格。\n- 后续生成前，请把角色参考图连接到每个图片/视频节点。\n\n检查要求：{prompt}"
 
 
 def _build_polished_prompt(prompt: str, selected_nodes: List[Dict[str, Any]]) -> str:
@@ -3951,34 +4152,32 @@ def _compact_story_source(text: str, limit: int = 900) -> str:
 def _build_story_intake(prompt: str, model_code: str) -> str:
     source = _compact_story_source(prompt)
     return (
-        "项目理解\n"
-        f"原始灵感 / 剧本：{source}\n\n"
-        "制片目标：先提取角色、场景、道具和风格约束，再拆成可生成的分镜链路。\n"
-        "下一步：确认故事核心、主角目标、冲突和视觉风格后继续细化。"
-        f"\n模型：{model_code}"
+        f"# 《{_story_title_from_goal(source)}》项目理解\n\n"
+        f"## 故事概念\n{_story_concept_from_goal(source)}\n\n"
+        f"## 主场景\n{_story_scene_anchor_from_goal(source)}\n\n"
+        f"## 情绪基调\n{_story_mood_from_goal(source)}"
     )
 
 
 def _build_character_prop_brief(prompt: str, model_code: str) -> str:
     source = _compact_story_source(prompt, 700)
     return (
-        "角色 / 道具提取\n"
-        "1. 主角：从灵感中提取身份、年龄感、服装、情绪和可复用外观特征。\n"
-        "2. 配角：提取和主角产生冲突或推动剧情的人物。\n"
-        "3. 道具：提取对剧情、动作或镜头有视觉价值的物件。\n"
-        "4. 一致性：每个角色保留固定发型、服装、色彩和标志物。\n\n"
-        f"来源：{source}\n模型：{model_code}"
+        "# 角色 / 道具提取\n\n"
+        f"- 主角：{_story_protagonist_from_goal(source)}。\n"
+        "- 对手：可以先用影子、车内人声、陌生来电或环境监控表现，不急于正面露出。\n"
+        f"- 道具：{_story_prop_from_goal(source)}。\n"
+        f"- 一致性：服装、光线和表演都服务于「{_story_mood_from_goal(source)}」。"
     )
 
 
 def _build_scene_brief(prompt: str, model_code: str) -> str:
     source = _compact_story_source(prompt, 700)
     return (
-        "场景设定\n"
-        "1. 主场景：提取故事发生的核心空间、时代、天气和光线。\n"
-        "2. 氛围：定义色调、质感、镜头情绪和参考风格。\n"
-        "3. 场景约束：列出每个镜头需要保持连续的环境元素。\n\n"
-        f"来源：{source}\n模型：{model_code}"
+        "# 场景设定\n\n"
+        f"- 主场景：{_story_scene_anchor_from_goal(source)}。\n"
+        f"- 氛围：{_story_mood_from_goal(source)}。\n"
+        "- 画面约束：保持天气、光线方向、反光质感和空间层次连续。\n"
+        "- 可生成元素：人物近景、道具特写、环境建立镜头、带遮挡的窥视视角。"
     )
 
 
@@ -4003,18 +4202,17 @@ def _build_video_prompt(prompt: str) -> str:
 def _build_storyboard_plan(prompt: str, model_code: str) -> str:
     source = _compact_story_source(prompt, 800)
     return (
-        "分镜计划\n"
-        "1. 开场镜头：建立场景、主角状态和故事氛围。\n"
-        "2. 推进镜头：呈现主角动作、冲突或关键线索。\n"
-        "3. 情绪镜头：强化角色表情、道具和环境细节。\n"
-        "4. 转折镜头：制造变化、悬念或节奏推进。\n"
-        "5. 收束镜头：形成可继续生成下一个节点的画面结果。\n\n"
-        f"来源：{source}\n模型：{model_code}"
+        "# 分镜计划\n\n"
+        f"1. 建立镜头：{_story_scene_anchor_from_goal(source)}，用环境声和远景建立气氛。\n"
+        f"2. 发现镜头：主角注意到{_story_prop_from_goal(source)}，镜头切到眼神和手部动作。\n"
+        "3. 接近镜头：中近景跟随主角移动，前景遮挡制造不确定感。\n"
+        "4. 线索镜头：道具或屏幕出现关键信息，声音突然变弱或被雨声吞没。\n"
+        "5. 转折镜头：车灯、门缝、人影或来电打断主角，留下下一镜悬念。"
     )
 
 
 def _build_workflow_plan(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:
-    return f"分镜工作流计划：\n1. 从需求中提取场景目标和角色动作。\n2. 生成 3-5 个关键镜头，每个镜头保留景别、动作、情绪和画面提示词。\n3. 先生成首帧图片，再接视频生成节点。\n\n需求：{prompt}\n来源：{_selected_node_titles(selected_nodes)}\n模型：{model_code}"
+    return f"分镜工作流计划：\n1. 从需求中提取场景目标和角色动作。\n2. 生成 3-5 个关键镜头，每个镜头保留景别、动作、情绪和画面提示词。\n3. 先生成首帧图片，再接视频生成节点。\n\n需求：{prompt}\n来源：{_selected_node_titles(selected_nodes)}"
 
 
 def create_sluvo_agent_action(

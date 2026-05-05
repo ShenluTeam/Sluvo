@@ -4088,6 +4088,10 @@ button {
   width: 720px;
 }
 
+.direct-workflow-node--prompt_note.is-agent-artifact {
+  width: 760px;
+}
+
 .direct-workflow-node__title {
   display: flex;
   align-items: center;
@@ -4103,6 +4107,18 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.direct-workflow-node__artifact-chip {
+  flex: 0 0 auto;
+  border: 1px solid rgba(205, 244, 124, 0.24);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #d9ff72;
+  background: rgba(205, 244, 124, 0.08);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0;
 }
 
 .direct-workflow-node__title--uploaded {
@@ -4139,6 +4155,20 @@ button {
   overflow: visible;
   padding: 28px 34px;
   scrollbar-color: rgba(218, 224, 234, 0.44) transparent;
+}
+
+.direct-workflow-node--prompt_note.is-agent-artifact .direct-workflow-node__frame {
+  min-height: 440px;
+  max-height: 680px;
+  padding: 24px 30px 28px;
+  border-color: rgba(229, 200, 137, 0.78);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(229, 200, 137, 0.08), rgba(205, 244, 124, 0.025) 42%, rgba(0, 0, 0, 0)),
+    #1d1d19;
+  box-shadow:
+    0 0 0 1px rgba(229, 200, 137, 0.16),
+    0 20px 60px rgba(0, 0, 0, 0.28);
 }
 
 .direct-workflow-node--prompt_note .direct-workflow-node__markdown {
@@ -4282,6 +4312,57 @@ button {
   border-radius: 5px;
   background: rgba(255, 255, 255, 0.09);
   color: #f4d994;
+}
+
+.direct-workflow-node__markdown--agent {
+  display: grid;
+  gap: 12px;
+  color: #f3f0e5;
+  font-size: 16px;
+  font-weight: 560;
+  line-height: 1.66;
+}
+
+.direct-workflow-node__markdown--agent h1 {
+  margin: 0 0 4px;
+  color: #fff7dc;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.direct-workflow-node__markdown--agent h2 {
+  margin: 10px 0 0;
+  color: #d9ff72;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.direct-workflow-node__markdown--agent h3 {
+  margin: 8px 0 0;
+  color: #f1d694;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.direct-workflow-node__markdown--agent p {
+  margin: 0;
+  color: rgba(247, 244, 231, 0.84);
+  font-size: 15px;
+}
+
+.direct-workflow-node__markdown--agent ul {
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.direct-workflow-node__markdown--agent li {
+  color: rgba(247, 244, 231, 0.82);
+  font-size: 14px;
+}
+
+.direct-workflow-node__markdown--agent strong {
+  color: #fff7dc;
 }
 
 .direct-workflow-node__port {
