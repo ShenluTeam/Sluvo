@@ -1033,26 +1033,37 @@
         <section class="canvas-agent-team-roster">
           <header>
             <div>
-              <strong>官方 Agent Team</strong>
-              <small>自动派发会按阶段调用这些官方角色，也可以复制成你的自定义 Agent。</small>
+              <strong>官方协作流程</strong>
+              <small>按创作阶段接力；可用我的 Agent 替换任意阶段。</small>
             </div>
             <span>我的 {{ agentPanel.templates.length }}</span>
           </header>
-          <div class="canvas-agent-team-roster__grid">
+          <div class="canvas-agent-flow">
             <article
-              v-for="agent in officialAgentCards"
-              :key="agent.profileKey"
-              :class="{ 'is-active': agentPanel.profile === agent.profileKey }"
+              v-for="(agent, index) in officialAgentCards"
+              :key="agent.stepKey"
+              :class="{ 'is-active': getAssignedAgentId(agent.stepKey) || agentPanel.profile === agent.profileKey }"
             >
-              <div>
-                <b>{{ agent.name }}</b>
-                <small>{{ agent.output }}</small>
+              <div class="canvas-agent-flow__body">
+                <span>{{ index + 1 }}</span>
+                <div>
+                  <small>{{ getAgentStageLabel(agent.stage) }} · {{ agent.output }}</small>
+                  <b>{{ getAssignedAgentName(agent) }}</b>
+                  <p>{{ agent.description }}</p>
+                </div>
               </div>
-              <p>{{ agent.description }}</p>
-              <footer>
-                <button type="button" @click="selectOfficialAgent(agent)">使用</button>
-                <button type="button" @click="createAgentFromStarter(agent)">复制</button>
-              </footer>
+              <div class="canvas-agent-flow__assign">
+                <select v-if="agentPanel.templates.length" v-model="agentPanel.agentAssignments[agent.stepKey]" :aria-label="`${agent.output} Agent`">
+                  <option value="">官方：{{ agent.name }}</option>
+                  <option v-for="template in agentPanel.templates" :key="template.id" :value="template.id">
+                    我的：{{ template.name }}
+                  </option>
+                </select>
+                <div class="canvas-agent-flow__actions">
+                  <button type="button" @click="selectOfficialAgent(agent)">设为入口</button>
+                  <button type="button" @click="createAgentFromStarter(agent)">复制</button>
+                </div>
+              </div>
             </article>
           </div>
         </section>
@@ -1128,6 +1139,7 @@
             <span>{{ getAgentRunStatusLabel(agentPanel.activeRun.run.status) }}</span>
             <strong>{{ getAgentRunNextAction(agentPanel.activeRun) }}</strong>
             <small>{{ getAgentRunMeta(agentPanel.activeRun) }}</small>
+            <small v-if="getAgentRunTeamLine(agentPanel.activeRun)">{{ getAgentRunTeamLine(agentPanel.activeRun) }}</small>
             <div v-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-progress">
               <span
                 v-for="step in agentPanel.activeRun.steps"
@@ -1142,7 +1154,7 @@
             <article v-for="step in agentPanel.activeRun.steps" :key="step.id" class="canvas-agent-step">
               <header>
                 <div>
-                  <span>{{ getAgentStepIndexLabel(step) }} · {{ step.agentName || 'Agent' }}</span>
+                  <span>{{ getAgentStepIndexLabel(step) }} · {{ getAgentStageLabel(step.input?.stage || step.output?.stage) }} · {{ step.agentName || 'Agent' }}</span>
                   <strong>{{ step.title }}</strong>
                 </div>
                 <b :class="`is-${step.status}`">{{ getAgentStepStatusLabel(step.status) }}</b>
@@ -1159,7 +1171,7 @@
               </footer>
             </article>
           </div>
-          <p v-else class="canvas-agent-panel__empty">输入一个目标后，创作总监会按 Run → Step → Artifact 展开多 Agent 时间线，并把文本与媒体占位节点写入画布。</p>
+          <p v-else class="canvas-agent-panel__empty">输入目标后，Agent Team 会生成阶段时间线，并把文本与媒体占位写入画布。</p>
           <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_cost_confirmation'" class="canvas-agent-run__cost">
             <span>媒体生成等待确认，预计消耗 {{ getAgentRunEstimatePoints(agentPanel.activeRun) }} 灵感值。</span>
             <button type="button" :disabled="agentPanel.confirmingCost" @click="confirmAgentRunCost">
@@ -1774,6 +1786,8 @@ const officialAgentCards = [
   {
     name: '创作总监',
     description: '理解目标，决定由哪个专业 Agent 接力，汇总下一步。',
+    stepKey: 'understand_story',
+    stage: 'ideate',
     profileKey: 'canvas_agent',
     output: '任务拆解',
     rolePrompt: '你是 Sluvo 创作总监，负责理解用户目标、读取画布上下文、规划 Agent Team 的协作顺序，并输出清晰的下一步画布产物。',
@@ -1785,6 +1799,8 @@ const officialAgentCards = [
   {
     name: '故事发展 Agent',
     description: '把灵感扩成故事结构、冲突、人物关系和剧情节奏。',
+    stepKey: 'develop_story',
+    stage: 'ideate',
     profileKey: 'story_director',
     output: '故事总览',
     rolePrompt: '你是故事发展 Agent，负责把灵感、剧本或选区内容扩展为故事结构、冲突、角色关系、剧情节奏和可继续拆解的文本节点。',
@@ -1796,6 +1812,8 @@ const officialAgentCards = [
   {
     name: '角色场景 Agent',
     description: '提取角色外观、场景气氛、道具和一致性锚点。',
+    stepKey: 'extract_assets',
+    stage: 'visualize',
     profileKey: 'custom_agent',
     output: '角色/场景',
     rolePrompt: '你是角色场景 Agent，负责提取角色外观、服装、道具、场景、光线、色彩和连续性约束，输出可写入画布的角色与场景设定。',
@@ -1807,6 +1825,8 @@ const officialAgentCards = [
   {
     name: '分镜导演 Agent',
     description: '把故事拆成镜头、景别、动作、情绪和生成链路。',
+    stepKey: 'plan_storyboard',
+    stage: 'visualize',
     profileKey: 'storyboard_director',
     output: '分镜计划',
     rolePrompt: '你是分镜导演 Agent，负责把故事或选区拆成镜号、景别、动作、情绪、画面提示词，以及首帧图片和视频生成链路。',
@@ -1818,6 +1838,8 @@ const officialAgentCards = [
   {
     name: 'Prompt 精修 Agent',
     description: '把口语描述改成适合图片/视频生成的稳定提示词。',
+    stepKey: 'polish_prompt',
+    stage: 'visualize',
     profileKey: 'prompt_polisher',
     output: '精修 Prompt',
     rolePrompt: '你是 Prompt 精修 Agent，负责把口语化描述、角色设定、分镜计划改写成适合图片和视频生成的稳定提示词。',
@@ -1829,6 +1851,8 @@ const officialAgentCards = [
   {
     name: '制片调度 Agent',
     description: '整理缺失输入、创建媒体占位，并等待用户确认消耗。',
+    stepKey: 'prepare_generation',
+    stage: 'animate',
     profileKey: 'production_planner',
     output: '生成任务',
     rolePrompt: '你是制片调度 Agent，负责检查画布中缺失的生成输入，创建图片、视频、音频占位节点，并在任何消耗灵感值的动作前等待用户确认。',
@@ -1892,6 +1916,7 @@ const agentPanel = reactive({
   loadingRuns: false,
   confirmingCost: false,
   historyOpen: false,
+  agentAssignments: {},
   messages: [],
   templates: [],
   history: [],
@@ -2219,7 +2244,7 @@ const canUndo = computed(() => historyStack.value.length > 0)
 const canRedo = computed(() => redoStack.value.length > 0)
 const zoomLabel = computed(() => `${Math.round((viewport.value?.zoom || 1) * 100)}%`)
 const isCompactCanvas = computed(() => frameSize.width <= 900)
-const pendingAgentActionCount = computed(() => (agentPanel.pendingAction ? 1 : 0) + (agentPanel.activeRun?.status === 'waiting_cost_confirmation' ? 1 : 0))
+const pendingAgentActionCount = computed(() => (agentPanel.pendingAction ? 1 : 0) + (agentPanel.activeRun?.run?.status === 'waiting_cost_confirmation' ? 1 : 0))
 const hasAgentTemplateSelection = computed(() => Boolean(getSelectedAgentTemplate()))
 const agentSessionHistory = computed(() => agentPanel.history.slice(0, 8))
 const agentRunHistory = computed(() => agentPanel.runs.slice(0, 8))
@@ -2741,6 +2766,7 @@ function buildAgentContextSnapshot(options = {}) {
     agentProfile: options.agentProfile || agentTemplateId || agentPanel.profile,
     agentTemplateId,
     agentName,
+    agentAssignments: getAgentAssignmentsSnapshot(),
     modelCode: options.modelCode || targetNode?.agentModelCode || agentPanel.modelCode,
     agentModelCode: options.modelCode || targetNode?.agentModelCode || agentPanel.modelCode
   }
@@ -2932,6 +2958,36 @@ function getSelectedAgentTemplate() {
   return agentPanel.templates.find((item) => item.id === agentPanel.profile) || null
 }
 
+function getAgentAssignmentsSnapshot() {
+  return Object.fromEntries(
+    Object.entries(agentPanel.agentAssignments || {})
+      .map(([stepKey, templateId]) => [stepKey, String(templateId || '').trim()])
+      .filter(([, templateId]) => templateId)
+  )
+}
+
+function getAssignedAgentId(stepKey) {
+  return String(agentPanel.agentAssignments?.[stepKey] || '').trim()
+}
+
+function getAssignedAgentTemplate(stepKey) {
+  const assignedId = getAssignedAgentId(stepKey)
+  return assignedId ? agentPanel.templates.find((template) => template.id === assignedId) || null : null
+}
+
+function getAssignedAgentName(agent) {
+  return getAssignedAgentTemplate(agent.stepKey)?.name || agent.name
+}
+
+function getAgentStageLabel(stage) {
+  return {
+    ideate: '构思',
+    visualize: '视觉',
+    animate: '生成',
+    deploy: '交付'
+  }[stage] || '阶段'
+}
+
 function getAgentHistorySummary(item) {
   const action = item?.pendingAction || item?.latestAction
   const event = item?.events?.at?.(-1)
@@ -2969,6 +3025,10 @@ function setActiveAgentRun(timeline) {
   agentPanel.sessionId = timeline.run.sessionId || timeline.latestSession?.id || agentPanel.sessionId
   agentPanel.targetNodeId = timeline.run.targetNodeId || ''
   agentPanel.sourceSurface = timeline.run.sourceSurface || 'panel'
+  const assignments = timeline.run.contextSnapshot?.agentAssignments
+  if (assignments && typeof assignments === 'object') {
+    agentPanel.agentAssignments = { ...assignments }
+  }
 }
 
 function getAgentRunHistorySummary(item) {
@@ -3039,11 +3099,27 @@ function getAgentRunMeta(timeline) {
   return `${summary.agentName || 'Agent Team'} · ${getAgentModelLabel(summary.modelCode || agentPanel.modelCode)} · 上下文 ${contextCount} · 产物 ${artifactCount}`
 }
 
+function getAgentRunTeamLine(timeline) {
+  const team = timeline?.run?.summary?.agentTeam
+  if (!Array.isArray(team) || !team.length) return ''
+  const customCount = team.filter((item) => item?.source === 'custom').length
+  const names = team.slice(0, 4).map((item) => item.agentName).filter(Boolean).join(' → ')
+  const extra = team.length > 4 ? ` → 等 ${team.length} 位` : ''
+  const customText = customCount ? ` · 我的 Agent ${customCount} 位参与` : ''
+  return `${names}${extra}${customText}`
+}
+
+function getLatestAgentHandoffStep(timeline) {
+  const steps = Array.isArray(timeline?.steps) ? timeline.steps : []
+  return [...steps].reverse().find((step) => step?.output?.question || step?.output?.next || step?.output?.completed) || null
+}
+
 function getAgentRunNextAction(timeline) {
   const run = timeline?.run || {}
-  if (run.status === 'waiting_cost_confirmation') return '下一步：确认媒体生成'
+  const handoff = getLatestAgentHandoffStep(timeline)
+  if (run.status === 'waiting_cost_confirmation') return handoff?.output?.question || '下一步：确认媒体生成'
   if (run.status === 'running') return 'Agent Team 正在推进'
-  if (run.status === 'succeeded') return '工作流已完成'
+  if (run.status === 'succeeded') return handoff?.output?.completed || '工作流已完成'
   if (run.status === 'failed') return '需要处理失败阶段'
   if (run.status === 'cancelled') return '工作流已取消'
   return '等待新的创作目标'
@@ -3064,13 +3140,15 @@ function getAgentStepInputSummary(step) {
 
 function getAgentStepArtifactSummary(step) {
   const artifacts = step?.artifacts || []
+  const completed = String(step?.output?.completed || '').trim()
+  const next = String(step?.output?.next || '').trim()
   if (!artifacts.length) return getAgentStepInputSummary(step) || '等待产物'
   const written = artifacts.filter((artifact) => artifact.canvasNodeId).length
   const waiting = artifacts.filter((artifact) => artifact.status === 'waiting_cost_confirmation').length
   const names = artifacts.slice(0, 3).map((artifact) => getAgentArtifactTypeLabel(artifact.artifactType)).join('、')
   const extra = artifacts.length > 3 ? `等 ${artifacts.length} 项` : ''
   const suffix = waiting ? `，${waiting} 项待确认` : written ? `，${written} 项已写入` : ''
-  return `${names}${extra}${suffix}`
+  return `${completed || names}${completed ? `；产物：${names}${extra}${suffix}` : `${extra}${suffix}`}${next ? `；${next}` : ''}`
 }
 
 function getAgentArtifactPreview(artifact) {

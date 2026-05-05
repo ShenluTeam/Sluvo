@@ -974,6 +974,110 @@ def _agent_run_origin(context_snapshot: Dict[str, Any]) -> tuple[float, float]:
     return 180.0, 180.0
 
 
+SLUVO_AGENT_WORKFLOW_SPECS = [
+    {
+        "stepKey": "understand_story",
+        "stage": "ideate",
+        "agentName": "创作总监",
+        "agentProfile": "canvas_agent",
+        "title": "理解目标",
+        "completed": "已完成目标理解",
+        "next": "接下来由故事发展 Agent 形成故事总览",
+        "question": "目标方向是否正确？",
+        "artifacts": [("故事总览", "text_node", "auto_canvas")],
+    },
+    {
+        "stepKey": "develop_story",
+        "stage": "ideate",
+        "agentName": "故事发展 Agent",
+        "agentProfile": "story_director",
+        "title": "发展故事",
+        "completed": "已完成故事结构整理",
+        "next": "接下来提取角色、场景、道具和一致性锚点",
+        "question": "故事总览是否符合预期？",
+        "artifacts": [("故事结构", "storyboard_plan", "auto_canvas")],
+    },
+    {
+        "stepKey": "extract_assets",
+        "stage": "visualize",
+        "agentName": "角色场景 Agent",
+        "agentProfile": "story_director",
+        "title": "提取角色与场景",
+        "completed": "已完成角色与场景设定",
+        "next": "接下来分镜导演会拆解镜头链路",
+        "question": "角色和场景设定是否满意？",
+        "artifacts": [("角色设定", "character_brief", "auto_canvas"), ("场景设定", "scene_brief", "auto_canvas")],
+    },
+    {
+        "stepKey": "plan_storyboard",
+        "stage": "visualize",
+        "agentName": "分镜导演 Agent",
+        "agentProfile": "storyboard_director",
+        "title": "规划分镜链路",
+        "completed": "已完成分镜链路规划",
+        "next": "接下来 Prompt 精修 Agent 会稳定首帧提示词",
+        "question": "分镜节奏和镜头数量是否合适？",
+        "artifacts": [("分镜计划", "storyboard_plan", "auto_canvas")],
+    },
+    {
+        "stepKey": "polish_prompt",
+        "stage": "visualize",
+        "agentName": "Prompt 精修 Agent",
+        "agentProfile": "prompt_polisher",
+        "title": "精修生成提示词",
+        "completed": "已完成首帧 Prompt 精修",
+        "next": "接下来制片调度 Agent 会创建媒体生成占位",
+        "question": "提示词是否需要补充风格或镜头约束？",
+        "artifacts": [("首帧 Prompt", "prompt", "auto_canvas")],
+    },
+    {
+        "stepKey": "prepare_generation",
+        "stage": "animate",
+        "agentName": "制片调度 Agent",
+        "agentProfile": "production_planner",
+        "title": "创建媒体占位",
+        "completed": "已创建媒体生成占位",
+        "next": "确认后提交图片和视频生成任务",
+        "question": "是否确认消耗灵感值并提交生成？",
+        "artifacts": [("首帧图片占位", "image_placeholder", "requires_cost_confirmation"), ("视频生成占位", "video_placeholder", "requires_cost_confirmation")],
+    },
+]
+
+
+def _agent_workflow_public_specs() -> List[Dict[str, Any]]:
+    return [
+        {
+            "stepKey": item["stepKey"],
+            "stage": item["stage"],
+            "agentName": item["agentName"],
+            "agentProfile": item["agentProfile"],
+            "title": item["title"],
+            "completed": item["completed"],
+            "next": item["next"],
+            "question": item["question"],
+            "artifacts": [
+                {"title": artifact_title, "artifactType": artifact_type, "writePolicy": policy}
+                for artifact_title, artifact_type, policy in item["artifacts"]
+            ],
+        }
+        for item in SLUVO_AGENT_WORKFLOW_SPECS
+    ]
+
+
+def _agent_template_for_step(session: Session, context_snapshot: Dict[str, Any], step_key: str) -> Optional[SluvoAgentTemplate]:
+    assignments = context_snapshot.get("agentAssignments") if isinstance(context_snapshot, dict) else {}
+    if not isinstance(assignments, dict):
+        return None
+    template_ref = str(assignments.get(step_key) or "").strip()
+    template_id = _decode_optional_safe(template_ref)
+    if not template_id:
+        return None
+    template = session.get(SluvoAgentTemplate, template_id)
+    if template and template.deleted_at is None:
+        return template
+    return None
+
+
 def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
     prompt = _agent_run_prompt(goal, context_snapshot)
     if artifact_type == "text_node":
@@ -1219,24 +1323,48 @@ def create_sluvo_agent_run(
     append_sluvo_agent_event(session, agent_session=agent_session, role="user", event_type="run_goal", payload={"content": clean_goal, "runId": encode_id(run.id)})
 
     all_artifacts: List[SluvoAgentArtifact] = []
-    step_specs = [
-        ("understand_story", agent_name or "创作总监", "canvas_agent", "理解目标", [("故事总览", "text_node", "auto_canvas")]),
-        ("extract_assets", "角色场景 Agent", "story_director", "提取角色与场景", [("角色设定", "character_brief", "auto_canvas"), ("场景设定", "scene_brief", "auto_canvas")]),
-        ("plan_storyboard", "分镜导演 Agent", "storyboard_director", "规划分镜链路", [("分镜计划", "storyboard_plan", "auto_canvas"), ("首帧 Prompt", "prompt", "auto_canvas")]),
-        ("prepare_generation", "制片调度 Agent", "production_planner", "创建媒体占位", [("首帧图片占位", "image_placeholder", "requires_cost_confirmation"), ("视频生成占位", "video_placeholder", "requires_cost_confirmation")]),
-    ]
-    for order_index, (step_key, step_agent_name, step_profile, title, artifact_specs) in enumerate(step_specs):
+    used_agents: List[Dict[str, Any]] = []
+    for order_index, spec in enumerate(SLUVO_AGENT_WORKFLOW_SPECS):
+        step_key = str(spec["stepKey"])
+        step_template = _agent_template_for_step(session, context_snapshot or {}, step_key)
+        active_step_template = step_template or (template if order_index == 0 else None)
+        step_agent_name = active_step_template.name if active_step_template else str(spec["agentName"])
+        step_profile = active_step_template.profile_key if active_step_template else str(spec["agentProfile"])
+        step_model_code = normalize_sluvo_agent_model_code(active_step_template.model_code if active_step_template else normalized_model)
+        title = str(spec["title"])
+        artifact_specs = spec["artifacts"]
+        used_agents.append(
+            {
+                "stepKey": step_key,
+                "stage": spec["stage"],
+                "agentName": step_agent_name,
+                "agentProfile": step_profile,
+                "agentTemplateId": encode_id(active_step_template.id) if active_step_template else None,
+                "source": "custom" if active_step_template else "official",
+            }
+        )
+        next_agent_name = None
+        if order_index + 1 < len(SLUVO_AGENT_WORKFLOW_SPECS):
+            next_spec = SLUVO_AGENT_WORKFLOW_SPECS[order_index + 1]
+            next_template = _agent_template_for_step(session, context_snapshot or {}, str(next_spec["stepKey"]))
+            next_agent_name = next_template.name if next_template else str(next_spec["agentName"])
         step = _create_agent_run_step(
             session,
             run=run,
             step_key=step_key,
             agent_name=step_agent_name,
             agent_profile=step_profile,
-            model_code=normalized_model,
+            model_code=step_model_code,
             title=title,
             order_index=order_index,
-            agent_template_id=template.id if template and order_index == 0 else None,
-            input_payload={"goal": clean_goal, "contextCount": _agent_run_context_count(context_snapshot or {})},
+            agent_template_id=active_step_template.id if active_step_template else None,
+            input_payload={
+                "goal": clean_goal,
+                "contextCount": _agent_run_context_count(context_snapshot or {}),
+                "stage": spec["stage"],
+                "handoffFrom": used_agents[order_index - 1]["agentName"] if order_index > 0 else None,
+                "handoffTo": step_agent_name,
+            },
         )
         step_artifacts = [
             _create_agent_run_artifact(
@@ -1245,14 +1373,26 @@ def create_sluvo_agent_run(
                 step=step,
                 title=artifact_title,
                 artifact_type=artifact_type,
-                body=_artifact_body(artifact_type, clean_goal, context_snapshot or {}, normalized_model),
+                body=_artifact_body(artifact_type, clean_goal, context_snapshot or {}, step_model_code),
                 write_policy=policy,
                 preview={"estimatedWrite": "canvas_node", "estimatePoints": 20 if artifact_type == "video_placeholder" else 8 if artifact_type == "image_placeholder" else 0},
             )
             for artifact_title, artifact_type, policy in artifact_specs
         ]
         all_artifacts.extend(step_artifacts)
-        _finish_agent_run_step(session, step, output={"artifactCount": len(step_artifacts)}, status="waiting_cost_confirmation" if step_key == "prepare_generation" else "succeeded")
+        _finish_agent_run_step(
+            session,
+            step,
+            output={
+                "artifactCount": len(step_artifacts),
+                "stage": spec["stage"],
+                "completed": spec["completed"],
+                "next": spec["next"],
+                "question": spec["question"],
+                "handoffTo": next_agent_name,
+            },
+            status="waiting_cost_confirmation" if step_key == "prepare_generation" else "succeeded",
+        )
     session.commit()
     try:
         _write_agent_run_artifacts_to_canvas(session, run=run, user=user, artifacts=all_artifacts)
@@ -1265,6 +1405,10 @@ def create_sluvo_agent_run(
             "nodeCount": len(all_artifacts),
             "edgeCount": max(0, len(all_artifacts) - 1),
             "estimatePoints": 28,
+            "workflow": _agent_workflow_public_specs(),
+            "agentTeam": used_agents,
+            "awaitingAgent": used_agents[-1]["agentName"] if used_agents else None,
+            "nextQuestion": SLUVO_AGENT_WORKFLOW_SPECS[-1]["question"],
         })
         run.updated_at = _utc_now()
         session.add(run)

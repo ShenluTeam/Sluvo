@@ -335,15 +335,14 @@ body {
   background: rgba(205, 244, 124, 0.08);
 }
 
-.canvas-agent-team-roster__grid {
+.canvas-agent-flow {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.canvas-agent-team-roster article {
+.canvas-agent-flow article {
   display: grid;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 8px;
@@ -351,17 +350,38 @@ body {
   background: rgba(255, 255, 255, 0.045);
 }
 
-.canvas-agent-team-roster article.is-active {
+.canvas-agent-flow article.is-active {
   border-color: rgba(205, 244, 124, 0.4);
   background: rgba(205, 244, 124, 0.1);
 }
 
-.canvas-agent-team-roster article div {
+.canvas-agent-flow__body {
   display: grid;
-  gap: 2px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
 }
 
-.canvas-agent-team-roster article b {
+.canvas-agent-flow__body > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: #151812;
+  background: #cdf47c;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.canvas-agent-flow__body > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.canvas-agent-flow article b {
   overflow: hidden;
   color: #f6f6ef;
   font-size: 12px;
@@ -369,29 +389,43 @@ body {
   white-space: nowrap;
 }
 
-.canvas-agent-team-roster article small,
-.canvas-agent-team-roster article p {
+.canvas-agent-flow article small,
+.canvas-agent-flow article p {
   margin: 0;
   color: rgba(242, 242, 234, 0.6);
   font-size: 11px;
   line-height: 1.35;
 }
 
-.canvas-agent-team-roster article p {
+.canvas-agent-flow article p {
   display: -webkit-box;
-  min-height: 30px;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.canvas-agent-team-roster article footer {
+.canvas-agent-flow__assign {
+  display: grid;
+  gap: 6px;
+}
+
+.canvas-agent-flow__assign select {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  padding: 7px 8px;
+  color: #fff7de;
+  background: #151a12;
+  font-size: 12px;
+}
+
+.canvas-agent-flow__actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
 
-.canvas-agent-team-roster article button {
+.canvas-agent-flow article button {
   min-height: 28px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 7px;
@@ -400,7 +434,7 @@ body {
   font-size: 11px;
 }
 
-.canvas-agent-team-roster article button:last-child {
+.canvas-agent-flow article button:last-child {
   color: #f6f6ef;
   background: rgba(255, 255, 255, 0.07);
 }

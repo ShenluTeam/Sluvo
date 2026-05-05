@@ -11,7 +11,7 @@ The first screen after login should be a useful project or canvas experience, no
 
 The root homepage has two states:
 - Logged out: a black/gold brand entry for Sluvo as the infinite-canvas creation workspace under Shenlu Video AI.
-- Logged in: an OiiOii-style creation workbench with a central command input, quick skill actions, recent projects, and showcase templates.
+- Logged in: a Sluvo creation workbench with a central command input, quick skill actions, recent projects, and showcase templates.
 
 The logged-in homepage should still behave like a tool surface, not a traditional marketing landing page.
 
@@ -62,7 +62,7 @@ MVP canvas interactions:
 - Open inspector from node click
 - Run node action from node or inspector
 - Upload image, video, and audio files into a canvas asset node with instant preview and visible upload state
-- Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, and review an OiiOii-style Agent Team timeline made of stages, artifacts, canvas writes, and media confirmation controls.
+- Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, and review a staged Agent Team timeline made of stages, artifacts, canvas writes, and media confirmation controls.
 - Use the text-node local composer below a text node to analyze, expand, or rewrite only that node; the response should render as Markdown inside the same node and should not appear in the right-side Agent panel.
 - Select and copy rendered Markdown text inside text nodes without triggering node drag or canvas selection.
 - Add an Agent node to the canvas and connect it to creative inputs/outputs like other workflow nodes.

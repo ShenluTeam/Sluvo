@@ -24,7 +24,7 @@ Changed files:
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
-- Simplified the 创作总监 panel into a clearer OiiOii-like brief: current task, progress, next action, compact run history, and stage summaries.
+- Simplified the 创作总监 panel into a clearer staged brief: current task, progress, next action, compact run history, and stage summaries.
 - Collapsed verbose artifact bodies into short status chips so the Agent timeline reads at a glance instead of like raw logs.
 - Reduced quick actions and visual noise while keeping Agent Team settings, history restore, step retry, and media confirmation available.
 
@@ -53,7 +53,7 @@ Changed files:
 Impact scope:
 - Added `SluvoAgentRun`, `SluvoAgentStep`, and `SluvoAgentArtifact` persistence plus lightweight create-table migrations.
 - Added Agent Run APIs for create/list/read/continue/confirm-cost/retry while keeping legacy session/action proposal endpoints compatible.
-- The right-side 创作总监 panel now starts OiiOii-style Agent Team workflow runs and renders a stage timeline with artifacts, automatic text/placeholder canvas writes, run history restore, media cost confirmation, and failed-step retry affordances.
+- The right-side 创作总监 panel now starts staged Agent Team workflow runs and renders a stage timeline with artifacts, automatic text/placeholder canvas writes, run history restore, media cost confirmation, and failed-step retry affordances.
 
 Verification suggestions:
 - `python3 -m py_compile backend/models.py backend/schemas.py backend/services/sluvo_service.py backend/routers/sluvo.py`
@@ -252,7 +252,7 @@ Changed files:
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
-- Adjusted the logged-in homepage toward an OiiOii-style information flow: recent projects are now a single horizontal row with `新建项目` and `查看全部` actions, platform highlights sit below, and the community block moves to the bottom as a larger scroll discovery space.
+- Adjusted the logged-in homepage toward a creator-workbench information flow: recent projects are now a single horizontal row with `新建项目` and `查看全部` actions, platform highlights sit below, and the community block moves to the bottom as a larger scroll discovery space.
 - Added a full project space at `/projects`, opened by the left rail folder icon and by the homepage `查看全部` action.
 - Added a recycle bin at `/trash`, opened by the left rail trash icon, backed by soft-deleted Sluvo projects from `GET /api/sluvo/projects?includeDeleted=true`.
 - Exposed `deletedAt` in the Sluvo project serializer so the recycle bin can show retention timing.
@@ -595,7 +595,7 @@ Changed files:
 - `backend/tests/test_sluvo_service.py`
 
 Impact scope:
-- Added an OiiOii-style new-story Agent flow: when the user enters an inspiration/script prompt, the backend routes it to the story director and creates a production pipeline proposal.
+- Added a staged new-story Agent flow: when the user enters an inspiration/script prompt, the backend routes it to the story director and creates a production pipeline proposal.
 - The production pipeline writes canvas product nodes for story overview, character/prop extraction, scene setup, storyboard plan, first-frame image generation, and video generation.
 - Updated the Agent panel empty state and composer placeholder so users understand that conversation stays in the panel while the canvas receives approved creative artifacts.
 
@@ -668,7 +668,7 @@ Impact scope:
 - Removed mock recent project cards from the homepage and kept a single new-project placeholder entry.
 - Added a logout action to the logged-in homepage topbar.
 - Refined logged-out homepage copy into a more premium, mysterious Agent-canvas positioning while keeping the infinite canvas workflow clear.
-- Replaced the OiiOii-like logged-in showcase cards with a Sluvo-specific Agent capability panel.
+- Replaced the previous logged-in showcase cards with a Sluvo-specific Agent capability panel.
 - Enhanced the logged-out homepage visual preview with an Agent Router core and role-specific Agent capability nodes.
 - Removed secondary brand subtitles from the Sluvo logo lockups and rearranged the logged-out Agent nodes into a more spacious orbital layout.
 - Removed the center Agent Canvas card from the logged-out preview and refined the hero copy spacing for a cleaner premium layout.
@@ -737,7 +737,7 @@ Impact scope:
 - Removed mock recent project cards from the homepage and kept a single new-project placeholder entry.
 - Added a logout action to the logged-in homepage topbar.
 - Refined logged-out homepage copy into a more premium, mysterious Agent-canvas positioning while keeping the infinite canvas workflow clear.
-- Replaced the OiiOii-like logged-in showcase cards with a Sluvo-specific Agent capability panel.
+- Replaced the previous logged-in showcase cards with a Sluvo-specific Agent capability panel.
 - Enhanced the logged-out homepage visual preview with an Agent Router core and role-specific Agent capability nodes.
 - Removed secondary brand subtitles from the Sluvo logo lockups and rearranged the logged-out Agent nodes into a more spacious orbital layout.
 - Removed the center Agent Canvas card from the logged-out preview and refined the hero copy spacing for a cleaner premium layout.
@@ -1100,4 +1100,21 @@ Impact scope:
 Verification suggestions:
 - Run `npm run build`.
 - Drag a direct connection into empty space, leave the reference menu open, then pan/zoom the canvas and confirm the menu stays attached to the same canvas release point.
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Reworked the Sluvo Agent Team flow around a staged handoff model: official agents now appear as a fixed, readable sequence of creation stages instead of a generic card pile.
+- Added per-stage custom Agent assignment so user-created agents can replace official roles while still collaborating inside the same run.
+- Enriched run summaries with workflow specs, resolved team membership, stage labels, handoff copy, and artifact definitions for recovery and clearer UI display.
+- Fixed the waiting-cost badge count to read the active run status correctly.
+
+Verification suggestions:
+- Run `python3 -m py_compile backend/services/sluvo_service.py`.
+- Run `npm run build --workspace sluvo-web`.
+- Create or copy a custom Agent, assign it to one official stage, start a run, and verify the timeline shows that custom Agent participating in the team handoff.
 
