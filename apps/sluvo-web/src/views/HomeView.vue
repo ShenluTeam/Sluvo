@@ -97,13 +97,31 @@
         <button class="rail-logo" type="button" aria-label="Sluvo 首页" @click="scrollToTop">
           <img :src="logoUrl" alt="" />
         </button>
-        <button class="rail-tool is-active" type="button" aria-label="首页">
+        <button
+          class="rail-tool"
+          :class="{ 'is-active': activeWorkbenchSection === 'top' }"
+          type="button"
+          aria-label="首页"
+          @click="scrollToTop"
+        >
           <Compass :size="20" />
         </button>
-        <button class="rail-tool" type="button" aria-label="我的项目" @click="openProjectsSpace">
+        <button
+          class="rail-tool"
+          :class="{ 'is-active': activeWorkbenchSection === 'projects' }"
+          type="button"
+          aria-label="我的项目"
+          @click="scrollToProjects"
+        >
           <FolderOpen :size="20" />
         </button>
-        <button class="rail-tool" type="button" aria-label="社区" @click="scrollToCommunity">
+        <button
+          class="rail-tool"
+          :class="{ 'is-active': activeWorkbenchSection === 'community' }"
+          type="button"
+          aria-label="社区"
+          @click="scrollToCommunity"
+        >
           <Image :size="20" />
         </button>
         <span class="rail-separator" />
@@ -493,7 +511,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowUpRight,
@@ -539,6 +557,7 @@ const authStore = useAuthStore()
 const projectStore = useProjectStore()
 const projectsSection = ref(null)
 const communitySection = ref(null)
+const activeWorkbenchSection = ref('top')
 const promptText = ref('')
 const projectFeedback = ref('')
 const deletingProjectIds = ref(new Set())
@@ -1139,11 +1158,17 @@ function formatProjectMeta(project) {
 }
 
 function scrollToTop() {
+  activeWorkbenchSection.value = 'top'
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function scrollToCapabilities() {
   document.getElementById('capabilities')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function scrollToProjects() {
+  activeWorkbenchSection.value = 'projects'
+  projectsSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function openProjectsSpace() {
@@ -1155,7 +1180,31 @@ function openTrash() {
 }
 
 function scrollToCommunity() {
+  activeWorkbenchSection.value = 'community'
   communitySection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function scrollToRouteHash() {
+  if (route.hash !== '#community' || !showWorkbench.value) return
+  nextTick(() => {
+    activeWorkbenchSection.value = 'community'
+    communitySection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+function updateActiveWorkbenchSection() {
+  if (!showWorkbench.value) return
+  const activationLine = Math.min(220, Math.max(120, window.innerHeight * 0.28))
+  const projectTop = projectsSection.value?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
+  const communityTop = communitySection.value?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
+
+  if (communityTop <= activationLine) {
+    activeWorkbenchSection.value = 'community'
+  } else if (projectTop <= activationLine) {
+    activeWorkbenchSection.value = 'projects'
+  } else {
+    activeWorkbenchSection.value = 'top'
+  }
 }
 
 onMounted(() => {
@@ -1163,8 +1212,20 @@ onMounted(() => {
   loadCommunityCanvases()
   startShowcaseRotation()
   startHeadlineRotation()
+  scrollToRouteHash()
   window.addEventListener('storage', handleStorage)
+  window.addEventListener('scroll', updateActiveWorkbenchSection, { passive: true })
+  window.addEventListener('resize', updateActiveWorkbenchSection)
+  nextTick(updateActiveWorkbenchSection)
 })
+
+watch(
+  () => [route.name, route.hash, showWorkbench.value],
+  () => {
+    scrollToRouteHash()
+    nextTick(updateActiveWorkbenchSection)
+  }
+)
 
 watch(
   () => authStore.isAuthenticated,
@@ -1182,6 +1243,8 @@ onBeforeUnmount(() => {
   stopShowcaseRotation()
   stopHeadlineRotation()
   window.removeEventListener('storage', handleStorage)
+  window.removeEventListener('scroll', updateActiveWorkbenchSection)
+  window.removeEventListener('resize', updateActiveWorkbenchSection)
 })
 </script>
 

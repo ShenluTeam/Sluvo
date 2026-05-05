@@ -1467,7 +1467,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { ArrowUp, ArrowUpDown, AudioWaveform, Bot, Check, ChevronDown, Download, Eye, Languages, ListChecks, Minus, Music2, Plus, Send, SlidersHorizontal, Star, Upload, X } from 'lucide-vue-next'
@@ -2345,6 +2345,9 @@ onMounted(() => {
   window.addEventListener('mousemove', handleWindowPointerMove)
   window.addEventListener('mouseup', handleWindowPointerUp)
   window.addEventListener('mouseleave', resetHoverEffects)
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('pagehide', flushCanvasSaveOnPageHide)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
   updateFrameSize()
   loadImageGenerationCatalog()
   loadVideoGenerationCatalog()
@@ -2356,6 +2359,9 @@ onMounted(() => {
     frameResizeObserver.observe(canvasFrame.value)
   }
 })
+
+onBeforeRouteLeave(() => flushCanvasSaveBeforeLeaving())
+onBeforeRouteUpdate(() => flushCanvasSaveBeforeLeaving())
 
 onBeforeUnmount(() => {
   deleteKeySink.value?.removeEventListener('keydown', handleDeleteSinkNative, true)
@@ -2375,6 +2381,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('mousemove', handleWindowPointerMove)
   window.removeEventListener('mouseup', handleWindowPointerUp)
   window.removeEventListener('mouseleave', resetHoverEffects)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('pagehide', flushCanvasSaveOnPageHide)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   frameResizeObserver?.disconnect()
   window.clearTimeout(autoSaveTimer)
   window.clearInterval(uploadTimer)
@@ -2482,7 +2491,8 @@ async function publishCurrentCanvas() {
   publishDialog.submitting = true
   publishDialog.error = ''
   try {
-    await saveCanvasNow()
+    const canContinue = await saveBeforeCriticalCanvasAction()
+    if (!canContinue) return
     const payload = await publishSluvoProjectToCommunity(projectId, {
       title: publishForm.title.trim() || projectTitle.value || copy.untitled,
       description: publishForm.description.trim() || null,
@@ -3088,6 +3098,8 @@ async function approveAgentAction() {
   agentPanel.busy = true
   agentPanel.error = ''
   try {
+    const canContinue = await saveBeforeCriticalCanvasAction()
+    if (!canContinue) return
     const targetNodeId = agentPanel.pendingAction.targetNodeId || agentPanel.pendingAction.input?.contextSummary?.targetNodeId || ''
     const response = await approveSluvoAgentAction(agentPanel.pendingAction.id)
     if (targetNodeId) {
@@ -3821,7 +3833,70 @@ function scheduleCanvasSave(delay = 1200) {
   }, delay)
 }
 
-async function saveCanvasNow() {
+function hasUnsavedCanvasChanges() {
+  return (
+    saveStatus.value === 'dirty' ||
+    saveStatus.value === 'saving' ||
+    saveStatus.value === 'error' ||
+    saveStatus.value === 'conflict' ||
+    isSavingCanvas.value ||
+    saveAfterCurrentSave.value ||
+    saveAfterActiveInteraction.value ||
+    saveAfterTextEdit.value ||
+    saveAfterUploads.value
+  )
+}
+
+function persistCriticalCanvasChange(delay = 120) {
+  if (!activeCanvas.value?.id || isHydratingCanvas.value) return
+  finishDirectTextEdit()
+  saveCanvasNow({ ignoreInteraction: true })
+  scheduleCanvasSave(delay)
+}
+
+async function saveBeforeCriticalCanvasAction() {
+  finishDirectTextEdit()
+  if (hasActiveCanvasUploads()) {
+    saveStatus.value = 'dirty'
+    saveAfterUploads.value = true
+    showToast('文件上传中，上传完成后会自动保存')
+    return false
+  }
+  if (!hasUnsavedCanvasChanges()) return true
+  await saveCanvasNow({ ignoreInteraction: true })
+  return saveStatus.value !== 'error' && saveStatus.value !== 'conflict'
+}
+
+async function flushCanvasSaveBeforeLeaving() {
+  finishDirectTextEdit()
+  if (!hasUnsavedCanvasChanges()) return true
+  if (hasActiveCanvasUploads()) {
+    return window.confirm('文件还在上传，离开后未完成的素材可能不会保存。确定要离开吗？')
+  }
+  await saveCanvasNow({ ignoreInteraction: true })
+  if (!hasUnsavedCanvasChanges() || saveStatus.value === 'saved') return true
+  return window.confirm('画布还没有保存完成，确定要离开吗？')
+}
+
+function handleBeforeUnload(event) {
+  finishDirectTextEdit()
+  if (!hasUnsavedCanvasChanges()) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+function flushCanvasSaveOnPageHide() {
+  if (!hasUnsavedCanvasChanges() || hasActiveCanvasUploads()) return
+  finishDirectTextEdit()
+  saveCanvasNow({ ignoreInteraction: true })
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'hidden') flushCanvasSaveOnPageHide()
+}
+
+async function saveCanvasNow(options = {}) {
+  const ignoreInteraction = Boolean(options.ignoreInteraction)
   if (suppressCanvasSaveScheduling) return
   if (isHydratingCanvas.value || !activeCanvas.value?.id) return
   if (isSavingCanvas.value) {
@@ -3830,13 +3905,13 @@ async function saveCanvasNow() {
     window.clearTimeout(autoSaveTimer)
     return
   }
-  if (isDirectTextEditing()) {
+  if (isDirectTextEditing() && !ignoreInteraction) {
     saveAfterTextEdit.value = true
     saveStatus.value = 'dirty'
     window.clearTimeout(autoSaveTimer)
     return
   }
-  if (hasActiveCanvasInteraction()) {
+  if (hasActiveCanvasInteraction() && !ignoreInteraction) {
     saveAfterActiveInteraction.value = true
     saveStatus.value = 'dirty'
     window.clearTimeout(autoSaveTimer)
@@ -3848,6 +3923,11 @@ async function saveCanvasNow() {
     window.clearTimeout(autoSaveTimer)
     showToast('文件上传中，上传完成后自动保存')
     return
+  }
+  if (ignoreInteraction) {
+    saveAfterActiveInteraction.value = false
+    saveAfterTextEdit.value = false
+    saveAfterUploads.value = false
   }
   window.clearTimeout(autoSaveTimer)
   const savePlan = buildCanvasSavePlan()
@@ -5863,7 +5943,7 @@ async function uploadReferenceFile(nodeId, referenceId, file, previewUrl) {
       assetId: asset.id || '',
       storageObjectId: response?.storageObjectId || asset.storageObjectId || ''
     })
-    flushDeferredCanvasSave(220)
+    persistCriticalCanvasChange(120)
   } catch (error) {
     patchManualReferenceImage(nodeId, referenceId, {
       status: 'error',
@@ -6245,7 +6325,7 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
   releaseUploadSignature(nodeId)
   dedupeUploadedAssetNodes({ preferId: nodeId, silent: true })
   showToast('上传成功')
-  flushDeferredCanvasSave(120)
+  persistCriticalCanvasChange(120)
 }
 
 function retryUploadedNode(nodeId) {
@@ -8833,6 +8913,7 @@ function completeDirectImageGeneration(nodeId, image) {
     }
   })
   showToast('图片生成完成')
+  persistCriticalCanvasChange(120)
 }
 
 function completeDirectVideoGeneration(nodeId, video) {
@@ -8852,6 +8933,7 @@ function completeDirectVideoGeneration(nodeId, video) {
     }
   })
   showToast('视频生成完成')
+  persistCriticalCanvasChange(120)
 }
 
 function completeDirectAudioGeneration(nodeId, audio) {
@@ -8867,6 +8949,7 @@ function completeDirectAudioGeneration(nodeId, audio) {
     }
   })
   showToast('音频生成完成')
+  persistCriticalCanvasChange(120)
 }
 
 function failDirectImageGeneration(nodeId, message) {
@@ -9896,7 +9979,7 @@ function toggleSnap() {
 }
 
 function goHome() {
-  router.push({ name: 'home' })
+  router.push({ name: 'workspace' })
 }
 
 function logoutCanvas() {

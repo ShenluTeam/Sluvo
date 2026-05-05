@@ -136,7 +136,7 @@ function goProjects() {
 }
 
 function goCommunity() {
-  router.push({ name: 'home', hash: '#community' })
+  router.push({ name: 'workspace', hash: '#community' })
 }
 
 async function restoreProject(project) {
