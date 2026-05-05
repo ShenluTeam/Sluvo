@@ -130,7 +130,7 @@ onMounted(() => {
 })
 
 function goHome() {
-  router.push({ name: 'home' })
+  router.push({ name: 'workspace' })
 }
 
 function goTrash() {

@@ -31,7 +31,7 @@
 
     <div class="libtv-topbar__right">
       <button class="top-pill top-pill--skills" type="button">Sluvo Skills</button>
-      <span class="top-save-status" :class="`is-${saveStatus}`">{{ saveStatusLabel }}</span>
+      <span class="top-save-status" :class="`is-${saveStatus}`" :title="saveStatusTitle">{{ saveStatusLabel }}</span>
       <button class="top-icon-button" type="button" aria-label="保存" @click="$emit('save')">
         <Save :size="20" />
       </button>
@@ -140,6 +140,10 @@ const props = defineProps({
   saveStatus: {
     type: String,
     default: 'idle'
+  },
+  saveError: {
+    type: String,
+    default: ''
   }
 })
 
@@ -181,6 +185,7 @@ const saveStatusLabel = computed(() => {
   }
   return labels[props.saveStatus] || labels.idle
 })
+const saveStatusTitle = computed(() => (props.saveStatus === 'error' || props.saveStatus === 'conflict' ? props.saveError : ''))
 
 watch(
   () => props.title,

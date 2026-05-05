@@ -66,10 +66,12 @@ body {
   flex-direction: column;
   width: min(408px, calc(100vw - 36px));
   overflow: hidden;
-  border: 1px solid rgba(233, 233, 233, 0.14);
+  border: 1px solid rgba(229, 200, 137, 0.2);
   border-radius: 12px;
   color: #f2f2ea;
-  background: rgba(17, 18, 17, 0.96);
+  background:
+    linear-gradient(180deg, rgba(205, 244, 124, 0.035), transparent 32%),
+    rgba(12, 14, 11, 0.97);
   box-shadow: 0 28px 90px rgba(0, 0, 0, 0.38);
   backdrop-filter: blur(16px);
 }
@@ -149,17 +151,36 @@ body {
 .canvas-agent-panel__controls label {
   display: grid;
   gap: 7px;
-  color: rgba(242, 242, 234, 0.7);
+  color: rgba(229, 200, 137, 0.78);
   font-size: 12px;
+  font-weight: 800;
 }
 
 .canvas-agent-panel__controls select {
   min-width: 0;
-  height: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  height: 40px;
+  padding: 0 34px 0 12px;
+  border: 1px solid rgba(229, 200, 137, 0.28);
   border-radius: 8px;
-  color: #f6f6ef;
-  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+  color: #fff7de;
+  background: #1e241a;
+  color-scheme: dark;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.canvas-agent-panel__controls select:focus {
+  border-color: rgba(205, 244, 124, 0.62);
+  box-shadow:
+    0 0 0 1px rgba(229, 200, 137, 0.18),
+    0 0 0 4px rgba(205, 244, 124, 0.1);
+}
+
+.canvas-agent-panel__controls select option,
+.canvas-agent-template-form select option {
+  background: #1e241a;
+  color: #fff7de;
 }
 
 .canvas-agent-panel__template-actions {
@@ -200,11 +221,12 @@ body {
 .canvas-agent-template-form select {
   width: 100%;
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(229, 200, 137, 0.24);
   border-radius: 8px;
   padding: 8px 9px;
-  color: #f6f6ef;
-  background: rgba(0, 0, 0, 0.22);
+  color: #fff7de;
+  background: #151a12;
+  color-scheme: dark;
 }
 
 .canvas-agent-template-form textarea {
@@ -467,6 +489,11 @@ button {
   background: #050505;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.libtv-canvas-shell :is(input, textarea, [contenteditable="true"], .direct-workflow-node__markdown, .direct-workflow-node__markdown *, .canvas-agent-panel, .canvas-agent-panel *, .publish-dialog, .publish-dialog *) {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .libtv-canvas-frame {
@@ -3512,8 +3539,15 @@ button {
 .direct-workflow-node--prompt_note .direct-workflow-node__frame {
   min-height: 470px;
   max-height: 620px;
-  overflow: auto;
+  overflow: visible;
   padding: 28px 34px;
+  scrollbar-color: rgba(218, 224, 234, 0.44) transparent;
+}
+
+.direct-workflow-node--prompt_note .direct-workflow-node__markdown {
+  max-height: 560px;
+  overflow: auto;
+  padding-right: 4px;
   scrollbar-color: rgba(218, 224, 234, 0.44) transparent;
 }
 
@@ -3928,6 +3962,7 @@ button {
 .text-node-ai-composer textarea {
   min-width: 0;
   width: 100%;
+  overflow: auto;
   resize: vertical;
   border: 0;
   outline: none;
@@ -3936,6 +3971,8 @@ button {
   font-size: 18px;
   font-weight: 650;
   line-height: 1.6;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .text-node-ai-composer textarea::placeholder {
@@ -3953,20 +3990,35 @@ button {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(229, 200, 137, 0.28);
+  border-radius: 10px;
   margin-right: auto;
+  background: #2a2823;
   color: #f4f4f4;
   font-size: 16px;
   font-weight: 750;
 }
 
 .text-node-ai-composer select {
-  max-width: 190px;
+  max-width: 176px;
   min-width: 0;
   border: 0;
   outline: none;
   color: #f4f4f4;
   background: transparent;
   font: inherit;
+  color-scheme: dark;
+}
+
+.text-node-ai-composer select:focus {
+  color: #fff7de;
+}
+
+.text-node-ai-composer select option {
+  background: #2a2823;
+  color: #fff;
 }
 
 .text-node-ai-composer button {

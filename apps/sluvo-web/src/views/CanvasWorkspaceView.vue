@@ -309,7 +309,13 @@
             </div>
 
             <template v-else>
-              <div v-if="node.type === 'prompt_note' && node.prompt.trim()" class="direct-workflow-node__markdown" v-html="renderDirectMarkdown(node.prompt)" />
+              <div
+                v-if="node.type === 'prompt_note' && node.prompt.trim()"
+                class="direct-workflow-node__markdown"
+                tabindex="0"
+                v-html="renderDirectMarkdown(node.prompt)"
+                @keydown="handleMarkdownKeydown"
+              />
               <template v-else>
                 <div class="direct-workflow-node__hero">
                   <span v-if="node.type === 'prompt_note'" class="direct-workflow-node__lines" />
@@ -964,6 +970,7 @@
       <CommandBar
         v-model:title="projectTitle"
         :save-status="saveStatus"
+        :save-error="lastSaveError"
         @go-home="goHome"
         @logout="logoutCanvas"
         @save="saveCanvasNow"
@@ -1661,6 +1668,7 @@ const canvasStore = useCanvasStore()
 const projectStore = useProjectStore()
 const projectTitle = ref(copy.untitled)
 const saveStatus = ref('idle')
+const lastSaveError = ref('')
 const canvasFrame = ref(null)
 const deleteKeySink = ref(null)
 const uploadInput = ref(null)
@@ -3509,12 +3517,12 @@ function handlePromptFieldPointerDown(nodeId, event) {
 function isDirectPromptEditTarget(target) {
   return (
     target instanceof HTMLElement &&
-    Boolean(target.closest('.direct-workflow-node__prompt-field, .direct-workflow-node__markdown, .direct-workflow-node__references, .direct-workflow-node__generation-controls'))
+    Boolean(target.closest('.direct-workflow-node__prompt-field, .direct-workflow-node__markdown, .direct-workflow-node__references, .direct-workflow-node__generation-controls, .text-node-ai-composer, .canvas-agent-panel, .publish-dialog'))
   )
 }
 
 function handleDirectNodeSelectStart(event) {
-  if (isDirectPromptEditTarget(event.target)) return
+  if (isTextInteractionTarget(event.target) || isDirectPromptEditTarget(event.target)) return
   event.preventDefault()
 }
 
@@ -3936,6 +3944,7 @@ async function saveCanvasNow(options = {}) {
     saveAfterUploads.value = false
   }
   window.clearTimeout(autoSaveTimer)
+  lastSaveError.value = ''
   const savePlan = buildCanvasSavePlan()
   isSavingCanvas.value = true
   saveStatus.value = 'saving'
@@ -3964,11 +3973,22 @@ async function saveCanvasNow(options = {}) {
   } catch (error) {
     if (error instanceof SluvoRevisionConflictError) {
       saveStatus.value = 'conflict'
+      lastSaveError.value = error.message || 'Canvas revision conflict'
       showToast('画布已在其他地方更新，正在刷新')
       await loadProjectCanvas()
       return
     }
     saveStatus.value = 'error'
+    lastSaveError.value = error instanceof Error ? error.message : 'Canvas save failed'
+    console.error('[Sluvo] canvas save failed', {
+      message: lastSaveError.value,
+      status: error?.status,
+      payload: error?.payload,
+      canvasId: activeCanvas.value?.id,
+      nodeCount: directNodes.value.length + nodes.value.length,
+      edgeCount: directEdges.value.length + edges.value.length,
+      payloadBytes: measureCanvasSavePayloadBytes(savePlan.payload)
+    })
     showToast(error instanceof Error ? error.message : '画布保存失败')
   } finally {
     isSavingCanvas.value = false
@@ -4129,7 +4149,7 @@ function serializeDirectNodeForSave(node, index = 0) {
         .filter((item) => item.status !== 'uploading')
         .map((item) => ({
           ...item,
-          previewUrl: item.previewUrl?.startsWith('blob:') ? '' : item.previewUrl
+          previewUrl: item.previewUrl?.startsWith('blob:') || item.previewUrl?.startsWith('data:') ? '' : item.previewUrl
         })),
       referenceOrder: Array.isArray(node.referenceOrder) ? node.referenceOrder : [],
       referenceMentions: normalizeReferenceMentions(node.referenceMentions),
@@ -4137,9 +4157,9 @@ function serializeDirectNodeForSave(node, index = 0) {
       generationMessage: node.generationMessage || '',
       generationTaskId: node.generationTaskId || '',
       generationRecordId: node.generationRecordId || '',
-      generatedImage: node.generatedImage || null,
-      generatedVideo: node.generatedVideo || null,
-      generatedAudio: node.generatedAudio || null
+      generatedImage: sanitizeGeneratedMediaForPersistence('image', node.generatedImage),
+      generatedVideo: sanitizeGeneratedMediaForPersistence('video', node.generatedVideo),
+      generatedAudio: sanitizeGeneratedMediaForPersistence('audio', node.generatedAudio)
     },
     ports: { left: true, right: true },
     style: {}
@@ -4153,23 +4173,83 @@ function serializeDirectNodeForSave(node, index = 0) {
 
 function sanitizeMediaForPersistence(media) {
   if (!media) return null
-  if (media.isLocalPreview || String(media.url || '').startsWith('blob:')) {
+  const url = String(media.url || '')
+  if (media.isLocalPreview || url.startsWith('blob:') || url.startsWith('data:')) {
     return {
       ...media,
-      url: media.assetId ? media.url : '',
+      url: media.assetId && !url.startsWith('data:') ? media.url : '',
       previewUrl: '',
       isLocalPreview: false,
       localPreviewDropped: true
     }
   }
   const previewUrl = String(media.previewUrl || '')
-  if (previewUrl.startsWith('blob:')) {
+  const thumbnailUrl = String(media.thumbnailUrl || '')
+  if (previewUrl.startsWith('blob:') || previewUrl.startsWith('data:') || thumbnailUrl.startsWith('blob:') || thumbnailUrl.startsWith('data:')) {
     return {
       ...media,
-      previewUrl: ''
+      previewUrl: previewUrl.startsWith('blob:') || previewUrl.startsWith('data:') ? '' : media.previewUrl,
+      thumbnailUrl: thumbnailUrl.startsWith('blob:') || thumbnailUrl.startsWith('data:') ? '' : media.thumbnailUrl
     }
   }
   return media
+}
+
+function sanitizeGeneratedMediaForPersistence(kind, media) {
+  if (!media) return null
+  const next = { ...media }
+  const urlKeys =
+    kind === 'audio'
+      ? ['url', 'previewUrl']
+      : kind === 'video'
+        ? ['url', 'previewUrl', 'thumbnailUrl', 'posterUrl']
+        : ['url', 'previewUrl', 'thumbnailUrl']
+
+  for (const key of urlKeys) {
+    if (next[key] && !isPersistableMediaUrl(next[key], kind)) {
+      next[key] = ''
+      next.localPreviewDropped = true
+    }
+  }
+
+  if (!next.url) {
+    const fallback = kind === 'image' ? next.thumbnailUrl || next.previewUrl : kind === 'video' ? next.previewUrl : ''
+    if (fallback && isPersistableMediaUrl(fallback, kind)) next.url = fallback
+  }
+
+  return next
+}
+
+function isPersistableMediaUrl(value, kind = '') {
+  const source = String(value || '').trim()
+  if (!source) return false
+  if (/^blob:/i.test(source)) return false
+  if (/^data:/i.test(source)) return false
+  if (/^https?:\/\//i.test(source)) return true
+  if (source.startsWith('/')) return true
+  return kind === 'image' && /^\/\/.+/i.test(source)
+}
+
+function sanitizeDirectNodeForSnapshot(node) {
+  return {
+    ...node,
+    media: sanitizeMediaForPersistence(node.media),
+    generatedImage: sanitizeGeneratedMediaForPersistence('image', node.generatedImage),
+    generatedVideo: sanitizeGeneratedMediaForPersistence('video', node.generatedVideo),
+    generatedAudio: sanitizeGeneratedMediaForPersistence('audio', node.generatedAudio)
+  }
+}
+
+function measureCanvasSavePayloadBytes(payload) {
+  try {
+    return new Blob([JSON.stringify(payload)]).size
+  } catch {
+    try {
+      return JSON.stringify(payload).length
+    } catch {
+      return 0
+    }
+  }
 }
 
 function serializeVueNodeForSave(node, index = 0) {
@@ -4301,10 +4381,7 @@ function buildCanvasSnapshot() {
     version: 1,
     savedAt: new Date().toISOString(),
     viewport: getViewport(),
-    directNodes: cloneCanvasValue(directNodes.value).map((node) => ({
-      ...node,
-      media: sanitizeMediaForPersistence(node.media)
-    })),
+    directNodes: cloneCanvasValue(directNodes.value).map(sanitizeDirectNodeForSnapshot),
     directEdges: cloneCanvasValue(directEdges.value),
     nodes: cloneCanvasValue(nodes.value),
     edges: cloneCanvasValue(edges.value)
@@ -4612,6 +4689,7 @@ function handleKeydown(event) {
   }
 
   if (command && event.key.toLowerCase() === 'c') {
+    if (isTextInteractionTarget(event.target) || hasNativeTextSelection()) return
     event.preventDefault()
     copySelection()
     return
@@ -4693,8 +4771,42 @@ function handleKeyup(event) {
 function isTypingTarget(target) {
   return (
     target instanceof HTMLElement &&
-    (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || Boolean(target.closest('[contenteditable="true"]')))
+    (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || Boolean(target.closest('[contenteditable="true"], .text-node-ai-composer, .canvas-agent-panel, .publish-dialog')))
   )
+}
+
+function isTextInteractionTarget(target) {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(target.closest('input, textarea, select, [contenteditable="true"], .direct-workflow-node__markdown, .direct-workflow-node__prompt, .text-node-ai-composer, .canvas-agent-panel, .publish-dialog'))
+  )
+}
+
+function hasNativeTextSelection() {
+  const selection = window.getSelection?.()
+  return Boolean(selection && !selection.isCollapsed && String(selection.toString() || '').trim())
+}
+
+function isSelectAllShortcut(event) {
+  return Boolean((event.ctrlKey || event.metaKey) && !event.altKey && event.key?.toLowerCase?.() === 'a')
+}
+
+function selectTextElementContents(element) {
+  if (!(element instanceof HTMLElement)) return false
+  const selection = window.getSelection?.()
+  const range = document.createRange?.()
+  if (!selection || !range) return false
+  range.selectNodeContents(element)
+  selection.removeAllRanges()
+  selection.addRange(range)
+  return true
+}
+
+function handleMarkdownKeydown(event) {
+  if (!isSelectAllShortcut(event)) return
+  event.preventDefault()
+  event.stopPropagation()
+  selectTextElementContents(event.currentTarget)
 }
 
 function handleFramePointerDown(event) {
@@ -4779,7 +4891,9 @@ function isCanvasWheelPanTarget(target) {
 
 function handleScrollableCanvasControlWheel(event) {
   const element = event.target instanceof Element ? event.target : null
-  const scrollable = element?.closest?.('.audio-inline-settings, .audio-voice-list, .generated-audio__preview')
+  const scrollable = element?.closest?.(
+    'textarea, .direct-workflow-node__markdown, .direct-workflow-node__prompt, .direct-workflow-node__prompt-field, .text-node-ai-composer, .canvas-agent-panel__messages, .canvas-agent-panel__composer textarea, .canvas-agent-template-form textarea, .audio-inline-settings, .audio-voice-list, .generated-audio__preview'
+  )
   if (!(scrollable instanceof HTMLElement)) return false
 
   event.preventDefault()
@@ -4801,7 +4915,11 @@ function getWheelScrollDelta(event) {
   if (!Number.isFinite(delta)) return 0
   if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return delta * 16
   if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
-    const element = event.target instanceof Element ? event.target.closest?.('.audio-inline-settings, .audio-voice-list, .generated-audio__preview') : null
+    const element = event.target instanceof Element
+      ? event.target.closest?.(
+          'textarea, .direct-workflow-node__markdown, .direct-workflow-node__prompt, .direct-workflow-node__prompt-field, .text-node-ai-composer, .canvas-agent-panel__messages, .canvas-agent-panel__composer textarea, .canvas-agent-template-form textarea, .audio-inline-settings, .audio-voice-list, .generated-audio__preview'
+        )
+      : null
     return delta * Math.max(element?.clientHeight || 360, 1)
   }
   return delta
@@ -5708,7 +5826,7 @@ function handleCanvasFileDrop(event) {
 }
 
 function handleWindowPaste(event) {
-  if (isTypingTarget(event.target) && !isDeleteKeySinkTarget(event.target)) return
+  if ((isTypingTarget(event.target) || isTextInteractionTarget(event.target)) && !isDeleteKeySinkTarget(event.target)) return
 
   const files = getImageFilesFromDataTransfer(event.clipboardData)
   if (files.length > 0) {

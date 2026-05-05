@@ -108,10 +108,9 @@
         </button>
         <button
           class="rail-tool"
-          :class="{ 'is-active': activeWorkbenchSection === 'projects' }"
           type="button"
           aria-label="我的项目"
-          @click="scrollToProjects"
+          @click="openProjectsSpace"
         >
           <FolderOpen :size="20" />
         </button>
@@ -249,7 +248,7 @@
           </div>
         </section>
 
-        <section ref="projectsSection" class="home-section creation-start" aria-labelledby="creation-title">
+        <section class="home-section creation-start" aria-labelledby="creation-title">
           <div class="section-heading creation-heading">
             <div>
               <h2 id="creation-title">
@@ -555,7 +554,6 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const projectStore = useProjectStore()
-const projectsSection = ref(null)
 const communitySection = ref(null)
 const activeWorkbenchSection = ref('top')
 const promptText = ref('')
@@ -1166,11 +1164,6 @@ function scrollToCapabilities() {
   document.getElementById('capabilities')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function scrollToProjects() {
-  activeWorkbenchSection.value = 'projects'
-  projectsSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
 function openProjectsSpace() {
   router.push({ name: 'projects' })
 }
@@ -1189,19 +1182,23 @@ function scrollToRouteHash() {
   nextTick(() => {
     activeWorkbenchSection.value = 'community'
     communitySection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    clearConsumedWorkspaceHash()
   })
+}
+
+function clearConsumedWorkspaceHash() {
+  if (route.hash !== '#community' || typeof window === 'undefined') return
+  const nextUrl = `${window.location.pathname}${window.location.search}`
+  window.history.replaceState(window.history.state, '', nextUrl)
 }
 
 function updateActiveWorkbenchSection() {
   if (!showWorkbench.value) return
   const activationLine = Math.min(220, Math.max(120, window.innerHeight * 0.28))
-  const projectTop = projectsSection.value?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
   const communityTop = communitySection.value?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
 
   if (communityTop <= activationLine) {
     activeWorkbenchSection.value = 'community'
-  } else if (projectTop <= activationLine) {
-    activeWorkbenchSection.value = 'projects'
   } else {
     activeWorkbenchSection.value = 'top'
   }
