@@ -1177,6 +1177,13 @@
             </article>
           </div>
           <p v-else class="canvas-agent-panel__empty">输入目标后，Agent Team 会按阶段接力，并把结果同步到画布。</p>
+          <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_user'" class="canvas-agent-run__continue">
+            <span>{{ getAgentRunNextAction(agentPanel.activeRun) }}</span>
+            <button type="button" :disabled="agentPanel.busy" @click="continueAgentRun(agentPanel.input.trim() || '继续')">
+              <Check :size="16" />
+              继续下一步
+            </button>
+          </footer>
           <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_cost_confirmation'" class="canvas-agent-run__cost">
             <span>媒体生成等待确认，预计消耗 {{ getAgentRunEstimatePoints(agentPanel.activeRun) }} 灵感值。</span>
             <button type="button" :disabled="agentPanel.confirmingCost" @click="confirmAgentRunCost">
@@ -3146,6 +3153,7 @@ function getLatestAgentHandoffStep(timeline) {
 function getAgentRunNextAction(timeline) {
   const run = timeline?.run || {}
   const handoff = getLatestAgentHandoffStep(timeline)
+  if (run.status === 'waiting_user') return handoff?.output?.question || '确认后继续下一阶段'
   if (run.status === 'waiting_cost_confirmation') return handoff?.output?.question || '下一步：确认媒体生成'
   if (run.status === 'running') return 'Agent Team 正在推进'
   if (run.status === 'succeeded') return handoff?.output?.completed || '工作流已完成'

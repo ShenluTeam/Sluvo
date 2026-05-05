@@ -687,7 +687,8 @@ body {
 .canvas-agent-message__bubble > header,
 .canvas-agent-artifact > header,
 .canvas-agent-message__bubble footer,
-.canvas-agent-run__cost {
+.canvas-agent-run__cost,
+.canvas-agent-run__continue {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -799,7 +800,23 @@ body {
   background: rgba(255, 207, 112, 0.09);
 }
 
+.canvas-agent-run__continue {
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(205, 244, 124, 0.24);
+  border-radius: 8px;
+  background: rgba(205, 244, 124, 0.08);
+}
+
+.canvas-agent-run__continue span {
+  margin: 0;
+  color: rgba(242, 242, 234, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .canvas-agent-run__cost button,
+.canvas-agent-run__continue button,
 .canvas-agent-message__bubble footer button {
   display: inline-flex;
   align-items: center;

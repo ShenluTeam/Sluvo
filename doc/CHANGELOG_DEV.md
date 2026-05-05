@@ -1132,3 +1132,20 @@ Verification suggestions:
 - Run `npm run build --workspace sluvo-web`.
 - Start an Agent run from the canvas and confirm the panel reads as a staged conversation with team settings collapsed by default.
 
+Changed files:
+- `backend/services/sluvo_service.py`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed Agent runs from one-shot full workflow generation to staged handoff execution: a new run now creates only the first Agent step and waits for user confirmation before appending the next step.
+- The continue action advances the next official/custom Agent in the configured team, writes that stage's artifacts to the canvas, then waits again; media placeholders only appear at the final production stage.
+- Added an explicit "继续下一步" panel action for waiting runs, while typed feedback still travels with the next stage as user context.
+- Media cost confirmation now completes the run after generation records are queued instead of leaving the run in a generic running state.
+
+Verification suggestions:
+- Run `python3 -m py_compile backend/services/sluvo_service.py`.
+- Run `npm run build --workspace sluvo-web`.
+- Start a run and verify only stage 1 appears; click "继续下一步" repeatedly and verify each stage is appended one at a time until media confirmation.
+
