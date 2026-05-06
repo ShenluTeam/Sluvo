@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        width: 1280px;
+        height: 720px;
+        overflow: hidden;
+        background: #050505;
+      }
+
+      #root {
+        position: relative;
+        width: 1280px;
+        height: 720px;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse at 64% 38%, rgba(214, 181, 109, 0.2), transparent 38%),
+          radial-gradient(ellipse at 18% 14%, rgba(255, 241, 199, 0.12), transparent 28%),
+          linear-gradient(180deg, #050505 0%, #0d0b07 58%, #030303 100%);
+        color: #fff1c7;
+        font-family: "Noto Sans JP", "Segoe UI", sans-serif;
+      }
+
+      .scene {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        padding: 68px 82px;
+        overflow: hidden;
+      }
+
+      .grid {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(rgba(214, 181, 109, 0.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(214, 181, 109, 0.07) 1px, transparent 1px);
+        background-size: 48px 48px;
+        opacity: 0.34;
+      }
+
+      .sweep {
+        position: absolute;
+        inset: -30% auto -30% -18%;
+        width: 26%;
+        background: linear-gradient(90deg, transparent, rgba(255, 241, 199, 0.14), transparent);
+        filter: blur(8px);
+        transform: skewX(-16deg);
+      }
+
+      .canvas-shell {
+        position: absolute;
+        left: 86px;
+        top: 76px;
+        width: 706px;
+        height: 504px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 241, 199, 0.2);
+        border-radius: 26px;
+        background:
+          radial-gradient(ellipse at 50% 42%, rgba(214, 181, 109, 0.16), transparent 50%),
+          linear-gradient(145deg, rgba(255, 241, 199, 0.08), transparent 35%),
+          rgba(9, 8, 6, 0.9);
+        box-shadow:
+          0 44px 96px rgba(0, 0, 0, 0.52),
+          inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 54px;
+        padding: 0 22px;
+        border-bottom: 1px solid rgba(214, 181, 109, 0.14);
+        color: rgba(255, 241, 199, 0.68);
+        font-size: 14px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: #d6b56d;
+        box-shadow: 0 0 18px rgba(214, 181, 109, 0.82);
+      }
+
+      .map {
+        position: absolute;
+        inset: 54px 0 0;
+      }
+
+      .path {
+        position: absolute;
+        height: 3px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, rgba(255, 241, 199, 0.58), rgba(214, 181, 109, 0.86), transparent);
+        transform-origin: left center;
+      }
+
+      .path-one {
+        left: 148px;
+        top: 150px;
+        width: 360px;
+        transform: rotate(10deg);
+      }
+
+      .path-two {
+        left: 244px;
+        top: 282px;
+        width: 334px;
+        transform: rotate(-17deg);
+      }
+
+      .path-three {
+        left: 128px;
+        top: 338px;
+        width: 266px;
+        transform: rotate(24deg);
+      }
+
+      .node {
+        position: absolute;
+        display: grid;
+        align-content: start;
+        gap: 7px;
+        width: 154px;
+        min-height: 108px;
+        padding: 14px;
+        border: 1px solid rgba(255, 241, 199, 0.18);
+        border-radius: 14px;
+        background:
+          linear-gradient(145deg, rgba(255, 241, 199, 0.12), transparent 48%),
+          rgba(18, 14, 8, 0.82);
+        box-shadow:
+          0 18px 42px rgba(0, 0, 0, 0.35),
+          inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      }
+
+      .node b {
+        color: #fff7de;
+        font-size: 18px;
+        line-height: 1.1;
+      }
+
+      .node span {
+        color: rgba(255, 241, 199, 0.54);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .node i {
+        display: block;
+        width: 58%;
+        height: 5px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #fff1c7, #d6b56d);
+        box-shadow: 0 0 16px rgba(214, 181, 109, 0.42);
+      }
+
+      .node-script {
+        left: 82px;
+        top: 108px;
+      }
+
+      .node-assets {
+        left: 384px;
+        top: 120px;
+      }
+
+      .node-shots {
+        left: 202px;
+        top: 304px;
+      }
+
+      .node-video {
+        left: 486px;
+        top: 296px;
+      }
+
+      .publish-panel,
+      .fork-panel {
+        position: absolute;
+        right: 86px;
+        width: 310px;
+        border: 1px solid rgba(214, 181, 109, 0.24);
+        border-radius: 22px;
+        background:
+          linear-gradient(145deg, rgba(255, 241, 199, 0.12), transparent 46%),
+          rgba(14, 11, 7, 0.88);
+        box-shadow:
+          0 32px 84px rgba(0, 0, 0, 0.48),
+          inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(12px);
+      }
+
+      .publish-panel {
+        top: 116px;
+        min-height: 192px;
+        padding: 24px;
+      }
+
+      .fork-panel {
+        top: 360px;
+        min-height: 164px;
+        padding: 20px;
+      }
+
+      .label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #d6b56d;
+        font-size: 13px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .label::before {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #d6b56d;
+        box-shadow: 0 0 20px rgba(214, 181, 109, 0.86);
+        content: "";
+      }
+
+      .publish-panel h1 {
+        display: grid;
+        gap: 2px;
+        margin-top: 18px;
+        color: #fff7de;
+        font-size: 40px;
+        line-height: 1.08;
+      }
+
+      .publish-panel h1 span {
+        display: block;
+      }
+
+      .publish-panel p {
+        margin-top: 12px;
+        color: rgba(255, 241, 199, 0.62);
+        font-size: 18px;
+        line-height: 1.5;
+      }
+
+      .pill-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .pill {
+        min-height: 30px;
+        padding: 6px 11px;
+        border: 1px solid rgba(255, 241, 199, 0.2);
+        border-radius: 999px;
+        background: rgba(214, 181, 109, 0.12);
+        color: #fff1c7;
+        font-family: "Cascadia Mono", "Consolas", monospace;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .fork-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .fork-title strong {
+        color: #fff7de;
+        font-size: 22px;
+      }
+
+      .fork-badge {
+        border: 1px solid rgba(255, 241, 199, 0.22);
+        border-radius: 999px;
+        padding: 6px 10px;
+        color: #fff1c7;
+        background: rgba(13, 11, 7, 0.9);
+        font-family: "Cascadia Mono", "Consolas", monospace;
+        font-size: 12px;
+        font-weight: 900;
+        box-shadow: inset 0 0 0 1px rgba(214, 181, 109, 0.28);
+      }
+
+      .fork-stack {
+        position: relative;
+        height: 74px;
+        margin-top: 18px;
+      }
+
+      .fork-card {
+        position: absolute;
+        width: 112px;
+        height: 62px;
+        border: 1px solid rgba(255, 241, 199, 0.18);
+        border-radius: 12px;
+        background:
+          linear-gradient(145deg, rgba(255, 241, 199, 0.16), transparent 48%),
+          rgba(22, 17, 10, 0.88);
+      }
+
+      .fork-card::after {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 14px;
+        height: 5px;
+        border-radius: 999px;
+        background: #d6b56d;
+        box-shadow: 0 0 18px rgba(214, 181, 109, 0.48);
+        content: "";
+      }
+
+      .fork-card-a {
+        left: 0;
+        top: 4px;
+      }
+
+      .fork-card-b {
+        left: 82px;
+        top: 0;
+      }
+
+      .fork-card-c {
+        left: 166px;
+        top: 8px;
+      }
+
+      .beam-out {
+        position: absolute;
+        left: 744px;
+        top: 286px;
+        width: 270px;
+        height: 4px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, rgba(255, 241, 199, 0.96), #d6b56d, transparent);
+        filter: drop-shadow(0 0 14px rgba(214, 181, 109, 0.78));
+        transform: rotate(-3deg);
+        transform-origin: left center;
+      }
+
+      .stamp {
+        position: absolute;
+        left: 626px;
+        top: 232px;
+        display: grid;
+        place-items: center;
+        width: 120px;
+        height: 120px;
+        border: 2px solid rgba(255, 241, 199, 0.32);
+        border-radius: 999px;
+        color: #fff1c7;
+        background:
+          radial-gradient(circle, rgba(13, 11, 7, 0.96) 0 48%, rgba(214, 181, 109, 0.32) 50% 58%, rgba(214, 181, 109, 0.12) 60%, transparent 70%);
+        font-family: "Cascadia Mono", "Consolas", monospace;
+        font-size: 17px;
+        font-weight: 900;
+        text-transform: uppercase;
+        text-shadow: 0 0 16px rgba(214, 181, 109, 0.72);
+        box-shadow:
+          0 0 52px rgba(214, 181, 109, 0.48),
+          inset 0 0 0 1px rgba(255, 241, 199, 0.16);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="6"
+      data-width="1280"
+      data-height="720"
+    >
+      <div id="scene" class="clip scene" data-start="0" data-duration="6" data-track-index="0">
+        <div class="grid" data-layout-ignore></div>
+        <div class="sweep" data-layout-ignore></div>
+
+        <section class="canvas-shell">
+          <div class="topbar"><span class="dot"></span> Open Canvas</div>
+          <div class="map">
+            <span class="path path-one"></span>
+            <span class="path path-two"></span>
+            <span class="path path-three"></span>
+            <article class="node node-script">
+              <b>灵感</b>
+              <span>Script Note</span>
+              <i></i>
+            </article>
+            <article class="node node-assets">
+              <b>角色</b>
+              <span>Asset Board</span>
+              <i></i>
+            </article>
+            <article class="node node-shots">
+              <b>分镜</b>
+              <span>Shot Chain</span>
+              <i></i>
+            </article>
+            <article class="node node-video">
+              <b>成片</b>
+              <span>Video Unit</span>
+              <i></i>
+            </article>
+          </div>
+        </section>
+
+        <span class="beam-out" data-layout-ignore></span>
+        <span class="stamp">Publish</span>
+
+        <section class="publish-panel">
+          <span class="label">Share Snapshot</span>
+          <h1>
+            <span>创作过程</span>
+            <span>发布到社区</span>
+          </h1>
+          <p>节点、依赖、素材与生成路径，一起成为可复用的画布资产。</p>
+          <div class="pill-row">
+            <span class="pill">Canvas</span>
+            <span class="pill">Agent</span>
+            <span class="pill">Skill</span>
+          </div>
+        </section>
+
+        <section class="fork-panel">
+          <div class="fork-title">
+            <strong>Fork 新路径</strong>
+            <span class="fork-badge">+3</span>
+          </div>
+          <div class="fork-stack">
+            <span class="fork-card fork-card-a"></span>
+            <span class="fork-card fork-card-b"></span>
+            <span class="fork-card fork-card-c"></span>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.from(".canvas-shell", { opacity: 0, y: 34, scale: 0.94, duration: 0.62, ease: "power3.out" }, 0.16);
+      tl.from(".topbar", { opacity: 0, x: -24, duration: 0.44, ease: "expo.out" }, 0.34);
+      tl.from(".path", { opacity: 0, scaleX: 0.12, duration: 0.76, stagger: 0.12, ease: "power2.out" }, 0.48);
+      tl.from(".node-script", { opacity: 0, x: -48, y: -8, scale: 0.78, rotation: -4, duration: 0.48, ease: "back.out(1.7)" }, 0.52);
+      tl.from(".node-assets", { opacity: 0, y: -42, scale: 0.82, duration: 0.5, ease: "power4.out" }, 0.7);
+      tl.from(".node-shots", { opacity: 0, x: -26, y: 36, scale: 0.84, duration: 0.5, ease: "circ.out" }, 0.88);
+      tl.from(".node-video", { opacity: 0, x: 44, y: 26, scale: 0.82, rotation: 3, duration: 0.52, ease: "back.out(1.45)" }, 1.02);
+      tl.from(".stamp", { opacity: 0, scale: 0.2, rotation: -16, duration: 0.5, ease: "back.out(2.2)" }, 1.72);
+      tl.from(".beam-out", { opacity: 0, scaleX: 0, duration: 0.58, ease: "power2.inOut" }, 1.9);
+      tl.from(".publish-panel", { opacity: 0, x: 52, scale: 0.94, duration: 0.62, ease: "expo.out" }, 2.04);
+      tl.from(".publish-panel .label", { opacity: 0, y: 16, duration: 0.36, ease: "power3.out" }, 2.22);
+      tl.from(".publish-panel h1", { opacity: 0, y: 22, duration: 0.44, ease: "power4.out" }, 2.34);
+      tl.from(".publish-panel p", { opacity: 0, y: 18, duration: 0.4, ease: "circ.out" }, 2.48);
+      tl.from(".pill", { opacity: 0, y: 18, scale: 0.88, duration: 0.34, stagger: 0.08, ease: "back.out(1.5)" }, 2.64);
+      tl.from(".fork-panel", { opacity: 0, y: 44, scale: 0.95, duration: 0.52, ease: "power3.out" }, 3.26);
+      tl.from(".fork-title strong", { opacity: 0, x: -22, duration: 0.36, ease: "expo.out" }, 3.42);
+      tl.from(".fork-badge", { opacity: 0, scale: 0.48, duration: 0.34, ease: "back.out(2)" }, 3.56);
+      tl.from(".fork-card-a", { opacity: 0, x: -22, y: 18, rotation: -8, duration: 0.38, ease: "power2.out" }, 3.74);
+      tl.from(".fork-card-b", { opacity: 0, y: 24, scale: 0.84, duration: 0.42, ease: "back.out(1.6)" }, 3.86);
+      tl.from(".fork-card-c", { opacity: 0, x: 24, y: 18, rotation: 8, duration: 0.38, ease: "power2.out" }, 3.98);
+      tl.to(".sweep", { x: 1680, duration: 4.8, ease: "sine.inOut" }, 0.2);
+      tl.to(".stamp", { scale: 1.06, duration: 0.42, yoyo: true, repeat: 2, ease: "sine.inOut" }, 4.28);
+      tl.to(".fork-card", { y: -7, duration: 0.54, stagger: 0.08, yoyo: true, repeat: 1, ease: "sine.inOut" }, 4.38);
+      tl.to("#scene", { opacity: 0.92, duration: 0.28, yoyo: true, repeat: 1, ease: "sine.inOut" }, 5.54);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

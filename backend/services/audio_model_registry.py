@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, Dict, List, Optional
 
 ABILITY_REALTIME = "realtime_dubbing"
@@ -55,6 +56,45 @@ MINIMAX_MODEL_HD = "speech-2.8-hd"
 MINIMAX_MODEL_TURBO = "speech-2.8-turbo"
 MINIMAX_PREVIEW_MODEL_HD = MINIMAX_MODEL_HD
 MINIMAX_PREVIEW_MODEL_TURBO = MINIMAX_MODEL_TURBO
+MINIMAX_SPEECH_TAG_MODELS = {MINIMAX_MODEL_HD, MINIMAX_MODEL_TURBO}
+
+MINIMAX_SPEECH_TAG_OPTIONS = [
+    {"value": "(laughs)", "label": "笑声", "alias": ["笑声"]},
+    {"value": "(chuckle)", "label": "轻笑", "alias": ["轻笑"]},
+    {"value": "(coughs)", "label": "咳嗽", "alias": ["咳嗽"]},
+    {"value": "(clear-throat)", "label": "清嗓子", "alias": ["清嗓子", "清嗓"]},
+    {"value": "(groans)", "label": "呻吟", "alias": ["呻吟"]},
+    {"value": "(breath)", "label": "正常换气", "alias": ["正常换气", "换气"]},
+    {"value": "(pant)", "label": "喘气", "alias": ["喘气"]},
+    {"value": "(inhale)", "label": "吸气", "alias": ["吸气"]},
+    {"value": "(exhale)", "label": "呼气", "alias": ["呼气"]},
+    {"value": "(gasps)", "label": "倒吸气", "alias": ["倒吸气"]},
+    {"value": "(sniffs)", "label": "吸鼻子", "alias": ["吸鼻子"]},
+    {"value": "(sighs)", "label": "叹气", "alias": ["叹气"]},
+    {"value": "(snorts)", "label": "喷鼻息", "alias": ["喷鼻息"]},
+    {"value": "(burps)", "label": "打嗝", "alias": ["打嗝"]},
+    {"value": "(lip-smacking)", "label": "咂嘴", "alias": ["咂嘴"]},
+    {"value": "(humming)", "label": "哼唱", "alias": ["哼唱"]},
+    {"value": "(hissing)", "label": "嘶嘶声", "alias": ["嘶嘶声"]},
+    {"value": "(emm)", "label": "嗯", "alias": ["嗯", "嗯声"]},
+    {"value": "(whistles)", "label": "口哨", "alias": ["口哨"]},
+    {"value": "(sneezes)", "label": "喷嚏", "alias": ["喷嚏", "打喷嚏"]},
+    {"value": "(crying)", "label": "抽泣", "alias": ["抽泣"]},
+    {"value": "(applause)", "label": "鼓掌", "alias": ["鼓掌"]},
+]
+MINIMAX_PAUSE_TAG_OPTIONS = [
+    {"value": "<#0.25#>", "label": "0.25s"},
+    {"value": "<#0.5#>", "label": "0.5s"},
+    {"value": "<#1.0#>", "label": "1.0s"},
+    {"value": "<#1.5#>", "label": "1.5s"},
+]
+_SPEECH_TAG_RE = re.compile(r"[（(]\s*([^)）]{1,32}?)\s*[)）]")
+_SPEECH_TAG_ALIASES: Dict[str, str] = {}
+for _tag in MINIMAX_SPEECH_TAG_OPTIONS:
+    _value = str(_tag["value"])
+    _SPEECH_TAG_ALIASES[_value.strip("()").lower()] = _value
+    for _alias in _tag.get("alias", []):
+        _SPEECH_TAG_ALIASES[str(_alias).strip().lower()] = _value
 
 PRICING_REALTIME_HD = {"cost_price": 3.5, "suggested_price": 5.25, "sell_price_points": 53, "unit": "每万字符"}
 PRICING_REALTIME_TURBO = {"cost_price": 2.0, "suggested_price": 3.0, "sell_price_points": 30, "unit": "每万字符"}
@@ -71,6 +111,9 @@ EMOTION_OPTIONS = [
     {"value": "happy", "label": "开心"},
     {"value": "sad", "label": "伤感"},
     {"value": "angry", "label": "愤怒"},
+    {"value": "fearful", "label": "害怕"},
+    {"value": "disgusted", "label": "厌恶"},
+    {"value": "surprised", "label": "惊讶"},
     {"value": "calm", "label": "平静"},
     {"value": "fluent", "label": "流畅"},
     {"value": "whisper", "label": "耳语"},
@@ -119,6 +162,28 @@ def calculate_points_by_characters(characters: int, points_per_10k: int) -> int:
     if chars_per_point <= 0:
         return 0
     return max(1, int(math.ceil(float(chars) / chars_per_point)))
+
+
+def normalize_minimax_speech_tags(text: str, model_code: Optional[str]) -> str:
+    source = str(text or "")
+    if not source:
+        return source
+    resolved_model = str(model_code or "").strip()
+    found_supported_tag = False
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal found_supported_tag
+        raw_label = match.group(1).strip()
+        normalized = _SPEECH_TAG_ALIASES.get(raw_label.lower())
+        if not normalized:
+            return match.group(0)
+        found_supported_tag = True
+        return normalized
+
+    normalized_text = _SPEECH_TAG_RE.sub(_replace, source)
+    if found_supported_tag and resolved_model not in MINIMAX_SPEECH_TAG_MODELS:
+        raise ValueError("unsupported_speech_tag_model")
+    return normalized_text
 
 
 def _copy_pricing(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -350,6 +415,7 @@ def build_audio_catalog() -> Dict[str, Any]:
                     "tier_code": tier_code,
                     "tier_label": tier["tier_label"],
                     "model_code": tier["model_code"],
+                    "supports_speech_tags": tier["model_code"] in MINIMAX_SPEECH_TAG_MODELS,
                     "fields": tier["fields"],
                 }
             )
@@ -366,7 +432,15 @@ def build_audio_catalog() -> Dict[str, Any]:
                 "tiers": tiers,
             }
         )
-    return {"abilities": abilities}
+    return {
+        "abilities": abilities,
+        "text_controls": {
+            "speech_tag_models": sorted(MINIMAX_SPEECH_TAG_MODELS),
+            "speech_tags": MINIMAX_SPEECH_TAG_OPTIONS,
+            "pause_tags": MINIMAX_PAUSE_TAG_OPTIONS,
+            "pause_range_seconds": {"min": 0.01, "max": 99.99},
+        },
+    }
 
 
 def normalize_audio_request(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -377,8 +451,12 @@ def normalize_audio_request(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not tier:
         raise ValueError("invalid_tier_code")
 
+    model_code = tier["model_code"]
     script_text = str(payload.get("script_text") or "").strip()
     preview_text = str(payload.get("preview_text") or "").strip()
+    if ability_type in {ABILITY_REALTIME, ABILITY_NARRATION}:
+        script_text = normalize_minimax_speech_tags(script_text, model_code)
+        preview_text = normalize_minimax_speech_tags(preview_text, model_code)
     text_file_url = str(payload.get("text_file_url") or "").strip()
     voice_source_type = str(payload.get("voice_source_type") or VOICE_SOURCE_SYSTEM).strip().lower()
 
@@ -387,7 +465,7 @@ def normalize_audio_request(payload: Dict[str, Any]) -> Dict[str, Any]:
         "ability_label": ability["label"],
         "tier_code": tier_code,
         "tier_label": tier["tier_label"],
-        "model_code": tier["model_code"],
+        "model_code": model_code,
         "voice_id": str(payload.get("voice_id") or "").strip(),
         "voice_source_type": voice_source_type,
         "script_text": script_text,

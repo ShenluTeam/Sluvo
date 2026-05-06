@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import CanvasWorkspaceView from '../views/CanvasWorkspaceView.vue'
 import CommunityCanvasView from '../views/CommunityCanvasView.vue'
+import CommunityDirectoryView from '../views/CommunityDirectoryView.vue'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
 import ProjectListView from '../views/ProjectListView.vue'
@@ -44,6 +45,21 @@ const router = createRouter({
       name: 'canvas',
       component: CanvasWorkspaceView,
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/community/canvases',
+      name: 'community-canvases',
+      component: CommunityDirectoryView
+    },
+    {
+      path: '/community/agents',
+      name: 'community-agents',
+      component: CommunityDirectoryView
+    },
+    {
+      path: '/community/skills',
+      name: 'community-skills',
+      component: CommunityDirectoryView
     },
     {
       path: '/community/canvases/:publicationId',

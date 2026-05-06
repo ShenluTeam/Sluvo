@@ -4001,7 +4001,13 @@ button {
 }
 
 .direct-workflow-node:has(.video-settings-menu[open]) .direct-workflow-node__port,
+.direct-workflow-node:has(.audio-token-menu[open]) .direct-workflow-node__port,
 .direct-workflow-node.has-open-video-settings .direct-workflow-node__port {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.direct-node-layer:has(.audio-token-menu[open]) .generated-image__actions {
   opacity: 0;
   pointer-events: none;
 }
@@ -4021,6 +4027,20 @@ button {
 .direct-node-layer * {
   user-select: none;
   -webkit-user-select: none;
+}
+
+.direct-workflow-node__markdown,
+.direct-workflow-node__markdown * {
+  cursor: grab;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.direct-workflow-node__markdown.is-text-selectable,
+.direct-workflow-node__markdown.is-text-selectable * {
+  cursor: text;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 .direct-workflow-node--image_unit {
@@ -5342,29 +5362,31 @@ button {
   bottom: calc(100% + 8px);
   z-index: 120;
   display: grid;
+  align-items: stretch;
+  gap: 4px;
   min-width: 168px;
-  padding: 10px 0;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 16px;
-  background: #252525;
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+  padding: 10px;
+  border: 1px solid rgba(229, 200, 137, 0.38);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(229, 200, 137, 0.09), rgba(9, 8, 6, 0.99)),
+    #0d0b08;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(229, 200, 137, 0.08);
 }
 
 .audio-token-popover::after {
-  position: absolute;
-  left: 40px;
-  bottom: -6px;
-  width: 10px;
-  height: 10px;
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  background: #252525;
-  content: '';
-  transform: rotate(45deg);
+  display: none;
+  content: none;
 }
 
 .audio-token-popover--narrow {
-  min-width: 148px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 460px;
+  min-width: 460px;
+  max-height: 340px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: rgba(229, 200, 137, 0.64) rgba(10, 9, 7, 0.88);
 }
 
 .audio-token-popover p {
@@ -5374,10 +5396,10 @@ button {
   width: 280px;
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(229, 200, 137, 0.26);
   border-radius: 7px;
-  background: #040404;
-  color: #fff;
+  background: #050504;
+  color: #f6e7bd;
   font-size: 14px;
   font-weight: 800;
   line-height: 1.38;
@@ -5387,21 +5409,46 @@ button {
 .audio-token-popover button {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
   width: 100%;
-  min-height: 38px;
+  min-width: 0;
+  height: 38px;
   padding: 0 14px;
   border: 0;
-  background: transparent;
-  color: #fff;
+  border-radius: 8px;
+  background: #1b160f;
+  color: #fff6de;
   font-size: 15px;
   font-weight: 760;
   text-align: left;
 }
 
+.audio-token-popover button span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-token-popover button small {
+  color: rgba(229, 200, 137, 0.62);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .audio-token-popover button:hover,
 .audio-token-popover button.is-active {
-  background: rgba(255, 255, 255, 0.035);
-  color: #11d7ff;
+  background: #2a2418;
+  color: #f7d779;
+}
+
+.audio-token-popover button:hover small,
+.audio-token-popover button.is-active small {
+  color: #e5c889;
 }
 
 .audio-model-select {
@@ -6101,6 +6148,33 @@ button {
   opacity: 0.86;
 }
 
+.generated-audio__play {
+  position: absolute;
+  top: 28px;
+  left: 28px;
+  z-index: 2;
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(229, 200, 137, 0.36);
+  border-radius: 999px;
+  background: #1b160f;
+  color: #f7d779;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.36);
+}
+
+.generated-audio__play:hover {
+  border-color: rgba(229, 200, 137, 0.62);
+  background: #2a2418;
+}
+
+.generated-audio__play:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .generated-audio__wave span {
   width: 4px;
   height: calc(var(--bar) * 1px);
@@ -6362,6 +6436,11 @@ button {
     width: 100%;
     min-width: 0;
     margin-top: 8px;
+  }
+
+  .audio-token-popover--narrow {
+    grid-template-columns: 1fr;
+    max-height: 260px;
   }
 
   .audio-token-popover::after {

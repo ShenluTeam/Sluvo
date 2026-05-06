@@ -138,7 +138,7 @@ function goTrash() {
 }
 
 function goCommunity() {
-  router.push({ name: 'workspace', hash: '#community' })
+  router.push({ name: 'community-canvases' })
 }
 
 async function createProject() {

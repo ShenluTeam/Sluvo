@@ -255,10 +255,11 @@
             </div>
 
             <div
-              v-else-if="node.type === 'video_unit' && node.generatedVideo?.url"
+              v-else-if="node.type === 'video_unit' && getGeneratedVideoSrc(node)"
               class="generated-video__preview"
             >
               <video
+                :key="getGeneratedVideoSrc(node)"
                 :src="getGeneratedVideoSrc(node)"
                 :poster="getGeneratedVideoPoster(node)"
                 controls
@@ -287,9 +288,19 @@
             </div>
 
             <div
-              v-else-if="node.type === 'audio_unit' && node.generatedAudio?.url"
+              v-else-if="node.type === 'audio_unit' && getGeneratedAudioSrc(node)"
               class="generated-audio__preview"
             >
+              <button
+                class="generated-audio__play"
+                type="button"
+                :disabled="!getGeneratedAudioSrc(node)"
+                :title="isGeneratedAudioPlaying(node.id) ? '暂停音频' : '播放音频'"
+                @click.stop="toggleGeneratedAudioPlayback(node)"
+              >
+                <Pause v-if="isGeneratedAudioPlaying(node.id)" :size="24" />
+                <Play v-else :size="24" />
+              </button>
               <div class="generated-audio__wave" aria-hidden="true">
                 <span v-for="index in 34" :key="index" :style="{ '--bar': ((index * 17) % 34) + 24 }" />
               </div>
@@ -300,7 +311,19 @@
                   <span>{{ getAudioModelLabel(node) }} · {{ getAudioCharacterLabel(node) }}</span>
                 </div>
               </div>
-              <audio :src="getGeneratedAudioSrc(node)" controls />
+              <audio
+                :key="getGeneratedAudioSrc(node)"
+                :src="getGeneratedAudioSrc(node)"
+                controls
+                preload="metadata"
+                :ref="(element) => registerGeneratedAudioElement(node.id, element)"
+                @play="playingAudioNodeId = node.id"
+                @pause="handleGeneratedAudioPause(node.id)"
+                @ended="handleGeneratedAudioPause(node.id)"
+                @loadedmetadata="handleGeneratedAudioReady(node.id)"
+                @canplay="handleGeneratedAudioReady(node.id)"
+                @error="handleGeneratedAudioError(node.id, $event)"
+              />
               <div class="generated-image__actions" @click.stop @pointerdown.stop @contextmenu.prevent.stop>
                 <button type="button" title="下载音频" @click.stop="downloadGeneratedAudio(node)">
                   <Download :size="16" />
@@ -314,6 +337,7 @@
                 class="direct-workflow-node__markdown"
                 tabindex="0"
                 v-html="renderDirectMarkdown(node.prompt)"
+                @dblclick.stop.prevent="selectDirectMarkdownText($event)"
                 @keydown="handleMarkdownKeydown"
               />
               <template v-else>
@@ -806,8 +830,8 @@
                         v-for="pause in audioPauseOptions"
                         :key="pause.value"
                         type="button"
-                        :class="{ 'is-active': pause.value === '0.25' }"
-                        @click.stop="insertAudioPromptToken(node.id, pause.text, pause.text, 'pause', $event)"
+                        :class="{ 'is-active': pause.value === '0.25' || pause.value === '<#0.25#>' }"
+                        @click.stop="insertAudioPromptToken(node.id, pause.text || pause.value, pause.text || pause.value, 'pause', $event)"
                       >
                         {{ pause.label }}
                       </button>
@@ -821,12 +845,12 @@
                     <div class="audio-token-popover audio-token-popover--narrow">
                       <p>点击插入或输入生动的语气词，让语音更具感染力，系统仅支持预设库内的语气词标签</p>
                       <button
-                        v-for="word in audioInterjectionOptions"
-                        :key="word"
+                        v-for="tag in audioInterjectionOptions"
+                        :key="tag.value"
                         type="button"
-                        @click.stop="insertAudioPromptToken(node.id, `(${word})`, `(${word})`, 'interjection', $event)"
+                        @click.stop="insertAudioPromptToken(node.id, tag.value, tag.label, 'interjection', $event)"
                       >
-                        {{ word }}
+                        <span>{{ tag.label }}</span>
                       </button>
                     </div>
                   </details>
@@ -1457,7 +1481,7 @@
             </section>
           </div>
           <footer class="canvas-help-panel__footer">
-            <span>普通滚轮上下移动画布，按住 Ctrl / Cmd 再滚动即可缩放。</span>
+            <span>普通滚轮移动画布，按住 Ctrl / Cmd 再滚动即可缩放；文本节点正文默认可拖动，双击正文可选中文字。</span>
           </footer>
         </aside>
       </Transition>
@@ -1579,7 +1603,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { ArrowUp, ArrowUpDown, AudioWaveform, Bot, Check, ChevronDown, Download, Eye, Languages, ListChecks, Minus, Music2, Plus, Send, SlidersHorizontal, Star, Upload, X } from 'lucide-vue-next'
+import { ArrowUp, ArrowUpDown, AudioWaveform, Bot, Check, ChevronDown, Download, Eye, Languages, ListChecks, Minus, Music2, Pause, Play, Plus, Send, SlidersHorizontal, Star, Upload, X } from 'lucide-vue-next'
 import CommandBar from '../components/layout/CommandBar.vue'
 import AddNodeMenu from '../components/canvas/AddNodeMenu.vue'
 import CanvasBottomControls from '../components/canvas/CanvasBottomControls.vue'
@@ -1638,22 +1662,23 @@ const copy = {
   delete: '\u5220\u9664',
   helpTitle: '\u753b\u5e03\u64cd\u4f5c',
   helpAdd: '\u53cc\u51fb\u7a7a\u767d\u5904\u6dfb\u52a0\u8282\u70b9\uff0c\u53f3\u952e\u6253\u5f00\u5feb\u6377\u83dc\u5355',
-  helpPan: '\u62d6\u52a8\u753b\u5e03\u5e73\u79fb\uff0c\u6eda\u8f6e\u6216\u89e6\u63a7\u677f\u7f29\u653e',
-  helpSelect: 'Shift \u62d6\u62fd\u6846\u9009\uff0c\u62d6\u62fd\u8282\u70b9\u79fb\u52a8\uff0c\u8fde\u63a5\u7aef\u53e3\u5efa\u7acb\u5173\u7cfb',
-  helpCopy: 'Ctrl/Cmd+C \u590d\u5236\uff0cCtrl/Cmd+V \u7c98\u8d34\uff0cCtrl/Cmd+G \u6253\u7ec4',
-  helpZoom: 'Ctrl/Cmd+0 \u5b9a\u4f4d\uff0cCtrl/Cmd+\u52a0\u51cf\u7f29\u653e\uff0cCtrl/Cmd+Z \u64a4\u9500'
+  helpPan: '鼠标滚轮移动画布，中键拖拽平移，Ctrl/Cmd+滚轮缩放',
+  helpSelect: '拖拽空白处框选，Shift 单击节点多选，拖拽连接点建立关系',
+  helpCopy: 'Ctrl/Cmd+C 复制工作流节点，Ctrl/Cmd+V 粘贴节点或图片，Ctrl/Cmd+G 打组/解组',
+  helpZoom: 'Ctrl/Cmd+0 定位，Ctrl/Cmd 加减缩放，Ctrl/Cmd+Z 撤销，Ctrl/Cmd+Shift+Z 重做'
 }
 
 const helpShortcutSections = [
   {
     title: '画布导航',
     items: [
-      { label: '上下移动画布', keys: ['鼠标滚轮'] },
-      { label: '缩放画布', keys: ['Ctrl / Cmd', '鼠标滚轮'] },
-      { label: '拖拽平移画布', keys: ['空格', '拖拽'] },
+      { label: '滚动画布', keys: ['鼠标滚轮'] },
+      { label: '中键拖动画布', keys: ['鼠标中键', '拖拽'] },
       { label: '方向键平移', keys: ['↑', '↓', '←', '→'] },
-      { label: '定位画布', keys: ['Ctrl / Cmd', '0'] },
-      { label: '放大 / 缩小', keys: ['Ctrl / Cmd', '+ / -'] }
+      { label: '缩放到鼠标位置', keys: ['Ctrl / Cmd', '鼠标滚轮'] },
+      { label: '放大画布', keys: ['Ctrl / Cmd', '+'] },
+      { label: '缩小画布', keys: ['Ctrl / Cmd', '-'] },
+      { label: '定位到最近节点', keys: ['Ctrl / Cmd', '0'] }
     ]
   },
   {
@@ -1661,30 +1686,38 @@ const helpShortcutSections = [
     items: [
       { label: '添加节点', keys: ['双击空白处'] },
       { label: '打开快捷菜单', keys: ['右键空白处'] },
-      { label: '框选节点', keys: ['Shift', '拖拽'] },
+      { label: '选择节点', keys: ['单击节点'] },
+      { label: '多选 / 取消多选', keys: ['Shift', '单击节点'] },
+      { label: '框选节点', keys: ['拖拽空白处'] },
       { label: '移动节点', keys: ['拖拽节点'] },
-      { label: '连接节点', keys: ['拖拽连接点'] },
-      { label: '删除节点', keys: ['Delete / Backspace'] }
+      { label: '连接两个节点', keys: ['拖拽连接点'] },
+      { label: '删除选中节点', keys: ['Delete / Backspace'] }
     ]
   },
   {
     title: '编辑与历史',
     items: [
-      { label: '复制', keys: ['Ctrl / Cmd', 'C'] },
-      { label: '粘贴', keys: ['Ctrl / Cmd', 'V'] },
-      { label: '复制一份', keys: ['Ctrl / Cmd', 'D'] },
-      { label: '打组', keys: ['Ctrl / Cmd', 'G'] },
-      { label: '撤销', keys: ['Ctrl / Cmd', 'Z'] },
-      { label: '关闭弹窗 / 菜单', keys: ['Esc'] }
+      { label: '复制工作流节点', keys: ['Ctrl / Cmd', 'C'] },
+      { label: '粘贴节点 / 图片', keys: ['Ctrl / Cmd', 'V'] },
+      { label: '复制一份工作流节点', keys: ['Ctrl / Cmd', 'D'] },
+      { label: '打组 / 解组选中节点', keys: ['Ctrl / Cmd', 'G'] },
+      { label: '撤销上一步', keys: ['Ctrl / Cmd', 'Z'] },
+      { label: '重做上一步', keys: ['Ctrl / Cmd', 'Shift', 'Z'] },
+      { label: '拖动文本节点', keys: ['拖拽正文'] },
+      { label: '选中文本内容', keys: ['双击正文'] }
     ]
   },
   {
-    title: '音频输入',
+    title: '文本与音频',
     items: [
-      { label: '插入普通文本', keys: ['直接输入'] },
-      { label: '插入停顿 / 语气词', keys: ['点击标签'] },
+      { label: '输入节点提示词', keys: ['直接输入'] },
+      { label: '插入停顿', keys: ['<#>', '点击秒数'] },
+      { label: '插入语气词', keys: ['()', '点击标签'] },
+      { label: '打开音频设置', keys: ['设置按钮'] },
+      { label: '选择音色', keys: ['音色卡片'] },
       { label: '设置区内滚动', keys: ['鼠标滚轮'] },
-      { label: '选择音色', keys: ['音色卡片'] }
+      { label: '生成音频', keys: ['发送按钮'] },
+      { label: '播放生成结果', keys: ['播放按钮'] }
     ]
   }
 ]
@@ -1989,6 +2022,7 @@ const referenceUploadTargetSlot = ref('')
 const directNodeElements = new Map()
 const directPromptEditorElements = new Map()
 const directPromptEditorSignatures = new Map()
+const generatedAudioElements = new Map()
 let previousDocumentKeydown = null
 let previousWindowKeydown = null
 let frameResizeObserver = null
@@ -2035,6 +2069,7 @@ const focusedDirectNodeId = ref('')
 const activeDirectNodeId = ref('')
 const activeVideoSettingsNodeId = ref('')
 const lastTouchedDirectNodeId = ref('')
+const lastTouchedCanvasNode = ref({ kind: '', id: '' })
 const gridVisible = ref(true)
 const snapEnabled = ref(true)
 const minimapVisible = ref(false)
@@ -2103,6 +2138,7 @@ const audioVoicePicker = reactive({
   tab: 'library',
   query: ''
 })
+const playingAudioNodeId = ref('')
 const audioVoiceTabs = [
   { id: 'library', label: '音色库' },
   { id: 'mine', label: '我的音色' },
@@ -2228,21 +2264,50 @@ const fallbackAudioAbilityOptions = [
 ]
 const audioAbilityOptions = ref([...fallbackAudioAbilityOptions])
 const audioVoiceOptions = ref([])
-const audioEmotionOptions = [
+const fallbackAudioEmotionOptions = [
   { value: 'happy', label: '开心' },
   { value: 'sad', label: '伤感' },
   { value: 'angry', label: '愤怒' },
+  { value: 'fearful', label: '害怕' },
+  { value: 'disgusted', label: '厌恶' },
+  { value: 'surprised', label: '惊讶' },
   { value: 'calm', label: '平静' },
   { value: 'fluent', label: '流畅' },
   { value: 'whisper', label: '耳语' }
 ]
-const audioPauseOptions = [
+const audioEmotionOptions = ref([...fallbackAudioEmotionOptions])
+const fallbackAudioPauseOptions = [
   { value: '0.25', label: '0.25s', text: '<#0.25#>' },
   { value: '0.5', label: '0.5s', text: '<#0.5#>' },
   { value: '1.0', label: '1.0s', text: '<#1.0#>' },
   { value: '1.5', label: '1.5s', text: '<#1.5#>' }
 ]
-const audioInterjectionOptions = ['笑声', '轻笑', '咳嗽', '清嗓子', '正常换气', '喘气']
+const fallbackAudioInterjectionOptions = [
+  { value: '(laughs)', label: '笑声' },
+  { value: '(chuckle)', label: '轻笑' },
+  { value: '(coughs)', label: '咳嗽' },
+  { value: '(clear-throat)', label: '清嗓子' },
+  { value: '(groans)', label: '呻吟' },
+  { value: '(breath)', label: '正常换气' },
+  { value: '(pant)', label: '喘气' },
+  { value: '(inhale)', label: '吸气' },
+  { value: '(exhale)', label: '呼气' },
+  { value: '(gasps)', label: '倒吸气' },
+  { value: '(sniffs)', label: '吸鼻子' },
+  { value: '(sighs)', label: '叹气' },
+  { value: '(snorts)', label: '喷鼻息' },
+  { value: '(burps)', label: '打嗝' },
+  { value: '(lip-smacking)', label: '咂嘴' },
+  { value: '(humming)', label: '哼唱' },
+  { value: '(hissing)', label: '嘶嘶声' },
+  { value: '(emm)', label: '嗯' },
+  { value: '(whistles)', label: '口哨' },
+  { value: '(sneezes)', label: '喷嚏' },
+  { value: '(crying)', label: '抽泣' },
+  { value: '(applause)', label: '鼓掌' }
+]
+const audioPauseOptions = ref([...fallbackAudioPauseOptions])
+const audioInterjectionOptions = ref([...fallbackAudioInterjectionOptions])
 const librarySourceTabs = ['Sluvo', 'Sluvo生成器', 'WebUI', 'ComfyUI', 'AI应用']
 const libraryTypeTabs = ['图片', '视频', '音频']
 const libraryPicker = reactive({
@@ -2982,7 +3047,7 @@ function getAgentModelLabel(modelCode) {
 
 function getTextNodeComposerPointsLabel() {
   const points = Number(textNodeComposer.estimatePoints)
-  return `${Number.isFinite(points) ? points : '--'} 灵感`
+  return `${Number.isFinite(points) ? points : 0} 灵感`
 }
 
 function buildTextNodeEstimatePayload(node) {
@@ -3004,8 +3069,8 @@ function scheduleTextNodeEstimate(delay = 320) {
   window.clearTimeout(textNodeEstimateTimer)
   const node = selectedTextComposerNode.value
   const projectId = String(route.params.projectId || '')
-  if (!node || !projectId) {
-    textNodeComposer.estimatePoints = null
+  if (!node || !projectId || !String(textNodeComposer.input || '').trim()) {
+    textNodeComposer.estimatePoints = 0
     textNodeComposer.estimateStatus = 'idle'
     textNodeComposer.estimateKey = ''
     return
@@ -4156,13 +4221,24 @@ function handlePromptFieldPointerDown(nodeId, event) {
 function isDirectPromptEditTarget(target) {
   return (
     target instanceof HTMLElement &&
-    Boolean(target.closest('.direct-workflow-node__prompt-field, .direct-workflow-node__markdown, .direct-workflow-node__references, .direct-workflow-node__generation-controls, .text-node-ai-composer, .canvas-agent-panel, .publish-dialog'))
+    Boolean(target.closest('.direct-workflow-node__prompt-field, .direct-workflow-node__references, .direct-workflow-node__generation-controls, .text-node-ai-composer, .canvas-agent-panel, .publish-dialog'))
   )
 }
 
 function handleDirectNodeSelectStart(event) {
   if (isTextInteractionTarget(event.target) || isDirectPromptEditTarget(event.target)) return
   event.preventDefault()
+}
+
+function selectDirectMarkdownText(event = null) {
+  const target = event?.currentTarget
+  if (!(target instanceof HTMLElement)) return
+  target.classList.add('is-text-selectable')
+  target.focus({ preventScroll: true })
+  selectTextElementContents(target)
+  window.setTimeout(() => target.classList.remove('is-text-selectable'), 800)
+  return
+  showToast('已开启文字选择，点击其他位置后恢复拖动')
 }
 
 function hydrateDirectPromptEditor(element, node = null) {
@@ -4267,6 +4343,16 @@ function getPromptTextFromSegments(segments) {
     .filter((segment) => segment.type === 'text' || segment.type === 'audio_token')
     .map((segment) => (segment.type === 'audio_token' ? segment.value : segment.text))
     .join('')
+}
+
+function getCurrentDirectPromptSegments(node) {
+  const editor = directPromptEditorElements.get(node?.id || '')
+  return editor ? extractPromptEditorSegments(editor) : normalizePromptSegments(node?.promptSegments, node)
+}
+
+function getDirectNodePromptText(node) {
+  const fromSegments = getPromptTextFromSegments(getCurrentDirectPromptSegments(node)).trim()
+  return fromSegments || String(node?.prompt || '').trim()
 }
 
 function getReferenceMentionsFromSegments(segments) {
@@ -5417,7 +5503,7 @@ function isTypingTarget(target) {
 function isTextInteractionTarget(target) {
   return (
     target instanceof HTMLElement &&
-    Boolean(target.closest('input, textarea, select, [contenteditable="true"], .direct-workflow-node__markdown, .direct-workflow-node__prompt, .text-node-ai-composer, .canvas-agent-panel, .publish-dialog'))
+    Boolean(target.closest('input, textarea, select, [contenteditable="true"], .direct-workflow-node__prompt, .text-node-ai-composer, .canvas-agent-panel, .publish-dialog'))
   )
 }
 
@@ -5531,7 +5617,7 @@ function isCanvasWheelPanTarget(target) {
 function handleScrollableCanvasControlWheel(event) {
   const element = event.target instanceof Element ? event.target : null
   const scrollable = element?.closest?.(
-    'textarea, .direct-workflow-node__markdown, .direct-workflow-node__prompt, .direct-workflow-node__prompt-field, .text-node-ai-composer, .canvas-agent-panel__messages, .canvas-agent-panel__composer textarea, .canvas-agent-template-form textarea, .audio-inline-settings, .audio-voice-list, .generated-audio__preview'
+    'textarea, .direct-workflow-node__markdown, .direct-workflow-node__prompt, .direct-workflow-node__prompt-field, .text-node-ai-composer, .canvas-agent-panel__messages, .canvas-agent-panel__composer textarea, .canvas-agent-template-form textarea, .audio-inline-settings, .audio-token-popover, .audio-voice-list, .generated-audio__preview'
   )
   if (!(scrollable instanceof HTMLElement)) return false
 
@@ -5556,7 +5642,7 @@ function getWheelScrollDelta(event) {
   if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
     const element = event.target instanceof Element
       ? event.target.closest?.(
-          'textarea, .direct-workflow-node__markdown, .direct-workflow-node__prompt, .direct-workflow-node__prompt-field, .text-node-ai-composer, .canvas-agent-panel__messages, .canvas-agent-panel__composer textarea, .canvas-agent-template-form textarea, .audio-inline-settings, .audio-voice-list, .generated-audio__preview'
+          'textarea, .direct-workflow-node__markdown, .direct-workflow-node__prompt, .direct-workflow-node__prompt-field, .text-node-ai-composer, .canvas-agent-panel__messages, .canvas-agent-panel__composer textarea, .canvas-agent-template-form textarea, .audio-inline-settings, .audio-token-popover, .audio-voice-list, .generated-audio__preview'
         )
       : null
     return delta * Math.max(element?.clientHeight || 360, 1)
@@ -5972,6 +6058,7 @@ function handleDirectNodePointerDown(event, nodeId) {
     focusedDirectNodeId.value = nodeId
     activeDirectNodeId.value = nodeId
     lastTouchedDirectNodeId.value = nodeId
+    markTouchedCanvasNode('direct', nodeId)
     if (!selectedDirectNodeIds.value.includes(nodeId)) {
       selectedDirectNodeIds.value = [nodeId]
     }
@@ -5983,6 +6070,7 @@ function handleDirectNodePointerDown(event, nodeId) {
   focusedDirectNodeId.value = nodeId
   activeDirectNodeId.value = nodeId
   lastTouchedDirectNodeId.value = nodeId
+  markTouchedCanvasNode('direct', nodeId)
   focusDeleteKeySink()
 
   if (event.shiftKey) {
@@ -6024,6 +6112,7 @@ function handleDirectGroupPointerDown(event, groupId) {
   activeDirectNodeId.value = ids.at(-1) || ''
   focusedDirectNodeId.value = activeDirectNodeId.value
   lastTouchedDirectNodeId.value = activeDirectNodeId.value
+  if (activeDirectNodeId.value) markTouchedCanvasNode('direct', activeDirectNodeId.value)
   canvasStore.clearSelection()
   focusDeleteKeySink()
 
@@ -6040,6 +6129,12 @@ function registerDirectNodeElement(nodeId, element) {
   } else {
     directNodeElements.delete(nodeId)
   }
+}
+
+function markTouchedCanvasNode(kind, id) {
+  const nodeId = String(id || '').trim()
+  if (!nodeId) return
+  lastTouchedCanvasNode.value = { kind, id: nodeId }
 }
 
 function focusDirectNode(nodeId) {
@@ -7294,7 +7389,7 @@ function getGeneratedVideoPoster(node) {
 
 function getGeneratedAudioSrc(node) {
   const audio = node?.generatedAudio || {}
-  return normalizeDisplayAudioSrc(audio.url || audio.previewUrl || '')
+  return normalizeDisplayAudioSrc(audio.url || audio.previewUrl || audio.previewAudioUrl || audio.audioUrl || audio.fileUrl || '')
 }
 
 function normalizeDisplayImageSrc(value) {
@@ -7322,6 +7417,48 @@ function normalizeDisplayAudioSrc(value) {
   if (/^(https?:|blob:|data:audio\/)/i.test(source)) return source
   if (source.startsWith('/')) return buildApiUrl(source)
   return buildApiUrl(`/${source}`)
+}
+
+function registerGeneratedAudioElement(nodeId, element) {
+  if (element instanceof HTMLAudioElement) {
+    generatedAudioElements.set(nodeId, element)
+  } else {
+    generatedAudioElements.delete(nodeId)
+  }
+}
+
+function isGeneratedAudioPlaying(nodeId) {
+  return playingAudioNodeId.value === nodeId
+}
+
+function handleGeneratedAudioPause(nodeId) {
+  if (playingAudioNodeId.value === nodeId) playingAudioNodeId.value = ''
+}
+
+async function toggleGeneratedAudioPlayback(node) {
+  const audio = generatedAudioElements.get(node?.id || '')
+  const src = getGeneratedAudioSrc(node)
+  if (!audio || !src) {
+    showToast('音频地址还没有准备好')
+    return
+  }
+  try {
+    if (!audio.paused) {
+      audio.pause()
+      return
+    }
+    generatedAudioElements.forEach((item, id) => {
+      if (id !== node.id) item.pause()
+    })
+    if (audio.currentSrc !== src) {
+      audio.src = src
+      audio.load()
+    }
+    await audio.play()
+    playingAudioNodeId.value = node.id
+  } catch {
+    showToast('当前音频暂时无法播放，可以稍后重试或下载检查')
+  }
 }
 
 function handleUploadedImageError(nodeId) {
@@ -7452,6 +7589,54 @@ function handleGeneratedVideoReady(nodeId) {
   })
 }
 
+async function handleGeneratedAudioError(nodeId, event = null) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const audio = node?.generatedAudio || {}
+  const recordAudio = audio.recordId ? await fetchRecordAudioResult(audio.recordId) : null
+  const nextUrl = normalizeDisplayAudioSrc(recordAudio?.url)
+  if (nextUrl && nextUrl !== getGeneratedAudioSrc(node)) {
+    updateDirectNode(nodeId, {
+      generationStatus: 'success',
+      generationMessage: '音频生成完成',
+      generatedAudio: {
+        ...audio,
+        ...recordAudio,
+        url: nextUrl,
+        isPlayable: false,
+        loadError: false,
+        loadErrorMessage: ''
+      }
+    })
+    return
+  }
+
+  updateDirectNode(nodeId, {
+    generationStatus: 'success',
+    generationMessage: '音频已生成，正在刷新播放地址',
+    generatedAudio: {
+      ...audio,
+      isPlayable: false,
+      loadError: true,
+      loadErrorMessage: getAudioElementErrorMessage(event)
+    }
+  })
+}
+
+function handleGeneratedAudioReady(nodeId) {
+  const node = directNodes.value.find((item) => item.id === nodeId)
+  const audio = node?.generatedAudio || {}
+  updateDirectNode(nodeId, {
+    generationStatus: 'success',
+    generationMessage: '音频生成完成',
+    generatedAudio: {
+      ...audio,
+      isPlayable: true,
+      loadError: false,
+      loadErrorMessage: ''
+    }
+  })
+}
+
 function getVideoElementErrorMessage(event) {
   const code = event?.target?.error?.code
   const messages = {
@@ -7461,6 +7646,17 @@ function getVideoElementErrorMessage(event) {
     4: '当前地址不是浏览器可播放的视频文件'
   }
   return messages[code] || '视频地址暂时无法播放'
+}
+
+function getAudioElementErrorMessage(event) {
+  const code = event?.target?.error?.code
+  const messages = {
+    1: '音频加载被中止，可以下载原音频检查地址',
+    2: '网络加载失败，可能是本地网络或 OSS 地址暂不可访问',
+    3: '浏览器无法解码这个音频格式',
+    4: '当前地址不是浏览器可播放的音频文件'
+  }
+  return messages[code] || '音频地址暂时无法播放'
 }
 
 function openGeneratedVideo(node) {
@@ -7641,8 +7837,16 @@ async function loadAudioGenerationCatalog() {
     if (catalog?.success === false) return
     const abilities = normalizeAudioCatalogAbilities(catalog)
     if (abilities.length > 0) audioAbilityOptions.value = abilities
+    const textControls = normalizeAudioTextControls(catalog)
+    if (textControls.pauseOptions.length > 0) audioPauseOptions.value = textControls.pauseOptions
+    if (textControls.interjectionOptions.length > 0) audioInterjectionOptions.value = textControls.interjectionOptions
+    const emotionOptions = normalizeAudioEmotionOptions(catalog)
+    if (emotionOptions.length > 0) audioEmotionOptions.value = emotionOptions
   } catch {
     audioAbilityOptions.value = [...fallbackAudioAbilityOptions]
+    audioEmotionOptions.value = [...fallbackAudioEmotionOptions]
+    audioPauseOptions.value = [...fallbackAudioPauseOptions]
+    audioInterjectionOptions.value = [...fallbackAudioInterjectionOptions]
   }
 }
 
@@ -7652,17 +7856,49 @@ async function loadAudioVoiceAssets() {
     const voices = normalizeAudioVoiceOptions(payload)
     audioVoiceOptions.value = voices
     if (voices.length > 0) {
+      const nodesNeedingEstimate = []
       directNodes.value = directNodes.value.map((node) => {
         if (node.type !== 'audio_unit' || node.audioVoiceId) return node
-        return {
+        const nextNode = {
           ...node,
           audioVoiceId: voices[0].voiceId,
           audioVoiceSourceType: voices[0].sourceType || 'system'
+        }
+        nodesNeedingEstimate.push(nextNode)
+        return nextNode
+      })
+      nodesNeedingEstimate.forEach((node) => {
+        if (String(buildDirectPromptWithUpstreamReferences(node, node.prompt || '')).trim()) {
+          refreshAudioEstimate(node)
         }
       })
     }
   } catch {
     audioVoiceOptions.value = []
+  }
+}
+
+function getDefaultAudioNodeSettings() {
+  const ability = audioAbilityOptions.value[0] || fallbackAudioAbilityOptions[0]
+  const tiers = Array.isArray(ability?.tiers) && ability.tiers.length > 0 ? ability.tiers : fallbackAudioAbilityOptions[0].tiers
+  const tierCode = ability?.defaultTier || tiers[0]?.id || 'hd'
+  const tier = tiers.find((item) => item.id === tierCode || item.value === tierCode) || tiers[0] || fallbackAudioAbilityOptions[0].tiers[0]
+  const voice = audioVoiceOptions.value[0] || null
+  return {
+    audioAbilityType: ability?.id || fallbackAudioAbilityOptions[0].id,
+    audioTierCode: tier?.id || tier?.value || tierCode,
+    audioModelCode: tier?.modelCode || 'speech-2.8-hd',
+    audioVoiceId: voice?.voiceId || '',
+    audioVoiceSourceType: voice?.sourceType || 'system',
+    audioSpeed: 1,
+    audioPitch: 0,
+    audioVolume: 1,
+    audioEmotion: '',
+    audioLanguageBoost: 'none',
+    audioFormat: 'mp3',
+    audioSampleRate: 32000,
+    audioBitrate: 128000,
+    audioChannelCount: 1
   }
 }
 
@@ -7701,6 +7937,77 @@ function normalizeAudioTierOptions(tiers) {
         label: modelCode ? `Minimax-${modelCode}` : tier?.tier_label || tier?.label || id,
         tierLabel: tier?.tier_label || tier?.tierLabel || tier?.label || id,
         modelCode
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeAudioTextControls(catalog) {
+  const controls =
+    catalog?.data?.text_controls ||
+    catalog?.data?.textControls ||
+    catalog?.text_controls ||
+    catalog?.textControls ||
+    {}
+  return {
+    pauseOptions: normalizeAudioPauseOptions(controls.pause_tags || controls.pauseTags),
+    interjectionOptions: normalizeAudioInterjectionOptions(controls.speech_tags || controls.speechTags)
+  }
+}
+
+function normalizeAudioEmotionOptions(catalog) {
+  const abilityItems =
+    (Array.isArray(catalog?.data?.abilities) && catalog.data.abilities) ||
+    (Array.isArray(catalog?.abilities) && catalog.abilities) ||
+    findArrayByKey(catalog, ['abilities', 'audio_abilities', 'audioAbilities']) ||
+    []
+  for (const ability of abilityItems) {
+    const tiers = Array.isArray(ability?.tiers) ? ability.tiers : Object.values(ability?.tiers || {})
+    for (const tier of tiers) {
+      const fields = Array.isArray(tier?.fields) ? tier.fields : []
+      const emotionField = fields.find((field) => String(field?.key || field?.name || '').trim() === 'emotion')
+      const options = normalizeSelectOptions(emotionField?.options)
+      if (options.length > 0) return options
+    }
+  }
+  return []
+}
+
+function normalizeSelectOptions(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const value = String(item?.value || item?.id || item?.key || '').trim()
+      if (!value) return null
+      return {
+        value,
+        label: String(item?.label || item?.name || value).trim()
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeAudioPauseOptions(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const value = String(item?.value || item?.text || '').trim()
+      if (!value) return null
+      return {
+        value,
+        text: value,
+        label: String(item?.label || value).trim()
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeAudioInterjectionOptions(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const value = String(item?.value || item?.text || '').trim()
+      if (!value) return null
+      return {
+        value,
+        label: String(item?.label || value).trim()
       }
     })
     .filter(Boolean)
@@ -8155,8 +8462,10 @@ function getDirectUpstreamTextSnippets(nodeId) {
     .filter(Boolean)
 }
 
-function buildDirectPromptWithUpstreamReferences(node, prompt = '') {
-  const ownPrompt = String(prompt ?? node?.prompt ?? '').trim()
+function buildDirectPromptWithUpstreamReferences(node, prompt = undefined) {
+  const segmentPrompt = getPromptTextFromSegments(normalizePromptSegments(node?.promptSegments, node)).trim()
+  const promptSource = prompt ?? (segmentPrompt || node?.prompt || '')
+  const ownPrompt = String(promptSource).trim()
   const upstreamText = node?.id ? getDirectUpstreamTextSnippets(node.id) : []
   if (!upstreamText.length) return ownPrompt
   return [
@@ -9394,17 +9703,22 @@ function toggleAudioSettingsPanel(node) {
 }
 
 function resetAudioNodeSettings(node) {
+  const defaults = getDefaultAudioNodeSettings()
+  const nextNode = {
+    ...node,
+    ...defaults,
+    audioEstimateStatus: 'idle',
+    audioEstimatePoints: null
+  }
+  rememberHistory()
   updateDirectNode(node.id, {
-    audioSpeed: 1,
-    audioPitch: 0,
-    audioVolume: 1,
-    audioEmotion: '',
-    audioLanguageBoost: 'none',
-    audioFormat: 'mp3',
-    audioSampleRate: 32000,
-    audioBitrate: 128000,
-    audioChannelCount: 1
+    ...defaults,
+    audioEstimateStatus: 'idle',
+    audioEstimatePoints: null
   })
+  refreshAudioEstimate(nextNode)
+  scheduleCanvasSave(220)
+  showToast('已恢复默认音色设置')
 }
 
 function isAudioEmotionSupported(node) {
@@ -9480,11 +9794,11 @@ function calculateAudioBillingCharacters(text) {
 }
 
 function getAudioCharacterLabel(node) {
-  return `${calculateAudioBillingCharacters(buildDirectPromptWithUpstreamReferences(node, node?.prompt || ''))}/50000`
+  return `${calculateAudioBillingCharacters(buildDirectPromptWithUpstreamReferences(node, getDirectNodePromptText(node)))}/50000`
 }
 
 function estimateAudioPointsLocally(node) {
-  const chars = Math.max(1, calculateAudioBillingCharacters(buildDirectPromptWithUpstreamReferences(node, node?.prompt || '')))
+  const chars = Math.max(1, calculateAudioBillingCharacters(buildDirectPromptWithUpstreamReferences(node, getDirectNodePromptText(node))))
   const tier = getAudioTierOption(node)
   const pointsPer10k = Number(tier?.pointsPer10k || (String(tier?.modelCode || '').includes('turbo') ? 30 : 53))
   return Math.max(1, Math.ceil(chars / (10000 / pointsPer10k)))
@@ -9497,20 +9811,31 @@ function isAudioEstimatePending(node) {
 function getAudioGenerationPoints(node) {
   const exact = Number(node?.audioEstimatePoints)
   if (Number.isFinite(exact) && exact > 0) return exact
+  if (String(buildDirectPromptWithUpstreamReferences(node, getDirectNodePromptText(node))).trim()) {
+    return estimateAudioPointsLocally(node)
+  }
   return null
 }
 
 function getAudioGenerationPointsButtonLabel(node) {
-  if (node?.audioEstimateStatus === 'pending') return '估算中'
   const points = getAudioGenerationPoints(node)
+  if (node?.audioEstimateStatus === 'pending') return Number.isFinite(points) ? points : '估算中'
   return Number.isFinite(points) ? points : '--'
 }
 
 function getAudioGenerationBlocker(node) {
-  const characters = calculateAudioBillingCharacters(buildDirectPromptWithUpstreamReferences(node, node?.prompt || ''))
+  const characters = calculateAudioBillingCharacters(buildDirectPromptWithUpstreamReferences(node, getDirectNodePromptText(node)))
   if (!String(node?.audioVoiceId || '').trim()) return '请先在设置里选择音色'
   if (characters > 50000) return '配音文本不能超过 50000 字符'
   return ''
+}
+
+function normalizeAudioPromptTagsForProvider(text) {
+  return String(text || '')
+    .replace(/\s*(\([a-z][a-z-]*\))\s*/gi, ' $1 ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function buildDirectAudioPayload(node, patch = {}) {
@@ -9518,7 +9843,7 @@ function buildDirectAudioPayload(node, patch = {}) {
   const voice = audioVoiceOptions.value.find((item) => item.voiceId === node?.audioVoiceId)
   const scriptText = patch.promptResolved
     ? String(patch.prompt ?? '')
-    : buildDirectPromptWithUpstreamReferences(node, patch.prompt ?? node?.prompt ?? '')
+    : buildDirectPromptWithUpstreamReferences(node, patch.prompt ?? getDirectNodePromptText(node))
   const payload = {
     ownership_mode: 'standalone',
     ability_type: node?.audioAbilityType || fallbackAudioAbilityOptions[0].id,
@@ -9526,7 +9851,7 @@ function buildDirectAudioPayload(node, patch = {}) {
     model_code: node?.audioModelCode || tier?.modelCode || 'speech-2.8-hd',
     voice_id: node?.audioVoiceId || voice?.voiceId || '',
     voice_source_type: node?.audioVoiceSourceType || voice?.sourceType || 'system',
-    script_text: scriptText,
+    script_text: normalizeAudioPromptTagsForProvider(scriptText),
     emotion: isAudioEmotionSupported(node) ? node?.audioEmotion || undefined : undefined,
     speed: node?.audioSpeed ?? undefined,
     volume: node?.audioVolume ?? undefined,
@@ -9548,7 +9873,7 @@ function refreshAudioEstimate(node) {
   if (!node?.id) return
   const existing = audioEstimateTimers.get(node.id)
   if (existing) window.clearTimeout(existing)
-  if (!String(buildDirectPromptWithUpstreamReferences(node, node.prompt || '')).trim() || getAudioGenerationBlocker(node)) {
+  if (!String(buildDirectPromptWithUpstreamReferences(node, getDirectNodePromptText(node))).trim() || getAudioGenerationBlocker(node)) {
     updateDirectNode(node.id, {
       audioEstimateStatus: 'idle',
       audioEstimatePoints: null
@@ -9620,7 +9945,9 @@ async function estimateDirectAudioNode(nodeId) {
 }
 
 async function runDirectAudioNode(node) {
-  const prompt = buildDirectPromptWithUpstreamReferences(node, node.prompt)
+  const promptSegments = getCurrentDirectPromptSegments(node)
+  const rawPrompt = getPromptTextFromSegments(promptSegments)
+  const prompt = buildDirectPromptWithUpstreamReferences(node, rawPrompt)
   if (!prompt) {
     showToast('请先输入配音文本')
     return
@@ -9635,6 +9962,8 @@ async function runDirectAudioNode(node) {
   clearAudioGenerationTimer(node.id)
   const settings = buildDirectAudioPayload(node, { prompt, promptResolved: true })
   updateDirectNode(node.id, {
+    prompt: rawPrompt,
+    promptSegments,
     audioAbilityType: settings.ability_type,
     audioTierCode: settings.tier_code,
     audioModelCode: settings.model_code,
@@ -9856,7 +10185,11 @@ function completeDirectAudioGeneration(nodeId, audio) {
     generationRecordId: audio.recordId || '',
     generatedAudio: {
       ...audio,
-      url: normalizeDisplayAudioSrc(audio.url)
+      url: normalizeDisplayAudioSrc(audio.url || audio.previewUrl || audio.previewAudioUrl || audio.audioUrl || audio.fileUrl),
+      previewUrl: normalizeDisplayAudioSrc(audio.previewUrl || audio.previewAudioUrl || audio.audioUrl || audio.fileUrl),
+      isPlayable: false,
+      loadError: false,
+      loadErrorMessage: ''
     }
   })
   showToast('音频生成完成')
@@ -9972,7 +10305,8 @@ function extractAudioGenerationResult(payload) {
     recordId: findFirstExternalRecordId(payload),
     status: String(findFirstValueByKeys(payload, ['status', 'state', 'task_status']) || '').toLowerCase(),
     message: findFirstValueByKeys(payload, ['message', 'error', 'detail']),
-    url: findFirstAudioOutputUrl(payload)
+    url: findFirstAudioOutputUrl(payload),
+    previewUrl: findFirstValueByKeys(payload, ['preview_audio_url', 'previewAudioUrl'])
   }
 }
 
@@ -10167,6 +10501,8 @@ function findFirstAudioOutputUrl(value, depth = 0) {
   if (typeof value !== 'object') return ''
 
   const priorityKeys = [
+    'preview_audio_url',
+    'previewAudioUrl',
     'preview_url',
     'previewUrl',
     'audio_url',
@@ -10227,15 +10563,34 @@ function isPotentialVideoOutputUrl(value) {
 function isLikelyAudioUrl(value) {
   const source = String(value || '').trim()
   if (!source || /\.(png|jpe?g|webp|gif|avif|mp4|webm|mov|m3u8)(\?|$)/i.test(source)) return false
-  return /^(data:audio\/|blob:)/i.test(source) || /^\/.+(\.mp3|\.wav|\.m4a|\.ogg|audio|oss|cos|cdn)/i.test(source) || /^https?:\/\/.+(\.mp3|\.wav|\.m4a|\.ogg|audio|oss|cos|cdn)/i.test(source)
+  return /^(data:audio\/|blob:)/i.test(source) || /^\/.+(\.mp3|\.wav|\.m4a|\.ogg|\.aac|\.flac|\.mpeg|\.mpga|audio|oss|cos|cdn)/i.test(source) || /^https?:\/\/.+(\.mp3|\.wav|\.m4a|\.ogg|\.aac|\.flac|\.mpeg|\.mpga|audio|oss|cos|cdn)/i.test(source)
 }
 
 function isPotentialAudioOutputUrl(value, owner = null) {
   const source = String(value || '').trim()
   if (!source || /\.(png|jpe?g|webp|gif|avif|mp4|webm|mov|m3u8)(\?|$)/i.test(source)) return false
   if (isLikelyAudioUrl(source)) return true
-  const recordType = String(owner?.record_type || owner?.recordType || '').toLowerCase()
-  return recordType === 'audio' && /^(https?:\/\/|\/|blob:)/i.test(source)
+  return hasAudioOutputHint(owner) && /^(https?:\/\/|\/|blob:)/i.test(source)
+}
+
+function hasAudioOutputHint(owner = null) {
+  if (!owner || typeof owner !== 'object') return false
+  const text = [
+    owner.record_type,
+    owner.recordType,
+    owner.task_type,
+    owner.taskType,
+    owner.media_type,
+    owner.mediaType,
+    owner.type,
+    owner.kind,
+    owner.ability_type,
+    owner.abilityType,
+    owner.model_code,
+    owner.modelCode,
+    owner.model
+  ].map((item) => String(item || '').toLowerCase()).join(' ')
+  return /\baudio\b|speech|voice|dubbing|tts|配音|音频/.test(text)
 }
 
 function isFinishedTaskStatus(status) {
@@ -10253,6 +10608,7 @@ function createNode(type, position, patch = {}, options = {}) {
   const nextNodes = options.replaceWhenEmpty && nodes.value.length === 0 ? [node] : [...nodes.value, node]
   nodes.value = nextNodes.map((item) => ({ ...item, selected: item.id === node.id }))
   canvasStore.setSelection([node.id])
+  markTouchedCanvasNode('workflow', node.id)
   showToast('\u5df2\u6dfb\u52a0\u8282\u70b9')
   return node
 }
@@ -10343,11 +10699,13 @@ function createDirectNodeAtFlow(type, flowPosition, patch = {}, explicitCount = 
   focusedDirectNodeId.value = node.id
   activeDirectNodeId.value = node.id
   lastTouchedDirectNodeId.value = node.id
+  markTouchedCanvasNode('direct', node.id)
   nextTick(() => {
     selectedDirectNodeIds.value = [node.id]
     focusedDirectNodeId.value = node.id
     activeDirectNodeId.value = node.id
     lastTouchedDirectNodeId.value = node.id
+    markTouchedCanvasNode('direct', node.id)
     canvasFrame.value?.focus?.({ preventScroll: true })
     focusDeleteKeySink()
   })
@@ -10550,6 +10908,7 @@ function runNode(nodeId) {
 
 function handleNodesChange(changes) {
   const selected = changes.filter((change) => change.type === 'select' && change.selected).map((change) => change.id)
+  if (selected.length > 0) markTouchedCanvasNode('workflow', selected.at(-1))
   if (selected.length > 0 || changes.some((change) => change.type === 'select')) {
     canvasStore.setSelection(selected)
   }
@@ -10899,12 +11258,65 @@ function logoutCanvas() {
 }
 
 function locateCanvas() {
-  if (nodes.value.length > 0) {
-    fitView({ duration: 280, padding: 0.2 })
-  } else {
-    setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 240 })
+  const recent = getRecentTouchedNodeRect()
+  if (recent) {
+    centerViewportOnFlowRect(recent, { duration: 180 })
+    showToast('已定位到最近节点')
+    return
   }
-  showToast('已定位画布')
+  setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 180 })
+  canvasStore.setViewport({ x: 0, y: 0, zoom: 1 })
+  syncPendingReferenceMenuScreen()
+  showToast('已回到画布原点')
+}
+
+function getRecentTouchedNodeRect() {
+  const recent = lastTouchedCanvasNode.value || {}
+  if (recent.kind === 'direct') {
+    const node = directNodes.value.find((item) => item.id === recent.id)
+    if (node) {
+      const size = getDirectNodeSize(node.type)
+      return { x: node.x, y: node.y, width: size.width, height: size.height }
+    }
+  }
+  if (recent.kind === 'workflow') {
+    const node = nodes.value.find((item) => item.id === recent.id)
+    if (node) {
+      const size = getWorkflowNodeSize(node)
+      return { x: node.position?.x || 0, y: node.position?.y || 0, width: size.width, height: size.height }
+    }
+  }
+
+  const directFallbackId = lastTouchedDirectNodeId.value || activeDirectNodeId.value || focusedDirectNodeId.value || selectedDirectNodeIds.value.at(-1)
+  const directFallback = directNodes.value.find((node) => node.id === directFallbackId)
+  if (directFallback) {
+    const size = getDirectNodeSize(directFallback.type)
+    return { x: directFallback.x, y: directFallback.y, width: size.width, height: size.height }
+  }
+
+  const workflowFallbackId = canvasStore.selectedNodeIds.at?.(-1)
+  const workflowFallback = nodes.value.find((node) => node.id === workflowFallbackId)
+  if (workflowFallback) {
+    const size = getWorkflowNodeSize(workflowFallback)
+    return { x: workflowFallback.position?.x || 0, y: workflowFallback.position?.y || 0, width: size.width, height: size.height }
+  }
+  return null
+}
+
+function centerViewportOnFlowRect(rect, options = {}) {
+  const frameRect = canvasFrame.value?.getBoundingClientRect?.()
+  const zoom = Number(viewport.value?.zoom || 1) || 1
+  const centerX = Number(rect.x || 0) + Number(rect.width || 0) / 2
+  const centerY = Number(rect.y || 0) + Number(rect.height || 0) / 2
+  const nextViewport = {
+    x: (frameRect?.width || window.innerWidth) / 2 - centerX * zoom,
+    y: (frameRect?.height || window.innerHeight) / 2 - centerY * zoom,
+    zoom
+  }
+  setViewport(nextViewport, { duration: options.duration ?? 180 })
+  canvasStore.setViewport(nextViewport)
+  syncPendingReferenceMenuScreen()
+  scheduleCanvasSave(900)
 }
 
 function handleZoomIn() {

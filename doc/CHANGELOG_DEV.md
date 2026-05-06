@@ -1,5 +1,88 @@
 # Sluvo Development Changelog
 
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/public/media/home/agent-team-flow.mp4`
+- `apps/sluvo-web/public/media/home/canvas-skill-pack.mp4`
+- `apps/sluvo-web/public/media/home/community-remix-network.mp4`
+- `media/hyperframes/agent-team-flow/DESIGN.md`
+- `media/hyperframes/agent-team-flow/index.html`
+- `media/hyperframes/canvas-skill-pack/DESIGN.md`
+- `media/hyperframes/canvas-skill-pack/index.html`
+- `media/hyperframes/community-remix-network/DESIGN.md`
+- `media/hyperframes/community-remix-network/index.html`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added HyperFrames-authored homepage preview videos for the Agent Team, Canvas Skill, and Community cards.
+- Wired the three remaining preview cards to the same muted looping hover-video logic used by the Open Canvas card.
+- Kept each preview grounded in its product meaning: agent orchestration, reusable skill packaging, and community publishing/remixing.
+
+Verification:
+- `npx hyperframes lint`
+- `npx hyperframes validate`
+- `npx hyperframes inspect --samples 12`
+- `npx hyperframes render --output D:\work\Sluvo\apps\sluvo-web\public\media\home\agent-team-flow.mp4 --quality standard --fps 30 --workers 1`
+- `npx hyperframes render --output D:\work\Sluvo\apps\sluvo-web\public\media\home\canvas-skill-pack.mp4 --quality standard --fps 30 --workers 1`
+- `npx hyperframes render --output D:\work\Sluvo\apps\sluvo-web\public\media\home\community-remix-network.mp4 --quality standard --fps 30 --workers 1`
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+- `Invoke-WebRequest -Method Head http://127.0.0.1:5174/media/home/{video}.mp4`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/public/media/home/share-fork-canvas.mp4`
+- `media/hyperframes/share-fork-canvas/DESIGN.md`
+- `media/hyperframes/share-fork-canvas/index.html`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added a HyperFrames-authored homepage preview video for the logged-out hero "创作过程可分享" card.
+- Wired the first Open Canvas preview card to show the local muted looping video in its reserved media area while preserving the existing placeholder animation for the other cards.
+- Kept the video aligned with Sluvo's black/gold homepage palette and exported it as a lightweight 6-second MP4.
+
+Verification:
+- `npx hyperframes lint`
+- `npx hyperframes validate`
+- `npx hyperframes inspect --samples 12`
+- `npx hyperframes render --output D:\work\Sluvo\apps\sluvo-web\public\media\home\share-fork-canvas.mp4 --quality standard --fps 30 --workers 1`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/services/audio_model_registry.py`
+- `backend/services/generation_record_service.py`
+- `backend/tests/test_audio_model_registry.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added MiniMax speech tag and pause tag controls to the backend audio catalog based on the `t2a_async_v2` API docs.
+- Normalized Chinese speech-tag aliases like `（叹气）` and `（清嗓子）` into real MiniMax tags such as `(sighs)` and `(clear-throat)` before billing and submission.
+- Updated the async MiniMax audio request payload to use `audio_setting.audio_sample_rate` as documented.
+- Expanded the audio node speech-token menu to show all MiniMax speech tags, displaying Chinese labels while inserting the real provider tag into the prompt.
+- Changed the locate-canvas action to jump back to the most recently touched node instead of fitting the whole canvas.
+- Marked newly created nodes as the most recent locate target, including nodes created by dragging a new connection line.
+- Kept MiniMax speech-token chips displayed in Chinese while preserving the official provider tag as the submitted prompt value.
+- Made the audio reset action restore the default ability, model tier, voice, and base settings, then refresh the inspiration estimate.
+- Added a local audio inspiration estimate fallback so the default model tier shows a cost immediately while the backend estimate is pending.
+- Added a direct play button to generated audio cards and wired it to the node's audio element.
+- Rebuilt audio generation prompts from prompt segments so Chinese speech-token chips submit the real MiniMax tag values, with speech tags spaced as standalone provider tokens.
+- Completed the frontend audio emotion options to match the backend catalog and load them dynamically from audio model fields when available.
+- Passed `voice_setting.emotion` through the async MiniMax audio request path as well as the sync path.
+- Made text-heavy prompt nodes drag-first by default, with markdown text selection enabled via double-click.
+
+Verification suggestions:
+- `npm run build --workspace sluvo-web`
+- `python -m pytest backend/tests/test_audio_model_registry.py`
+- `python -m py_compile backend/services/audio_model_registry.py backend/services/generation_record_service.py`
+- `git diff --check`
+
 ## 2026-05-05
 
 Changed files:

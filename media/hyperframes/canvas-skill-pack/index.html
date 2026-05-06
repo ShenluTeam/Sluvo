@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { width: 1280px; height: 720px; overflow: hidden; background: #050505; }
+      #root {
+        position: relative;
+        width: 1280px;
+        height: 720px;
+        overflow: hidden;
+        color: #fff1c7;
+        background:
+          radial-gradient(ellipse at 42% 42%, rgba(214, 181, 109, 0.2), transparent 42%),
+          radial-gradient(ellipse at 82% 70%, rgba(255, 241, 199, 0.1), transparent 24%),
+          linear-gradient(180deg, #050505, #0d0b07 58%, #030303);
+        font-family: "Noto Sans JP", "Segoe UI", sans-serif;
+      }
+      .scene { position: relative; width: 100%; height: 100%; padding: 64px 76px; overflow: hidden; }
+      .grid {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(rgba(214, 181, 109, 0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(214, 181, 109, 0.06) 1px, transparent 1px);
+        background-size: 46px 46px;
+        opacity: 0.34;
+      }
+      .sweep {
+        position: absolute;
+        inset: -32% auto -32% -20%;
+        width: 24%;
+        background: linear-gradient(90deg, transparent, rgba(255, 241, 199, 0.14), transparent);
+        filter: blur(9px);
+        transform: skewX(-16deg);
+      }
+      .workflow {
+        position: absolute;
+        left: 70px;
+        top: 76px;
+        width: 700px;
+        height: 500px;
+        border: 1px solid rgba(255, 241, 199, 0.2);
+        border-radius: 26px;
+        background: linear-gradient(145deg, rgba(255, 241, 199, 0.08), transparent 38%), rgba(9, 8, 6, 0.92);
+        box-shadow: 0 46px 100px rgba(0,0,0,.54), inset 0 1px 0 rgba(255,255,255,.12);
+        overflow: hidden;
+      }
+      .bar { display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 22px; border-bottom: 1px solid rgba(214,181,109,.14); color: rgba(255,241,199,.68); font-size: 14px; font-weight: 900; text-transform: uppercase; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #d6b56d; box-shadow: 0 0 18px rgba(214,181,109,.82); }
+      .node {
+        position: absolute;
+        display: grid;
+        gap: 7px;
+        align-content: center;
+        width: 138px;
+        height: 96px;
+        padding: 13px;
+        border: 1px solid rgba(255,241,199,.18);
+        border-radius: 14px;
+        background: linear-gradient(145deg, rgba(255,241,199,.12), transparent 48%), rgba(19,15,9,.86);
+        box-shadow: 0 18px 42px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.1);
+      }
+      .node b { color: #fff7de; font-size: 17px; line-height: 1.1; }
+      .node span { color: rgba(255,241,199,.56); font-size: 12px; font-weight: 800; }
+      .node i { display: block; width: 54%; height: 5px; border-radius: 999px; background: linear-gradient(90deg,#fff1c7,#d6b56d); }
+      .n1 { left: 68px; top: 118px; }
+      .n2 { left: 254px; top: 118px; }
+      .n3 { left: 440px; top: 118px; }
+      .n4 { left: 254px; top: 314px; }
+      .line { position: absolute; height: 3px; border-radius: 999px; background: linear-gradient(90deg, transparent, rgba(255,241,199,.8), #d6b56d, transparent); filter: drop-shadow(0 0 12px rgba(214,181,109,.6)); transform-origin: left center; }
+      .l1 { left: 204px; top: 166px; width: 74px; }
+      .l2 { left: 390px; top: 166px; width: 74px; }
+      .l3 { left: 318px; top: 218px; width: 104px; transform: rotate(86deg); }
+      .pack {
+        position: absolute;
+        left: 594px;
+        top: 250px;
+        display: grid;
+        place-items: center;
+        width: 146px;
+        height: 146px;
+        border: 2px solid rgba(255,241,199,.32);
+        border-radius: 24px;
+        background: radial-gradient(circle at 50% 40%, rgba(255,241,199,.18), transparent 54%), rgba(13,11,7,.94);
+        box-shadow: 0 0 58px rgba(214,181,109,.42), inset 0 1px 0 rgba(255,255,255,.12);
+      }
+      .pack strong { color: #fff7de; font-size: 25px; text-align: center; line-height: 1.1; display: grid; gap: 4px; }
+      .pack strong span { display: block; }
+      .arrow { position: absolute; left: 754px; top: 320px; width: 170px; height: 4px; border-radius: 999px; background: linear-gradient(90deg, #d6b56d, rgba(255,241,199,.9), transparent); filter: drop-shadow(0 0 14px rgba(214,181,109,.76)); }
+      .reuse {
+        position: absolute;
+        right: 76px;
+        top: 112px;
+        width: 320px;
+        min-height: 404px;
+        padding: 24px;
+        border: 1px solid rgba(214,181,109,.24);
+        border-radius: 22px;
+        background: linear-gradient(145deg, rgba(255,241,199,.12), transparent 46%), rgba(14,11,7,.9);
+        box-shadow: 0 32px 84px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12);
+      }
+      .label { display: inline-flex; align-items: center; gap: 8px; color: #d6b56d; font-size: 13px; font-weight: 900; text-transform: uppercase; }
+      .label::before { width: 8px; height: 8px; border-radius: 50%; background: #d6b56d; box-shadow: 0 0 20px rgba(214,181,109,.86); content: ""; }
+      h1 { margin-top: 18px; color: #fff7de; font-size: 38px; line-height: 1.08; }
+      h1 span { display: block; }
+      p { margin-top: 11px; color: rgba(255,241,199,.64); font-size: 17px; line-height: 1.5; }
+      .cards { position: relative; height: 112px; margin-top: 24px; }
+      .mini { position: absolute; width: 118px; height: 74px; border: 1px solid rgba(255,241,199,.18); border-radius: 13px; background: linear-gradient(145deg, rgba(255,241,199,.14), transparent 48%), rgba(20,16,10,.88); }
+      .mini::after { position: absolute; left: 14px; right: 14px; bottom: 14px; height: 5px; border-radius: 999px; background: #d6b56d; content: ""; }
+      .m1 { left: 0; top: 20px; }
+      .m2 { left: 78px; top: 8px; }
+      .m3 { left: 156px; top: 24px; }
+      .install { display: inline-flex; margin-top: 8px; min-height: 38px; padding: 9px 16px; border: 1px solid rgba(255,241,199,.42); border-radius: 999px; color: #fff7de; background: #2b1f10; font-family: "Cascadia Mono","Consolas",monospace; font-size: 13px; font-weight: 900; box-shadow: 0 0 42px rgba(214,181,109,.42); }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="6" data-width="1280" data-height="720">
+      <div id="scene" class="clip scene" data-start="0" data-duration="6" data-track-index="0">
+        <div class="grid" data-layout-ignore></div>
+        <div class="sweep" data-layout-ignore></div>
+        <section class="workflow" data-layout-allow-overflow>
+          <div class="bar"><span class="dot"></span> Canvas Skill Builder</div>
+          <span class="line l1"></span><span class="line l2"></span><span class="line l3"></span>
+          <article class="node n1"><b>提示词</b><span>Prompt</span><i></i></article>
+          <article class="node n2"><b>角色</b><span>Asset</span><i></i></article>
+          <article class="node n3"><b>分镜</b><span>Shot</span><i></i></article>
+          <article class="node n4"><b>视频</b><span>Render</span><i></i></article>
+        </section>
+        <section class="pack"><strong><span>Skill</span><span>Pack</span></strong></section>
+        <span class="arrow" data-layout-ignore></span>
+        <section class="reuse">
+          <span class="label">Build And Reuse</span>
+          <h1><span>画布技能</span><span>沉淀成包</span></h1>
+          <p>把一条高频创作链保存为 Skill，下一次直接安装到新画布继续生产。</p>
+          <div class="cards"><span class="mini m1"></span><span class="mini m2"></span><span class="mini m3"></span></div>
+          <span class="install">INSTALL SKILL</span>
+        </section>
+      </div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.from(".workflow", { opacity: 0, y: 34, scale: 0.94, duration: 0.62, ease: "power3.out" }, 0.16);
+      tl.from(".bar", { opacity: 0, x: -24, duration: 0.44, ease: "expo.out" }, 0.34);
+      tl.from(".node", { opacity: 0, y: 26, scale: 0.78, duration: 0.44, stagger: 0.12, ease: "back.out(1.55)" }, 0.52);
+      tl.from(".line", { opacity: 0, scaleX: 0.1, duration: 0.52, stagger: 0.09, ease: "power2.out" }, 1.08);
+      tl.from(".pack", { opacity: 0, scale: 0.35, rotation: -8, duration: 0.58, ease: "back.out(2)" }, 1.7);
+      tl.to(".node", { x: 430, y: 126, scale: 0.22, opacity: 0.28, duration: 0.54, stagger: 0.04, ease: "power2.inOut" }, 2.18);
+      tl.from(".arrow", { opacity: 0, scaleX: 0, duration: 0.58, ease: "power2.inOut" }, 2.7);
+      tl.from(".reuse", { opacity: 0, x: 54, scale: 0.94, duration: 0.62, ease: "expo.out" }, 2.92);
+      tl.from(".label", { opacity: 0, y: 16, duration: 0.34, ease: "power3.out" }, 3.1);
+      tl.from("h1", { opacity: 0, y: 22, duration: 0.42, ease: "power4.out" }, 3.22);
+      tl.from("p", { opacity: 0, y: 16, duration: 0.38, ease: "circ.out" }, 3.36);
+      tl.from(".mini", { opacity: 0, y: 22, rotation: -4, duration: 0.36, stagger: 0.1, ease: "power2.out" }, 3.72);
+      tl.from(".install", { opacity: 0, scale: 0.58, duration: 0.38, ease: "back.out(1.8)" }, 4.12);
+      tl.to(".sweep", { x: 1680, duration: 4.8, ease: "sine.inOut" }, 0.2);
+      tl.to(".pack", { scale: 1.06, duration: 0.42, yoyo: true, repeat: 2, ease: "sine.inOut" }, 4.42);
+      tl.to(".mini", { y: -7, duration: 0.54, stagger: 0.08, yoyo: true, repeat: 1, ease: "sine.inOut" }, 4.64);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

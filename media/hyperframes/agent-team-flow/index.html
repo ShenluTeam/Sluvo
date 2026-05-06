@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { width: 1280px; height: 720px; overflow: hidden; background: #050505; }
+      #root {
+        position: relative;
+        width: 1280px;
+        height: 720px;
+        overflow: hidden;
+        color: #fff1c7;
+        background:
+          radial-gradient(ellipse at 52% 38%, rgba(214, 181, 109, 0.2), transparent 42%),
+          radial-gradient(ellipse at 86% 14%, rgba(255, 241, 199, 0.1), transparent 24%),
+          linear-gradient(180deg, #050505, #0d0b07 60%, #030303);
+        font-family: "Noto Sans JP", "Segoe UI", sans-serif;
+      }
+      .scene { position: relative; width: 100%; height: 100%; padding: 64px 76px; overflow: hidden; }
+      .grid {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(rgba(214, 181, 109, 0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(214, 181, 109, 0.06) 1px, transparent 1px);
+        background-size: 44px 44px;
+        opacity: 0.36;
+      }
+      .sweep {
+        position: absolute;
+        inset: -32% auto -32% -20%;
+        width: 24%;
+        background: linear-gradient(90deg, transparent, rgba(255, 241, 199, 0.14), transparent);
+        filter: blur(9px);
+        transform: skewX(-16deg);
+      }
+      .canvas {
+        position: absolute;
+        left: 72px;
+        top: 68px;
+        width: 742px;
+        height: 520px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 241, 199, 0.2);
+        border-radius: 26px;
+        background:
+          radial-gradient(ellipse at 48% 45%, rgba(214, 181, 109, 0.16), transparent 50%),
+          linear-gradient(145deg, rgba(255, 241, 199, 0.08), transparent 38%),
+          rgba(9, 8, 6, 0.92);
+        box-shadow: 0 46px 100px rgba(0, 0, 0, 0.54), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 54px;
+        padding: 0 22px;
+        border-bottom: 1px solid rgba(214, 181, 109, 0.14);
+        color: rgba(255, 241, 199, 0.68);
+        font-size: 14px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #d6b56d; box-shadow: 0 0 18px rgba(214, 181, 109, 0.82); }
+      .agent {
+        position: absolute;
+        display: grid;
+        align-content: center;
+        gap: 7px;
+        width: 150px;
+        height: 106px;
+        padding: 14px;
+        border: 1px solid rgba(255, 241, 199, 0.18);
+        border-radius: 15px;
+        background: linear-gradient(145deg, rgba(255, 241, 199, 0.12), transparent 48%), rgba(19, 15, 9, 0.86);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      }
+      .agent b { color: #fff7de; font-size: 18px; line-height: 1.1; }
+      .agent span { color: rgba(255, 241, 199, 0.56); font-size: 12px; font-weight: 800; }
+      .agent i { display: block; width: 52%; height: 5px; border-radius: 999px; background: linear-gradient(90deg, #fff1c7, #d6b56d); box-shadow: 0 0 15px rgba(214, 181, 109, 0.44); }
+      .director { left: 292px; top: 196px; width: 170px; height: 126px; border-color: rgba(255, 241, 199, 0.34); }
+      .writer { left: 82px; top: 104px; }
+      .shot { left: 82px; top: 330px; }
+      .art { left: 514px; top: 104px; }
+      .render { left: 514px; top: 330px; }
+      .line {
+        position: absolute;
+        height: 3px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, rgba(255, 241, 199, 0.8), #d6b56d, transparent);
+        filter: drop-shadow(0 0 12px rgba(214, 181, 109, 0.6));
+        transform-origin: left center;
+      }
+      .l1 { left: 224px; top: 176px; width: 104px; transform: rotate(22deg); }
+      .l2 { left: 224px; top: 384px; width: 112px; transform: rotate(-28deg); }
+      .l3 { left: 456px; top: 244px; width: 116px; transform: rotate(-28deg); }
+      .l4 { left: 456px; top: 278px; width: 114px; transform: rotate(26deg); }
+      .run-panel {
+        position: absolute;
+        right: 78px;
+        top: 104px;
+        width: 360px;
+        min-height: 428px;
+        padding: 24px;
+        border: 1px solid rgba(214, 181, 109, 0.24);
+        border-radius: 22px;
+        background: linear-gradient(145deg, rgba(255, 241, 199, 0.12), transparent 46%), rgba(14, 11, 7, 0.9);
+        box-shadow: 0 32px 84px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      }
+      .label { display: inline-flex; align-items: center; gap: 8px; color: #d6b56d; font-size: 13px; font-weight: 900; text-transform: uppercase; }
+      .label::before { width: 8px; height: 8px; border-radius: 50%; background: #d6b56d; box-shadow: 0 0 20px rgba(214, 181, 109, 0.86); content: ""; }
+      h1 { margin-top: 18px; color: #fff7de; font-size: 38px; line-height: 1.08; }
+      h1 span { display: block; }
+      p { margin-top: 11px; color: rgba(255, 241, 199, 0.64); font-size: 17px; line-height: 1.5; }
+      .steps { display: grid; gap: 10px; margin-top: 22px; }
+      .step { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 10px; min-height: 46px; padding: 9px; border: 1px solid rgba(255, 241, 199, 0.14); border-radius: 13px; background: rgba(255, 241, 199, 0.055); }
+      .num { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid rgba(255, 241, 199, 0.4); border-radius: 50%; color: #fff7de; background: #2b1f10; font-family: "Cascadia Mono", "Consolas", monospace; font-size: 12px; font-weight: 900; }
+      .step b { color: #fff7de; font-size: 15px; }
+      .ok { color: #f2d58b; font-family: "Cascadia Mono", "Consolas", monospace; font-size: 12px; font-weight: 900; }
+      .execute {
+        position: absolute;
+        right: 118px;
+        bottom: 86px;
+        min-height: 40px;
+        padding: 10px 18px;
+        border: 1px solid rgba(255, 241, 199, 0.24);
+        border-radius: 999px;
+        color: #fff7de;
+        background: #2b1f10;
+        border: 1px solid rgba(255, 241, 199, 0.42);
+        font-family: "Cascadia Mono", "Consolas", monospace;
+        font-size: 14px;
+        font-weight: 900;
+        box-shadow: 0 0 42px rgba(214, 181, 109, 0.45);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="6" data-width="1280" data-height="720">
+      <div id="scene" class="clip scene" data-start="0" data-duration="6" data-track-index="0">
+        <div class="grid" data-layout-ignore></div>
+        <div class="sweep" data-layout-ignore></div>
+        <section class="canvas" data-layout-allow-overflow>
+          <div class="bar"><span class="dot"></span> Agent Team</div>
+          <span class="line l1"></span>
+          <span class="line l2"></span>
+          <span class="line l3"></span>
+          <span class="line l4"></span>
+          <article class="agent writer"><b>编剧</b><span>故事扩写</span><i></i></article>
+          <article class="agent shot"><b>分镜</b><span>镜头拆解</span><i></i></article>
+          <article class="agent director"><b>总监 Agent</b><span>自动路由</span><i></i></article>
+          <article class="agent art"><b>美术</b><span>视觉统一</span><i></i></article>
+          <article class="agent render"><b>生成</b><span>出图出片</span><i></i></article>
+        </section>
+        <section class="run-panel" data-layout-allow-overflow>
+          <span class="label">Plan To Execute</span>
+          <h1><span>漫剧团队</span><span>被编排执行</span></h1>
+          <p>每个 Agent 读取画布上下文，按阶段产出脚本、角色、分镜与生成占位。</p>
+          <div class="steps">
+            <div class="step step-a"><span class="num">01</span><b>理解创作目标</b><span class="ok">READY</span></div>
+            <div class="step step-b"><span class="num">02</span><b>分派专业 Agent</b><span class="ok">ROUTE</span></div>
+            <div class="step step-c"><span class="num">03</span><b>写入画布节点</b><span class="ok">WRITE</span></div>
+          </div>
+        </section>
+        <span class="execute">EXECUTE RUN</span>
+      </div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.from(".canvas", { opacity: 0, y: 34, scale: 0.94, duration: 0.62, ease: "power3.out" }, 0.16);
+      tl.from(".bar", { opacity: 0, x: -24, duration: 0.44, ease: "expo.out" }, 0.34);
+      tl.from(".director", { opacity: 0, scale: 0.55, y: 22, duration: 0.54, ease: "back.out(1.9)" }, 0.46);
+      tl.from(".agent:not(.director)", { opacity: 0, scale: 0.72, y: 28, duration: 0.48, stagger: 0.11, ease: "power3.out" }, 0.72);
+      tl.from(".line", { opacity: 0, scaleX: 0.1, duration: 0.52, stagger: 0.09, ease: "power2.out" }, 1.2);
+      tl.from(".run-panel", { opacity: 0, x: 54, scale: 0.94, duration: 0.62, ease: "expo.out" }, 1.74);
+      tl.from(".label", { opacity: 0, y: 16, duration: 0.34, ease: "power3.out" }, 1.92);
+      tl.from("h1", { opacity: 0, y: 22, duration: 0.42, ease: "power4.out" }, 2.04);
+      tl.from("p", { opacity: 0, y: 16, duration: 0.38, ease: "circ.out" }, 2.18);
+      tl.from(".step", { opacity: 0, x: 28, duration: 0.36, stagger: 0.13, ease: "power2.out" }, 2.46);
+      tl.from(".execute", { opacity: 0, scale: 0.58, y: 18, duration: 0.42, ease: "back.out(1.8)" }, 3.32);
+      tl.to(".sweep", { x: 1680, duration: 4.8, ease: "sine.inOut" }, 0.2);
+      tl.to(".line", { opacity: 0.42, duration: 0.45, stagger: 0.06, yoyo: true, repeat: 3, ease: "sine.inOut" }, 3.7);
+      tl.to(".execute", { scale: 1.06, duration: 0.38, yoyo: true, repeat: 2, ease: "sine.inOut" }, 4.3);
+      tl.to(".agent", { y: -5, duration: 0.56, stagger: 0.06, yoyo: true, repeat: 1, ease: "sine.inOut" }, 4.58);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

@@ -1083,6 +1083,8 @@ def estimate_audio_generation(session: Session, payload: Dict[str, Any]) -> Dict
             raise public_http_error(400, "invalid_request", "ability_type 不合法", field="ability_type")
         if message == "invalid_tier_code":
             raise public_http_error(400, "invalid_request", "tier_code 不合法", field="tier_code")
+        if message == "unsupported_speech_tag_model":
+            raise public_http_error(400, "invalid_request", "语气词标签仅支持 speech-2.8-hd / speech-2.8-turbo", field="script_text")
         raise public_http_error(400, "invalid_request", "当前请求参数不合法，请检查后重试")
     user_token = payload.get("_current_user")
     if isinstance(user_token, User):
@@ -3244,7 +3246,7 @@ def _build_audio_async_request(normalized: Dict[str, Any], *, owner_user_id: Opt
             "voice_id": normalized["voice_id"],
         },
         "audio_setting": {
-            "sample_rate": _as_int(normalized.get("sample_rate"), 32000),
+            "audio_sample_rate": _as_int(normalized.get("sample_rate"), 32000),
             "bitrate": _as_int(normalized.get("bitrate"), 128000),
             "format": normalized["audio_format"] or "mp3",
             "channel": _as_int(normalized.get("channel_count"), 1),
@@ -3266,6 +3268,8 @@ def _build_audio_async_request(normalized: Dict[str, Any], *, owner_user_id: Opt
         file_id = provider_file.get("file", {}).get("file_id") or provider_file.get("file_id")
         if file_id:
             payload["text_file_id"] = str(file_id)
+    if normalized.get("emotion"):
+        payload["voice_setting"]["emotion"] = normalized["emotion"]
     if normalized.get("speed") is not None:
         payload["voice_setting"]["speed"] = _as_int(normalized.get("speed"), 1)
     if normalized.get("volume") is not None:
@@ -3453,7 +3457,12 @@ def _run_audio_generation_job(record_id: int) -> None:
 
 def submit_audio_generation(session: Session, *, background_tasks: BackgroundTasks, user: User, team: Team, payload: Dict[str, Any]) -> GenerationRecord:
     _ensure_no_internal_keys(payload)
-    normalized = normalize_audio_request(payload)
+    try:
+        normalized = normalize_audio_request(payload)
+    except ValueError as exc:
+        if str(exc) == "unsupported_speech_tag_model":
+            raise public_http_error(400, "invalid_request", "语气词标签仅支持 speech-2.8-hd / speech-2.8-turbo", field="script_text")
+        raise
     if normalized["ability_type"] == ABILITY_VOICE_MANAGEMENT:
         raise public_http_error(400, "invalid_request", "当前能力不支持直接生成", field="ability_type")
     price = estimate_audio_price(normalized)
