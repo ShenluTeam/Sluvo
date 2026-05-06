@@ -1258,7 +1258,7 @@
             </article>
           </div>
           <p v-else class="canvas-agent-panel__empty">输入目标后，Agent Team 会按阶段接力，并把结果同步到画布。</p>
-          <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_user'" class="canvas-agent-run__confirm">
+          <footer v-if="isAgentRunConfirmationReady()" class="canvas-agent-run__confirm">
             <div>
               <span>等待确认</span>
               <strong>{{ getAgentRunAwaitingAgent(agentPanel.activeRun) }} 已完成</strong>
@@ -2192,6 +2192,9 @@ const agentPanel = reactive({
   runId: '',
   runs: [],
   optimisticMessages: [],
+  conversationRevealRunId: '',
+  conversationRevealSchedule: {},
+  conversationRevealLastCursor: 0,
   onboardingConfig: {
     image: {
       model_code: 'nano-banana-pro',
@@ -2233,6 +2236,12 @@ const agentPanel = reactive({
 })
 let agentRunEventSource = null
 let agentRunEventStreamId = ''
+const agentConversationClock = ref(Date.now())
+let agentConversationClockTimer = null
+const AGENT_HANDOFF_PAUSE_MS = 760
+const AGENT_THINKING_REVEAL_MS = 980
+const AGENT_MESSAGE_REVEAL_MS = 170
+const AGENT_CONFIRM_REVEAL_MS = 260
 const textNodeComposer = reactive({
   input: '',
   modelCode: 'deepseek-v4-flash',
@@ -2828,6 +2837,7 @@ watch(
 )
 
 onMounted(() => {
+  startAgentConversationClock()
   previousDocumentKeydown = document.onkeydown
   previousWindowKeydown = window.onkeydown
   const storedAgentPanelVisible = window.localStorage.getItem(AGENT_PANEL_VISIBILITY_STORAGE_KEY)
@@ -2897,6 +2907,7 @@ onBeforeUnmount(() => {
   window.clearTimeout(autoSaveTimer)
   window.clearTimeout(textNodeEstimateTimer)
   window.clearInterval(uploadTimer)
+  stopAgentConversationClock()
   window.clearTimeout(clipboardPasteFallbackTimer)
   closeAgentRunEventStream()
   window.cancelAnimationFrame(directPortLayoutRaf)
@@ -3200,6 +3211,7 @@ async function runAgentPrompt(content, options = {}) {
   setAgentPanelVisible(true)
   agentPanel.busy = true
   agentPanel.error = ''
+  resetAgentConversationReveal('')
   setAgentOptimisticMessages(content, 'start')
   agentPanel.input = ''
   agentPanel.pendingAction = null
@@ -3569,6 +3581,89 @@ function getAgentConversationIdentityKey(value) {
     .toLowerCase()
 }
 
+function startAgentConversationClock() {
+  if (agentConversationClockTimer || typeof window === 'undefined') return
+  agentConversationClock.value = Date.now()
+  agentConversationClockTimer = window.setInterval(() => {
+    agentConversationClock.value = Date.now()
+  }, 120)
+}
+
+function stopAgentConversationClock() {
+  if (typeof window !== 'undefined' && agentConversationClockTimer) {
+    window.clearInterval(agentConversationClockTimer)
+  }
+  agentConversationClockTimer = null
+}
+
+function resetAgentConversationReveal(runId = '') {
+  agentPanel.conversationRevealRunId = runId
+  agentPanel.conversationRevealSchedule = {}
+  agentPanel.conversationRevealLastCursor = 0
+}
+
+function getAgentTimelineEventKey(event, index) {
+  const eventType = event?.eventType || event?.payload?.eventType || 'event'
+  return String(event?.id || `${eventType}-${index}`)
+}
+
+function getAgentThinkingContent(agentKey) {
+  const key = getAgentConversationIdentityKey(agentKey)
+  if (key === 'review') return '我先理解你的修改意见，再判断应该交回哪一位 Agent 处理。'
+  if (key === 'onboarding') return '我先整理创作边界、任务顺序和需要你确认的配置。'
+  return '我正在读取上一阶段产物，规划接下来要处理的内容。'
+}
+
+function getAgentConversationRevealHold(message) {
+  if (message.type === 'handoff') return AGENT_HANDOFF_PAUSE_MS
+  if (message.loading) return AGENT_THINKING_REVEAL_MS
+  if (message.type === 'waiting') return AGENT_CONFIRM_REVEAL_MS
+  if (message.type === 'agent') return AGENT_MESSAGE_REVEAL_MS
+  return 120
+}
+
+function applyAgentConversationRevealSchedule(messages, timeline) {
+  const runId = timeline?.run?.id || ''
+  if (runId && agentPanel.conversationRevealRunId !== runId) {
+    resetAgentConversationReveal(runId)
+  }
+  const now = Date.now()
+  const schedule = agentPanel.conversationRevealSchedule || {}
+  const validIds = new Set(messages.map((message) => message.id))
+  let scheduleChanged = false
+  Object.keys(schedule).forEach((id) => {
+    if (!validIds.has(id)) {
+      delete schedule[id]
+      scheduleChanged = true
+    }
+  })
+  const scheduledTimes = Object.values(schedule)
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+  let cursor = Math.max(now, agentPanel.conversationRevealLastCursor || 0, ...scheduledTimes)
+  messages.forEach((message) => {
+    if (!Number.isFinite(Number(schedule[message.id]))) {
+      schedule[message.id] = cursor
+      scheduleChanged = true
+      cursor += getAgentConversationRevealHold(message)
+    } else {
+      cursor = Math.max(cursor, Number(schedule[message.id]) + getAgentConversationRevealHold(message))
+    }
+  })
+  if (scheduleChanged) {
+    agentPanel.conversationRevealSchedule = schedule
+    agentPanel.conversationRevealLastCursor = cursor
+  }
+  const clock = agentConversationClock.value
+  const decorated = messages.map((message) => ({ ...message, revealAt: Number(schedule[message.id] || now) }))
+  const visibleIds = new Set(decorated.filter((message) => message.revealAt <= clock).map((message) => message.id))
+  return decorated.filter((message) => {
+    if (message.revealAt > clock) return false
+    if (message.loading && message.loadingFor && visibleIds.has(message.loadingFor)) return false
+    return true
+  })
+}
+
 function isAgentConversationUser(messageOrName) {
   if (typeof messageOrName === 'object') {
     const key = getAgentConversationIdentityKey(messageOrName?.agentKey || messageOrName?.agentName)
@@ -3627,9 +3722,11 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
   events.forEach((event, index) => {
     const payload = event.payload || {}
     const eventType = event.eventType || payload.eventType || ''
+    const eventKey = getAgentTimelineEventKey(event, index)
     if (eventType === 'run_started') {
       messages.push({
         id: event.id || `run-started-${index}`,
+        sourceEventKey: eventKey,
         type: 'separator',
         agentKey: 'system',
         agentName: 'Agent Team',
@@ -3646,6 +3743,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
       const isContinue = payload.action === 'continue'
       messages.push({
         id: event.id || `user-${index}`,
+        sourceEventKey: eventKey,
         type: 'user',
         agentKey: 'user',
         agentName: '你',
@@ -3659,10 +3757,29 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
     }
     if (eventType === 'run_message') {
       const agentName = payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent'
+      const messageId = event.id || `agent-${index}`
+      const agentKey = getAgentConversationKey(payload.agent || agentName)
+      if (!payload.isLoading) {
+        messages.push({
+          id: `${messageId}-thinking`,
+          sourceEventKey: eventKey,
+          type: 'agent',
+          agentKey,
+          agentName,
+          kindLabel: '思考中',
+          status: 'running',
+          statusLabel: '处理中',
+          timeLabel: getAgentConversationTimeLabel(event),
+          loading: true,
+          loadingFor: messageId,
+          content: getAgentThinkingContent(agentKey)
+        })
+      }
       messages.push({
-        id: event.id || `agent-${index}`,
+        id: messageId,
+        sourceEventKey: eventKey,
         type: 'agent',
-        agentKey: getAgentConversationKey(payload.agent || agentName),
+        agentKey,
         agentName,
         kindLabel: payload.isLoading ? '思考中' : '登场',
         status: payload.isLoading ? 'running' : 'succeeded',
@@ -3676,6 +3793,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
     if (eventType === 'agent_handoff') {
       messages.push({
         id: event.id || `handoff-${index}`,
+        sourceEventKey: eventKey,
         type: 'handoff',
         agentName: 'Agent Handoff',
         kindLabel: '接力',
@@ -3692,6 +3810,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
       const agentName = payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent'
       messages.push({
         id: event.id || `waiting-${index}`,
+        sourceEventKey: eventKey,
         type: 'waiting',
         agentKey: getAgentConversationKey(payload.agent || agentName),
         agentName,
@@ -3706,6 +3825,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
     if (eventType === 'run_confirmed') {
       messages.push({
         id: event.id || `confirmed-${index}`,
+        sourceEventKey: eventKey,
         type: 'system',
         agentName: 'Agent Team',
         kindLabel: '确认',
@@ -3719,6 +3839,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
     if (eventType === 'run_completed') {
       messages.push({
         id: event.id || `completed-${index}`,
+        sourceEventKey: eventKey,
         type: 'system',
         agentName: 'Agent Team',
         kindLabel: '完成',
@@ -3732,6 +3853,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
     if (eventType === 'run_failed') {
       messages.push({
         id: event.id || `failed-${index}`,
+        sourceEventKey: eventKey,
         type: 'system',
         agentName: 'Agent Team',
         kindLabel: '失败',
@@ -3744,8 +3866,8 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
   })
   const visibleMessages = messages.filter((message) => String(message.content || '').trim())
   const pendingMessages = Array.isArray(optimisticMessages) ? optimisticMessages.filter((message) => String(message.content || '').trim()) : []
-  if (!pendingMessages.length) return visibleMessages
-  return [...visibleMessages, ...pendingMessages]
+  const mergedMessages = pendingMessages.length ? [...visibleMessages, ...pendingMessages] : visibleMessages
+  return applyAgentConversationRevealSchedule(mergedMessages, timeline)
 }
 
 function getAgentConversationMessageClass(message) {
@@ -3759,6 +3881,22 @@ function getAgentConversationMessageClass(message) {
     'is-failed': message.status === 'failed',
     'is-running': message.status === 'running'
   }
+}
+
+function isAgentRunConfirmationReady() {
+  const timeline = agentPanel.activeRun
+  if (timeline?.run?.status !== 'waiting_user') return false
+  if (agentPanel.busy) return false
+  const visibleMessages = agentConversationMessages.value || []
+  if (visibleMessages.some((message) => message.loading || message.status === 'running')) return false
+  const events = Array.isArray(timeline.events) ? timeline.events : []
+  const awaitingEntry = [...events.entries()]
+    .reverse()
+    .find(([, event]) => (event.eventType || event.payload?.eventType || '') === 'run_awaiting_confirm')
+  if (!awaitingEntry) return true
+  const [index, event] = awaitingEntry
+  const eventKey = getAgentTimelineEventKey(event, index)
+  return visibleMessages.some((message) => message.type === 'waiting' && message.sourceEventKey === eventKey)
 }
 
 function getAgentConversationAvatar(message) {

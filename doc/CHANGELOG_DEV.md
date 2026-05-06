@@ -4,6 +4,23 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Delayed Agent timeline reveal so handoff invitations pause briefly before the next Agent thinking animation and final response appear.
+- Hid the `满意，继续下一步` confirmation card until the waiting-confirmation message is visible and no Agent thinking animation is still running.
+- Added a small animated ellipsis to handoff invitations to make the pause feel intentional instead of stalled.
+
+Verification suggestions:
+- `npm run build`
+- Start or continue an Agent run and verify the sequence is user message, handoff invitation, brief pause, next Agent thinking, result, then confirmation controls.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:

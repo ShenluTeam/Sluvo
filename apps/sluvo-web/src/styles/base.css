@@ -876,6 +876,15 @@ body {
   text-align: center;
 }
 
+.canvas-agent-message__handoff span::after {
+  display: inline-block;
+  width: 18px;
+  color: #cdf47c;
+  text-align: left;
+  animation: agent-loading-dots 1.2s steps(4, end) infinite;
+  content: "...";
+}
+
 .canvas-agent-message__content {
   display: grid;
   gap: 5px;
