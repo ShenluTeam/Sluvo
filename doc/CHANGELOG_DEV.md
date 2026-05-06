@@ -4,6 +4,20 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the waiting-confirmation button to send `满意，继续下一步` as a visible user chat message.
+- Labeled persisted continue events as user confirmation messages instead of generic input messages in the Agent conversation stream.
+
+Verification suggestions:
+- `npm run build`
+- Start a waiting Agent run, click `满意，继续下一步`, and verify a right-aligned user confirmation bubble appears before the next Agent handoff.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `backend/services/sluvo_service.py`
 - `doc/CHANGELOG_DEV.md`
 

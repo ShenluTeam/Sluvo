@@ -1265,7 +1265,7 @@
               <p>{{ getAgentRunNextAction(agentPanel.activeRun) }}</p>
               <small>需要修改？在下方输入框描述调整意见后点击发送。</small>
             </div>
-            <button type="button" :disabled="agentPanel.busy" @click="continueAgentRun(agentPanel.input.trim() || '继续')">
+            <button type="button" :disabled="agentPanel.busy" @click="continueAgentRun('满意，继续下一步')">
               <Check :size="16" />
               满意，继续下一步
             </button>
@@ -3365,14 +3365,16 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
       return
     }
     if (eventType === 'user_message') {
+      const isRevise = payload.action === 'revise'
+      const isContinue = payload.action === 'continue'
       messages.push({
         id: event.id || `user-${index}`,
         type: 'user',
         agentKey: 'user',
         agentName: '你',
-        kindLabel: payload.action === 'revise' ? '反馈' : '输入',
-        status: payload.action === 'revise' ? 'waiting_user' : 'succeeded',
-        statusLabel: payload.action === 'revise' ? '反馈' : '已发送',
+        kindLabel: isRevise ? '反馈' : isContinue ? '确认' : '输入',
+        status: isRevise ? 'waiting_user' : 'succeeded',
+        statusLabel: isRevise ? '反馈' : isContinue ? '已确认' : '已发送',
         timeLabel: getAgentConversationTimeLabel(event),
         content: payload.content || ''
       })
