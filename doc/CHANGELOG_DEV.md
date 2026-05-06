@@ -5,6 +5,22 @@
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Reworked the Agent panel conversation into a chat-first flow with stage header, Agent entry badges, centered handoff messages, compact artifact attachments, and a dedicated waiting-confirmation card above the composer.
+- Kept the existing Sluvo visual palette while making the runtime conversation read like a multi-Agent handoff instead of a duplicated Run timeline.
+- Composer placeholder now changes by Run state so waiting confirmation treats typed text as feedback and the explicit confirmation button advances the next stage.
+
+Verification suggestions:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
 - `backend/database.py`
 - `backend/models.py`
 - `backend/schemas.py`
@@ -17,9 +33,9 @@ Changed files:
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
-- Aligned the right-side Agent panel with openOii's conversation shape by rendering user messages, Agent bubbles, handoff events, waiting-confirmation prompts, confirmation events, and completion/failure states above the existing artifact timeline.
-- Added persisted Sluvo Agent Run/Step/Artifact support, openOii-style event payloads, Run create/list/read/continue/confirm-cost/retry endpoints, and an SSE Run event stream at `/api/sluvo/agent/runs/{run_id}/events`.
-- Updated the default official Agent team to the openOii creative pipeline: Onboarding, Director, Scriptwriter, Character Artist, Storyboard Artist, Video Generator, Video Merger, and Review.
+- Aligned the right-side Agent panel with the target multi-Agent conversation shape by rendering user messages, Agent bubbles, handoff events, waiting-confirmation prompts, confirmation events, and completion/failure states above the existing artifact timeline.
+- Added persisted Sluvo Agent Run/Step/Artifact support, multi-Agent event payloads, Run create/list/read/continue/confirm-cost/retry endpoints, and an SSE Run event stream at `/api/sluvo/agent/runs/{run_id}/events`.
+- Updated the default official Agent team to the target creative pipeline: Onboarding, Director, Scriptwriter, Character Artist, Storyboard Artist, Video Generator, Video Merger, and Review.
 - Kept typed feedback separate from explicit `继续下一步` progression; feedback is routed through Review-style revision while continue advances the next production Agent.
 
 Verification suggestions:

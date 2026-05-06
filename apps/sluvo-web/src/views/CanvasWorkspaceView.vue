@@ -1142,6 +1142,13 @@
         </section>
 
         <section class="canvas-agent-run">
+          <div v-if="agentPanel.activeRun && !isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-stage-card">
+            <div class="canvas-agent-stage-card__icon">{{ getAgentCurrentStageInfo(agentPanel.activeRun).mark }}</div>
+            <div>
+              <strong>{{ getAgentCurrentStageInfo(agentPanel.activeRun).title }}</strong>
+              <p>{{ getAgentCurrentStageInfo(agentPanel.activeRun).description }}</p>
+            </div>
+          </div>
           <div v-if="agentConversationMessages.length" class="canvas-agent-conversation canvas-agent-conversation--live">
             <article
               v-for="message in agentConversationMessages"
@@ -1149,19 +1156,38 @@
               class="canvas-agent-message canvas-agent-message--live"
               :class="getAgentConversationMessageClass(message)"
             >
-              <div class="canvas-agent-message__avatar">
-                <span>{{ getAgentConversationAvatar(message) }}</span>
-              </div>
-              <div class="canvas-agent-message__bubble">
-                <header>
-                  <div>
-                    <span>{{ message.kindLabel }}</span>
-                    <strong>{{ message.agentName }}</strong>
+              <template v-if="message.type === 'separator'">
+                <div class="canvas-agent-message__separator">
+                  <span>{{ message.content }}</span>
+                </div>
+              </template>
+              <template v-else-if="message.type === 'handoff'">
+                <div class="canvas-agent-message__handoff">
+                  <span>{{ message.content }}</span>
+                </div>
+              </template>
+              <template v-else>
+                <div class="canvas-agent-message__avatar">
+                  <span>{{ getAgentConversationAvatar(message) }}</span>
+                </div>
+                <div class="canvas-agent-message__content">
+                  <header class="canvas-agent-message__meta">
+                    <span class="canvas-agent-message__agent-chip">
+                      <b>{{ message.agentKey }}</b>
+                      {{ message.agentName }}
+                    </span>
+                    <strong>{{ message.kindLabel }}</strong>
+                    <time>{{ message.timeLabel }}</time>
+                  </header>
+                  <div class="canvas-agent-message__bubble">
+                    <p>{{ message.content }}</p>
+                    <div v-if="message.loading" class="canvas-agent-message__loading">
+                      <span />
+                      <span>处理中</span>
+                    </div>
                   </div>
-                  <b :class="`is-${message.status || 'succeeded'}`">{{ message.statusLabel }}</b>
-                </header>
-                <p>{{ message.content }}</p>
-              </div>
+                </div>
+              </template>
             </article>
           </div>
           <div v-if="agentPanel.activeRun && !isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-run__status">
@@ -1179,7 +1205,7 @@
               </span>
             </div>
           </div>
-          <article v-if="agentPanel.activeRun?.run?.goal" class="canvas-agent-user-message" :class="{ 'is-question': isAgentQuestionRun(agentPanel.activeRun) }">
+          <article v-if="agentPanel.activeRun?.run?.goal && !agentConversationMessages.length" class="canvas-agent-user-message" :class="{ 'is-question': isAgentQuestionRun(agentPanel.activeRun) }">
             <span>你</span>
             <p>{{ agentPanel.activeRun.run.goal }}</p>
           </article>
@@ -1193,7 +1219,18 @@
               </div>
             </article>
           </div>
-          <div v-else-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-conversation">
+          <div v-if="agentPanel.activeRun?.steps?.length && !isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-attachment-thread">
+            <article v-for="step in getAgentAttachmentSteps(agentPanel.activeRun)" :key="step.id" class="canvas-agent-attachment-line">
+              <span>{{ step.agentName || 'Agent' }}</span>
+              <div class="canvas-agent-artifacts">
+                <b v-if="!getVisibleAgentArtifacts(step).length">{{ getAgentStepArtifactSummary(step) }}</b>
+                <span v-for="artifact in getVisibleAgentArtifacts(step)" :key="artifact.id" :class="`is-${artifact.status}`">
+                  {{ artifact.title }} · {{ getAgentArtifactStatusLabel(artifact.status) }}
+                </span>
+              </div>
+            </article>
+          </div>
+          <div v-else-if="agentPanel.activeRun?.steps?.length && !agentConversationMessages.length" class="canvas-agent-conversation">
             <article v-for="step in agentPanel.activeRun.steps" :key="step.id" class="canvas-agent-message" :class="`is-${step.status}`">
               <div class="canvas-agent-message__avatar">
                 <span>{{ getAgentStepNumber(step) }}</span>
@@ -1221,11 +1258,16 @@
             </article>
           </div>
           <p v-else class="canvas-agent-panel__empty">输入目标后，Agent Team 会按阶段接力，并把结果同步到画布。</p>
-          <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_user'" class="canvas-agent-run__continue">
-            <span>{{ getAgentRunNextAction(agentPanel.activeRun) }}</span>
+          <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_user'" class="canvas-agent-run__confirm">
+            <div>
+              <span>等待确认</span>
+              <strong>{{ getAgentRunAwaitingAgent(agentPanel.activeRun) }} 已完成</strong>
+              <p>{{ getAgentRunNextAction(agentPanel.activeRun) }}</p>
+              <small>需要修改？在下方输入框描述调整意见后点击发送。</small>
+            </div>
             <button type="button" :disabled="agentPanel.busy" @click="continueAgentRun(agentPanel.input.trim() || '继续')">
               <Check :size="16" />
-              继续下一步
+              满意，继续下一步
             </button>
           </footer>
           <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_cost_confirmation'" class="canvas-agent-run__cost">
@@ -1271,7 +1313,7 @@
         </section>
 
         <form class="canvas-agent-panel__composer" @submit.prevent="sendAgentPrompt">
-          <textarea v-model="agentPanel.input" rows="3" placeholder="例如：一个雨夜少年追逐神秘信号的动画短片，帮我提取角色、场景、道具并拆分镜。" />
+          <textarea v-model="agentPanel.input" rows="3" :placeholder="getAgentComposerPlaceholder()" />
           <button type="submit" :disabled="agentPanel.busy || !agentPanel.input.trim()">
             <Send :size="17" />
           </button>
@@ -3180,6 +3222,59 @@ function getAgentPanelSubtitle() {
   return '把目标拆成可执行画布产物'
 }
 
+function getAgentCurrentStageInfo(timeline) {
+  const steps = Array.isArray(timeline?.steps) ? timeline.steps : []
+  const latestWaiting = [...steps].reverse().find((step) => !['succeeded', 'skipped'].includes(step.status))
+  const latestDone = [...steps].reverse().find((step) => step.status === 'succeeded')
+  const stage = latestWaiting?.input?.stage || latestWaiting?.output?.stage || latestDone?.input?.stage || latestDone?.output?.stage || 'ideate'
+  const map = {
+    ideate: { title: '构思阶段', description: '描述你的故事想法，Agent Team 会先理解目标并创作剧本。', mark: 'I' },
+    visualize: { title: '可视化阶段', description: '正在设计角色形象、分镜首帧和画面提示词。', mark: 'V' },
+    animate: { title: '动画阶段', description: '正在准备图片和视频生成任务，扣费动作会等待确认。', mark: 'A' },
+    deploy: { title: '交付阶段', description: '正在整理成片、导出和最终交付状态。', mark: 'D' }
+  }
+  return map[stage] || map.ideate
+}
+
+function getAgentRunAwaitingAgent(timeline) {
+  const summaryAgent = String(timeline?.run?.summary?.awaitingAgent || '').trim()
+  if (summaryAgent) return summaryAgent
+  const waitingStep = [...(timeline?.steps || [])].reverse().find((step) => ['waiting_user', 'waiting_cost_confirmation'].includes(step.status))
+  if (waitingStep?.agentName) return waitingStep.agentName
+  return 'Agent Team'
+}
+
+function getAgentAttachmentSteps(timeline) {
+  return (timeline?.steps || []).filter((step) => {
+    if (step.stepKey === 'answer_question') return false
+    return getVisibleAgentArtifacts(step).length || getAgentStepArtifactSummary(step)
+  })
+}
+
+function getAgentComposerPlaceholder() {
+  if (agentPanel.activeRun?.run?.status === 'waiting_user') return '输入修改意见，发送后会先回到 Review Agent 重新路由...'
+  if (agentPanel.activeRun?.run?.status === 'waiting_cost_confirmation') return '可补充生成约束；确认扣费请点击上方按钮...'
+  if (agentPanel.busy) return 'Agent 正在处理，你也可以继续补充反馈...'
+  return '输入你的想法或反馈...'
+}
+
+function getAgentConversationTimeLabel(event) {
+  const value = event?.createdAt || event?.created_at || ''
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function getAgentConversationKey(agentName, fallback = 'agent') {
+  const source = String(agentName || fallback || 'agent').trim()
+  const normalized = source
+    .replace(/\s*Agent$/i, '')
+    .replace(/[^a-z0-9_\u4e00-\u9fa5]/gi, '')
+    .trim()
+  return normalized || fallback
+}
+
 function buildAgentConversationMessages(timeline) {
   const events = Array.isArray(timeline?.events) ? timeline.events : []
   const messages = []
@@ -3189,12 +3284,14 @@ function buildAgentConversationMessages(timeline) {
     if (eventType === 'run_started') {
       messages.push({
         id: event.id || `run-started-${index}`,
-        type: 'system',
+        type: 'separator',
+        agentKey: 'system',
         agentName: 'Agent Team',
         kindLabel: '开始',
         status: 'running',
         statusLabel: '运行中',
-        content: 'Agent Team 已进入 openOii 式协作流程。'
+        timeLabel: getAgentConversationTimeLabel(event),
+        content: '新的创作流程已开始'
       })
       return
     }
@@ -3202,22 +3299,28 @@ function buildAgentConversationMessages(timeline) {
       messages.push({
         id: event.id || `user-${index}`,
         type: 'user',
+        agentKey: 'user',
         agentName: '你',
-        kindLabel: '用户反馈',
+        kindLabel: payload.action === 'revise' ? '反馈' : '输入',
         status: payload.action === 'revise' ? 'waiting_user' : 'succeeded',
         statusLabel: payload.action === 'revise' ? '反馈' : '已发送',
+        timeLabel: getAgentConversationTimeLabel(event),
         content: payload.content || ''
       })
       return
     }
     if (eventType === 'run_message') {
+      const agentName = payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent'
       messages.push({
         id: event.id || `agent-${index}`,
         type: 'agent',
-        agentName: payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent',
-        kindLabel: getAgentStageLabel(payload.stage) || 'Agent',
+        agentKey: getAgentConversationKey(payload.agent || agentName),
+        agentName,
+        kindLabel: payload.isLoading ? '思考中' : '入职',
         status: payload.isLoading ? 'running' : 'succeeded',
         statusLabel: payload.isLoading ? '处理中' : '已完成',
+        timeLabel: getAgentConversationTimeLabel(event),
+        loading: Boolean(payload.isLoading),
         content: payload.content || ''
       })
       return
@@ -3230,18 +3333,22 @@ function buildAgentConversationMessages(timeline) {
         kindLabel: '接力',
         status: 'succeeded',
         statusLabel: '接力',
+        timeLabel: getAgentConversationTimeLabel(event),
         content: payload.message || `${payload.from_agent || '上一位 Agent'} 邀请 ${payload.to_agent || '下一位 Agent'} 加入群聊`
       })
       return
     }
     if (eventType === 'run_awaiting_confirm') {
+      const agentName = payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent'
       messages.push({
         id: event.id || `waiting-${index}`,
         type: 'waiting',
-        agentName: payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent',
+        agentKey: getAgentConversationKey(payload.agent || agentName),
+        agentName,
         kindLabel: '等待确认',
         status: 'waiting_user',
         statusLabel: '待确认',
+        timeLabel: getAgentConversationTimeLabel(event),
         content: payload.message || payload.question || '请确认是否继续下一步。'
       })
       return
@@ -3254,6 +3361,7 @@ function buildAgentConversationMessages(timeline) {
         kindLabel: '确认',
         status: 'succeeded',
         statusLabel: '继续',
+        timeLabel: getAgentConversationTimeLabel(event),
         content: payload.message || '已确认，继续执行下一步。'
       })
       return
@@ -3266,6 +3374,7 @@ function buildAgentConversationMessages(timeline) {
         kindLabel: '完成',
         status: 'succeeded',
         statusLabel: '完成',
+        timeLabel: getAgentConversationTimeLabel(event),
         content: 'Agent Team 已完成本轮协作。'
       })
       return
@@ -3278,6 +3387,7 @@ function buildAgentConversationMessages(timeline) {
         kindLabel: '失败',
         status: 'failed',
         statusLabel: '失败',
+        timeLabel: getAgentConversationTimeLabel(event),
         content: payload.error || payload.message || 'Agent Run 执行失败。'
       })
     }
@@ -3287,8 +3397,11 @@ function buildAgentConversationMessages(timeline) {
 
 function getAgentConversationMessageClass(message) {
   return {
+    'is-separator-message': message.type === 'separator',
     'is-user-message': message.type === 'user',
+    'is-agent-message': message.type === 'agent',
     'is-handoff-message': message.type === 'handoff',
+    'is-waiting-message': message.type === 'waiting',
     'is-waiting_user': message.status === 'waiting_user',
     'is-failed': message.status === 'failed',
     'is-running': message.status === 'running'
@@ -3297,8 +3410,8 @@ function getAgentConversationMessageClass(message) {
 
 function getAgentConversationAvatar(message) {
   if (message.type === 'user') return '你'
-  if (message.type === 'handoff') return '↗'
-  if (message.type === 'system') return '系'
+  if (message.type === 'handoff') return 'H'
+  if (message.type === 'system' || message.type === 'separator') return 'S'
   const name = String(message.agentName || 'A').trim()
   return name.slice(0, 1).toUpperCase()
 }

@@ -64,7 +64,7 @@ body {
   z-index: 43;
   display: flex;
   flex-direction: column;
-  width: min(408px, calc(100vw - 36px));
+  width: min(468px, calc(100vw - 36px));
   overflow: hidden;
   border: 1px solid rgba(229, 200, 137, 0.2);
   border-radius: 12px;
@@ -543,12 +543,52 @@ body {
 .canvas-agent-run {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 12px;
   min-height: 180px;
   flex: 1;
   overflow: auto;
-  padding: 12px 16px;
+  padding: 14px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.canvas-agent-stage-card {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid rgba(205, 244, 124, 0.16);
+  border-radius: 10px;
+  padding: 12px;
+  background:
+    linear-gradient(180deg, rgba(205, 244, 124, 0.1), rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.035);
+}
+
+.canvas-agent-stage-card__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(205, 244, 124, 0.28);
+  border-radius: 999px;
+  color: #151812;
+  background: #cdf47c;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.canvas-agent-stage-card strong {
+  display: block;
+  color: #dff7aa;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.canvas-agent-stage-card p {
+  margin: 5px 0 0;
+  color: rgba(242, 242, 234, 0.68);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .canvas-agent-message__bubble,
@@ -753,10 +793,8 @@ body {
 }
 
 .canvas-agent-conversation--live {
-  gap: 8px;
-  margin-bottom: 8px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 14px;
+  margin-bottom: 2px;
 }
 
 .canvas-agent-message {
@@ -775,9 +813,16 @@ body {
   grid-row: 1;
 }
 
-.canvas-agent-message--live.is-user-message .canvas-agent-message__bubble {
+.canvas-agent-message--live.is-user-message .canvas-agent-message__content {
   grid-column: 1;
   grid-row: 1;
+}
+
+.canvas-agent-message--live.is-user-message .canvas-agent-message__meta {
+  justify-content: flex-end;
+}
+
+.canvas-agent-message--live.is-user-message .canvas-agent-message__bubble {
   border-color: rgba(205, 244, 124, 0.2);
   background: rgba(205, 244, 124, 0.09);
 }
@@ -792,6 +837,121 @@ body {
 .canvas-agent-message--live.is-running .canvas-agent-message__bubble {
   border-color: rgba(255, 207, 112, 0.24);
   background: rgba(255, 207, 112, 0.08);
+}
+
+.canvas-agent-message--live.is-separator-message,
+.canvas-agent-message--live.is-handoff-message {
+  display: block;
+}
+
+.canvas-agent-message__separator,
+.canvas-agent-message__handoff {
+  display: flex;
+  justify-content: center;
+}
+
+.canvas-agent-message__separator span {
+  width: 100%;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 10px;
+  color: rgba(242, 242, 234, 0.45);
+  font-size: 11px;
+  text-align: center;
+}
+
+.canvas-agent-message__handoff span {
+  max-width: 94%;
+  border: 1px dashed rgba(205, 244, 124, 0.24);
+  border-radius: 999px;
+  padding: 6px 11px;
+  color: rgba(242, 242, 234, 0.76);
+  background: rgba(205, 244, 124, 0.08);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.canvas-agent-message__content {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.canvas-agent-message__meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.canvas-agent-message__meta strong {
+  flex: 0 0 auto;
+  border: 1px solid rgba(205, 244, 124, 0.22);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #dff7aa;
+  background: rgba(205, 244, 124, 0.1);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.canvas-agent-message__meta time {
+  flex: 0 0 auto;
+  color: rgba(242, 242, 234, 0.36);
+  font-size: 11px;
+}
+
+.canvas-agent-message__agent-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(205, 244, 124, 0.22);
+  border-radius: 999px;
+  color: #dff7aa;
+  background: rgba(205, 244, 124, 0.11);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-message__agent-chip b {
+  margin-right: 6px;
+  border: 0;
+  border-right: 1px solid rgba(21, 24, 18, 0.16);
+  border-radius: 999px 0 0 999px;
+  padding: 3px 7px;
+  color: #151812;
+  background: #cdf47c;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.canvas-agent-message__loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(242, 242, 234, 0.6);
+  font-size: 12px;
+}
+
+.canvas-agent-message__loading span:first-child {
+  width: 18px;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(205, 244, 124, 0.2), #cdf47c, rgba(205, 244, 124, 0.2));
+  animation: agent-loading-pulse 1s ease-in-out infinite;
+}
+
+@keyframes agent-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .canvas-agent-message__avatar {
@@ -825,6 +985,22 @@ body {
 .canvas-agent-message__bubble {
   padding: 9px;
   background: rgba(255, 255, 255, 0.052);
+}
+
+.canvas-agent-message--live .canvas-agent-message__bubble {
+  border-radius: 12px 12px 12px 4px;
+  padding: 12px 13px;
+}
+
+.canvas-agent-message--live.is-user-message .canvas-agent-message__bubble {
+  border-radius: 12px 12px 4px 12px;
+}
+
+.canvas-agent-message--live .canvas-agent-message__bubble p {
+  color: rgba(246, 246, 239, 0.88);
+  font-size: 14px;
+  line-height: 1.62;
+  white-space: pre-wrap;
 }
 
 .canvas-agent-message.is-waiting_cost_confirmation .canvas-agent-message__bubble {
@@ -912,6 +1088,36 @@ body {
   gap: 6px;
 }
 
+.canvas-agent-attachment-thread {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 4px;
+}
+
+.canvas-agent-attachment-line {
+  display: grid;
+  grid-template-columns: minmax(84px, 0.3fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.canvas-agent-attachment-line > span {
+  overflow: hidden;
+  color: rgba(242, 242, 234, 0.42);
+  font-size: 11px;
+  line-height: 1.8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-agent-attachment-line b {
+  color: rgba(242, 242, 234, 0.62);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
 .canvas-agent-artifacts > span {
   max-width: 100%;
   overflow: hidden;
@@ -961,6 +1167,43 @@ body {
   background: rgba(205, 244, 124, 0.08);
 }
 
+.canvas-agent-run__confirm {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(255, 207, 112, 0.22);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(255, 207, 112, 0.09);
+}
+
+.canvas-agent-run__confirm div {
+  display: grid;
+  gap: 5px;
+}
+
+.canvas-agent-run__confirm span {
+  width: max-content;
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #151812;
+  background: #ffe2a5;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.canvas-agent-run__confirm strong {
+  color: #f6f6ef;
+  font-size: 13px;
+}
+
+.canvas-agent-run__confirm p,
+.canvas-agent-run__confirm small {
+  margin: 0;
+  color: rgba(242, 242, 234, 0.66);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .canvas-agent-run__continue span {
   margin: 0;
   color: rgba(242, 242, 234, 0.68);
@@ -970,6 +1213,7 @@ body {
 
 .canvas-agent-run__cost button,
 .canvas-agent-run__continue button,
+.canvas-agent-run__confirm button,
 .canvas-agent-message__bubble footer button {
   display: inline-flex;
   align-items: center;
@@ -981,6 +1225,12 @@ body {
   padding: 0 10px;
   color: #151812;
   background: #cdf47c;
+}
+
+.canvas-agent-run__confirm button {
+  width: 100%;
+  min-height: 38px;
+  font-weight: 900;
 }
 
 .canvas-agent-action {

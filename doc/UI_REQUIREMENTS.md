@@ -62,7 +62,7 @@ MVP canvas interactions:
 - Open inspector from node click
 - Run node action from node or inspector
 - Upload image, video, and audio files into a canvas asset node with instant preview and visible upload state
-- Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, and review an openOii-style Agent Team conversation made of user bubbles, Agent messages, handoff events, stages, artifacts, canvas writes, and media confirmation controls.
+- Open the right-side, collapsible 创作总监 Agent panel, send freeform or selected-node context, and review a multi-Agent Team conversation made of user bubbles, Agent messages, handoff events, stages, artifacts, canvas writes, and media confirmation controls.
 - In the 创作总监 panel, ordinary question inputs should render as compact direct-answer cards instead of staged production steps; creative inspiration and script inputs still render as the staged Agent Team workflow.
 - When an Agent workflow is waiting for confirmation, text entered in the composer is treated as feedback for the current stage; only the explicit `继续下一步` button advances to the next Agent stage.
 - Use the text-node local composer below a text node to analyze, expand, or rewrite only that node; the response should render as Markdown inside the same node and should not appear in the right-side Agent panel.
@@ -136,7 +136,7 @@ Publishing to community must make clear that it creates a shareable snapshot. Up
 
 Agent workflow runs may automatically write low-cost text nodes and media placeholder nodes to the canvas through audited Agent mutations. Any image/video/audio generation that may consume points must stay in a visible confirmation state with explicit estimated points before it submits a generation record. The default Agent profile is automatic 创作总监 routing; manual Agent and model controls belong in Agent Team settings. The initial selectable Agent models are `DeepSeek v4 Flash` and `DeepSeek v4 Pro`; model choice should appear as a creative control, not as a raw provider-debug field. Text-node local model controls are scoped to the selected text node and should be visually centered with that node frame.
 
-The right-side 创作总监 panel should work as an Agent Team control surface: users can select automatic routing, copy starter Agents into "我的 Agent", create/edit/delete custom Agents, restore project-local Run history, and inspect each Step/Artifact card with text labels for status, model, source context, canvas write state, retry, and cost confirmation. The default official team should follow the openOii creative pipeline: Onboarding, Director, Scriptwriter, Character Artist, Storyboard Artist, Video Generator, Video Merger, and Review.
+The right-side 创作总监 panel should work as an Agent Team control surface: users can select automatic routing, copy starter Agents into "我的 Agent", create/edit/delete custom Agents, restore project-local Run history, and inspect each Step/Artifact card with text labels for status, model, source context, canvas write state, retry, and cost confirmation. The default official team should follow the target creative pipeline: Onboarding, Director, Scriptwriter, Character Artist, Storyboard Artist, Video Generator, Video Merger, and Review.
 
 Agent nodes should be runnable canvas units. A selected Agent node can choose a custom Agent template, inherit the panel Agent settings, read connected upstream nodes as context, and generate a proposal that still requires user approval before writing.
 

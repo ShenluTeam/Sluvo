@@ -117,7 +117,7 @@ The logged-in home keeps projects in a single horizontal recent-project row with
 
 Community canvas cards are visible on the public and logged-in home. Guests can browse cards but must log in before opening detail or forking. Logged-in users can open the read-only community detail view and fork a publication into a new editable Sluvo project.
 
-Canvas Agent controls live inside `CanvasWorkspaceView.vue` for the MVP. The right-side 创作总监 panel now starts Agent Team workflow runs, sends selected-node context, renders an openOii-style message stream above the staged step/artifact timeline, confirms media cost, and keeps the legacy session/action proposal path compatible through `src/api/sluvoApi.js`.
+Canvas Agent controls live inside `CanvasWorkspaceView.vue` for the MVP. The right-side 创作总监 panel now starts Agent Team workflow runs, sends selected-node context, renders a multi-Agent message stream above the staged step/artifact timeline, confirms media cost, and keeps the legacy session/action proposal path compatible through `src/api/sluvoApi.js`.
 
 The Agent panel now also owns the minimum "我的 Agent" template loop: list/create/edit/delete user Agent templates, copy starter templates into editable custom Agents, choose a template for the panel or an Agent node, and restore project-local Agent session history through `GET /api/sluvo/projects/{projectId}/agent/sessions`.
 
