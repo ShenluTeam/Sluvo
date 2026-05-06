@@ -1265,6 +1265,23 @@
               <p>{{ getAgentRunNextAction(agentPanel.activeRun) }}</p>
               <small>需要修改？在下方输入框描述调整意见后点击发送。</small>
             </div>
+            <div v-if="isAgentOnboardingConfigVisible()" class="canvas-agent-onboarding-config">
+              <section v-for="group in onboardingConfigGroups" :key="group.key">
+                <strong>{{ group.label }}</strong>
+                <div>
+                  <button
+                    v-for="option in group.options"
+                    :key="option.value"
+                    type="button"
+                    :class="{ 'is-active': getAgentOnboardingConfigValue(group.key) === option.value }"
+                    :disabled="agentPanel.busy"
+                    @click="setAgentOnboardingConfig(group.key, option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+              </section>
+            </div>
             <button type="button" :disabled="agentPanel.busy" @click="continueAgentRunWithConfirmation">
               <Check :size="16" />
               满意，继续下一步
@@ -2067,6 +2084,56 @@ const agentConversationRoleLabels = {
   system: '系统',
   user: '用户'
 }
+const onboardingConfigGroups = [
+  {
+    key: 'format',
+    label: '创作形态',
+    options: [
+      { value: '剧情短片', label: '剧情短片' },
+      { value: '漫画分镜', label: '漫画分镜' },
+      { value: '宣传短片', label: '宣传短片' }
+    ]
+  },
+  {
+    key: 'duration',
+    label: '片长',
+    options: [
+      { value: '30秒内', label: '30秒内' },
+      { value: '1分钟内', label: '1分钟内' },
+      { value: '1-3分钟', label: '1-3分钟' }
+    ]
+  },
+  {
+    key: 'ratio',
+    label: '画幅比例',
+    options: [
+      { value: '横版 16:9', label: '横版 16:9' },
+      { value: '竖版 9:16', label: '竖版 9:16' },
+      { value: '方形 1:1', label: '方形 1:1' }
+    ]
+  },
+  {
+    key: 'language',
+    label: '对白语言',
+    options: [
+      { value: '中文', label: '中文' },
+      { value: '英文', label: '英文' },
+      { value: '日文', label: '日文' }
+    ]
+  },
+  {
+    key: 'mood',
+    label: '情绪关键词',
+    options: [
+      { value: '悬疑', label: '悬疑' },
+      { value: '治愈', label: '治愈' },
+      { value: '热血', label: '热血' },
+      { value: '浪漫', label: '浪漫' },
+      { value: '科幻', label: '科幻' },
+      { value: '喜剧', label: '喜剧' }
+    ]
+  }
+]
 const agentPanel = reactive({
   visible: true,
   advancedOpen: false,
@@ -2083,6 +2150,13 @@ const agentPanel = reactive({
   runId: '',
   runs: [],
   optimisticMessages: [],
+  onboardingConfig: {
+    format: '剧情短片',
+    duration: '1分钟内',
+    ratio: '横版 16:9',
+    language: '中文',
+    mood: '悬疑'
+  },
   loadingRuns: false,
   confirmingCost: false,
   historyOpen: false,
@@ -3112,7 +3186,11 @@ async function continueAgentRun(content) {
 
 async function continueAgentRunWithConfirmation() {
   const feedback = agentPanel.input.trim()
-  const content = feedback ? `满意，继续下一步\n补充意见：${feedback}` : '满意，继续下一步'
+  const configSummary = buildAgentOnboardingConfigSummary()
+  const lines = ['满意，继续下一步']
+  if (configSummary) lines.push(`基础配置：${configSummary}`)
+  if (feedback) lines.push(`补充意见：${feedback}`)
+  const content = lines.join('\n')
   return continueAgentRun(content)
 }
 
@@ -3366,6 +3444,31 @@ function getAgentAttachmentSteps(timeline) {
     if (step.stepKey === 'answer_question') return false
     return getVisibleAgentArtifacts(step).length
   })
+}
+
+function isAgentOnboardingConfigVisible() {
+  if (agentPanel.activeRun?.run?.status !== 'waiting_user') return false
+  const latestStep = [...(agentPanel.activeRun?.steps || [])].reverse().find((step) => step?.stepKey)
+  return latestStep?.stepKey === 'onboarding'
+}
+
+function getAgentOnboardingConfigValue(key) {
+  return agentPanel.onboardingConfig?.[key] || ''
+}
+
+function setAgentOnboardingConfig(key, value) {
+  agentPanel.onboardingConfig[key] = value
+}
+
+function buildAgentOnboardingConfigSummary() {
+  if (!isAgentOnboardingConfigVisible()) return ''
+  return onboardingConfigGroups
+    .map((group) => {
+      const value = getAgentOnboardingConfigValue(group.key)
+      return value ? `${group.label}：${value}` : ''
+    })
+    .filter(Boolean)
+    .join('；')
 }
 
 function getAgentComposerPlaceholder() {

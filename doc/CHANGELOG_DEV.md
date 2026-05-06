@@ -4,6 +4,22 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added a lightweight configuration picker to the 需求引导 Agent confirmation step for creative format, duration, aspect ratio, dialogue language, and mood keyword.
+- Included selected onboarding configuration in the visible user confirmation message before advancing to downstream Agents.
+- Kept the picker scoped to the first onboarding confirmation so later Agent stages stay focused on review and feedback.
+
+Verification suggestions:
+- `npm run build`
+- Start a new Agent run, change onboarding options, click `满意，继续下一步`, and verify the user message includes the selected configuration.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `backend/services/sluvo_service.py`
 - `doc/CHANGELOG_DEV.md`
 

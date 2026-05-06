@@ -1242,6 +1242,48 @@ body {
   line-height: 1.45;
 }
 
+.canvas-agent-onboarding-config {
+  display: grid;
+  gap: 11px;
+  border-top: 1px solid rgba(255, 226, 165, 0.15);
+  padding-top: 2px;
+}
+
+.canvas-agent-onboarding-config section {
+  display: grid;
+  gap: 7px;
+}
+
+.canvas-agent-onboarding-config section > strong {
+  color: rgba(246, 246, 239, 0.82);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.canvas-agent-onboarding-config section > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.canvas-agent-onboarding-config button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0 8px;
+  color: rgba(242, 242, 234, 0.66);
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.canvas-agent-onboarding-config button.is-active {
+  border-color: rgba(205, 244, 124, 0.72);
+  color: #cdf47c;
+  background: rgba(205, 244, 124, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(205, 244, 124, 0.16);
+}
+
 .canvas-agent-run__continue span {
   margin: 0;
   color: rgba(242, 242, 234, 0.68);
@@ -1251,7 +1293,7 @@ body {
 
 .canvas-agent-run__cost button,
 .canvas-agent-run__continue button,
-.canvas-agent-run__confirm button,
+.canvas-agent-run__confirm > button,
 .canvas-agent-message__bubble footer button {
   display: inline-flex;
   align-items: center;
@@ -1265,7 +1307,7 @@ body {
   background: #cdf47c;
 }
 
-.canvas-agent-run__confirm button {
+.canvas-agent-run__confirm > button {
   width: 100%;
   min-height: 38px;
   font-weight: 900;
