@@ -3664,7 +3664,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         type: 'agent',
         agentKey: getAgentConversationKey(payload.agent || agentName),
         agentName,
-        kindLabel: payload.isLoading ? '思考中' : '入职',
+        kindLabel: payload.isLoading ? '思考中' : '登场',
         status: payload.isLoading ? 'running' : 'succeeded',
         statusLabel: payload.isLoading ? '处理中' : '已完成',
         timeLabel: getAgentConversationTimeLabel(event),

@@ -4,6 +4,19 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Renamed the live Agent arrival badge from `入职` to `登场` so the conversation flow feels more like a creative production handoff.
+
+Verification suggestions:
+- `npm run build`
+- Start an Agent run and verify completed Agent message headers show `登场`.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
 - `doc/CHANGELOG_DEV.md`
 
