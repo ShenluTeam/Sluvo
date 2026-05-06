@@ -2040,6 +2040,7 @@ const agentPanel = reactive({
   activeRun: null,
   runId: '',
   runs: [],
+  optimisticMessages: [],
   loadingRuns: false,
   confirmingCost: false,
   historyOpen: false,
@@ -2381,7 +2382,7 @@ const pendingAgentActionCount = computed(() => (agentPanel.pendingAction ? 1 : 0
 const hasAgentTemplateSelection = computed(() => Boolean(getSelectedAgentTemplate()))
 const agentSessionHistory = computed(() => agentPanel.history.slice(0, 8))
 const agentRunHistory = computed(() => agentPanel.runs.slice(0, 8))
-const agentConversationMessages = computed(() => buildAgentConversationMessages(agentPanel.activeRun))
+const agentConversationMessages = computed(() => buildAgentConversationMessages(agentPanel.activeRun, agentPanel.optimisticMessages))
 const showStarterStrip = computed(
   () =>
     !canvasActivated.value &&
@@ -2964,10 +2965,74 @@ async function startAgentWithSelection(content) {
   await runAgentPrompt(content)
 }
 
+function setAgentOptimisticMessages(content, action = 'start') {
+  const cleanContent = String(content || '').trim()
+  if (!cleanContent) {
+    agentPanel.optimisticMessages = []
+    return
+  }
+  const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const isRevise = action === 'revise'
+  const isContinue = action === 'continue'
+  const agentName = isRevise ? 'Review Agent' : agentPanel.activeRun ? getAgentRunAwaitingAgent(agentPanel.activeRun) : 'Onboarding Agent'
+  const agentKey = isRevise ? 'review' : getAgentConversationKey(agentName, 'onboarding')
+  agentPanel.optimisticMessages = [
+    {
+      id: `optimistic-user-${Date.now()}`,
+      type: 'user',
+      agentKey: 'user',
+      agentName: '你',
+      kindLabel: isRevise ? '反馈' : isContinue ? '确认' : '输入',
+      status: 'succeeded',
+      statusLabel: '已发送',
+      timeLabel,
+      content: cleanContent
+    },
+    {
+      id: `optimistic-agent-${Date.now()}`,
+      type: 'agent',
+      agentKey,
+      agentName,
+      kindLabel: '思考中',
+      status: 'running',
+      statusLabel: '处理中',
+      timeLabel,
+      loading: true,
+      content: isRevise
+        ? '我会先理解你的修改意见，再判断应该回到哪一个 Agent 阶段处理。'
+        : isContinue
+          ? '收到确认，正在准备下一位 Agent 的接力上下文。'
+          : '我先分析你的灵感，明确创作边界、执行顺序和需要邀请的 Agent。'
+    }
+  ]
+}
+
+function clearAgentOptimisticMessages() {
+  agentPanel.optimisticMessages = []
+}
+
+function markAgentOptimisticFailure(message) {
+  const content = String(message || '请求失败，请稍后重试。').trim()
+  agentPanel.optimisticMessages = (agentPanel.optimisticMessages || []).map((item) =>
+    item.type === 'agent'
+      ? {
+          ...item,
+          kindLabel: '失败',
+          status: 'failed',
+          statusLabel: '失败',
+          loading: false,
+          content
+        }
+      : item
+  )
+}
+
 async function runAgentPrompt(content, options = {}) {
   setAgentPanelVisible(true)
   agentPanel.busy = true
   agentPanel.error = ''
+  setAgentOptimisticMessages(content, 'start')
+  agentPanel.input = ''
   agentPanel.pendingAction = null
   agentPanel.targetNodeId = options.targetNode?.id || ''
   agentPanel.sourceSurface = options.sourceSurface || 'panel'
@@ -2988,10 +3053,11 @@ async function runAgentPrompt(content, options = {}) {
       contextSnapshot
     })
     setActiveAgentRun(response)
+    clearAgentOptimisticMessages()
     await Promise.allSettled([loadAgentRuns({ restore: false }), loadAgentHistory(), loadProjectCanvas()])
-    agentPanel.input = ''
   } catch (error) {
     agentPanel.error = error instanceof Error ? error.message : 'Agent Run 创建失败'
+    markAgentOptimisticFailure(agentPanel.error)
     if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
   } finally {
     agentPanel.busy = false
@@ -3010,6 +3076,8 @@ async function submitAgentRunContinuation(content, action = 'continue') {
   if (!agentPanel.runId || agentPanel.busy) return
   agentPanel.busy = true
   agentPanel.error = ''
+  setAgentOptimisticMessages(content, action)
+  agentPanel.input = ''
   try {
     await saveCanvasNow()
     const response = await continueSluvoAgentRun(agentPanel.runId, {
@@ -3018,10 +3086,11 @@ async function submitAgentRunContinuation(content, action = 'continue') {
       contextSnapshot: buildAgentContextSnapshot({ sourceSurface: agentPanel.sourceSurface || 'panel' })
     })
     setActiveAgentRun(response)
+    clearAgentOptimisticMessages()
     await Promise.allSettled([loadAgentRuns({ restore: false }), loadProjectCanvas()])
-    agentPanel.input = ''
   } catch (error) {
     agentPanel.error = error instanceof Error ? error.message : '继续补充失败'
+    markAgentOptimisticFailure(agentPanel.error)
   } finally {
     agentPanel.busy = false
   }
@@ -3275,7 +3344,7 @@ function getAgentConversationKey(agentName, fallback = 'agent') {
   return normalized || fallback
 }
 
-function buildAgentConversationMessages(timeline) {
+function buildAgentConversationMessages(timeline, optimisticMessages = []) {
   const events = Array.isArray(timeline?.events) ? timeline.events : []
   const messages = []
   events.forEach((event, index) => {
@@ -3392,7 +3461,10 @@ function buildAgentConversationMessages(timeline) {
       })
     }
   })
-  return messages.filter((message) => String(message.content || '').trim())
+  const visibleMessages = messages.filter((message) => String(message.content || '').trim())
+  const pendingMessages = Array.isArray(optimisticMessages) ? optimisticMessages.filter((message) => String(message.content || '').trim()) : []
+  if (!pendingMessages.length) return visibleMessages
+  return [...visibleMessages, ...pendingMessages]
 }
 
 function getAgentConversationMessageClass(message) {
@@ -3572,6 +3644,7 @@ function getAgentArtifactTypeLabel(type) {
     video_placeholder: '视频占位',
     audio_placeholder: '音频占位',
     media_result: '媒体结果',
+    planning_brief: '规划',
     report: '报告'
   }[type] || type || '产物'
 }

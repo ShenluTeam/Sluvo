@@ -1202,7 +1202,7 @@ SLUVO_AGENT_WORKFLOW_SPECS = [
         "completed": "已理解创作目标并整理输入边界",
         "next": "接下来 Director Agent 会规划整体故事方向",
         "question": "创作目标和边界是否正确？",
-        "artifacts": [("需求分析", "text_node", "auto_canvas")],
+        "artifacts": [("需求规划", "planning_brief", "readonly")],
     },
     {
         "stepKey": "director",
@@ -1426,19 +1426,20 @@ def _append_agent_workflow_step(
             "handoffTo": resolved["agentName"],
         },
     )
-    artifacts = [
-        _create_agent_run_artifact(
-            session,
-            run=run,
-            step=step,
-            title=artifact_title,
-            artifact_type=artifact_type,
-            body=_artifact_body(artifact_type, goal, context_snapshot or {}, str(resolved["modelCode"])),
-            write_policy=policy,
-            preview={"estimatedWrite": "canvas_node", "estimatePoints": 20 if artifact_type == "video_placeholder" else 8 if artifact_type == "image_placeholder" else 0},
+    artifacts = []
+    for artifact_title, artifact_type, policy in spec["artifacts"]:
+        artifacts.append(
+            _create_agent_run_artifact(
+                session,
+                run=run,
+                step=step,
+                title=artifact_title,
+                artifact_type=artifact_type,
+                body=_artifact_body(artifact_type, goal, context_snapshot or {}, str(resolved["modelCode"])),
+                write_policy=policy,
+                preview={"estimatedWrite": "canvas_node", "estimatePoints": 20 if artifact_type == "video_placeholder" else 8 if artifact_type == "image_placeholder" else 0},
+            )
         )
-        for artifact_title, artifact_type, policy in spec["artifacts"]
-    ]
     _finish_agent_run_step(
         session,
         step,
@@ -1466,6 +1467,8 @@ def _append_agent_workflow_step(
             "progress": min((spec_index + 1) / max(len(SLUVO_AGENT_WORKFLOW_SPECS), 1), 1),
         },
     )
+    planning_artifact = next((artifact for artifact in artifacts if artifact.artifact_type == "planning_brief"), None)
+    message_content = planning_artifact.body if planning_artifact else f"{spec['completed']}：{spec['next']}"
     _append_sluvo_run_event(
         session,
         run=run,
@@ -1475,15 +1478,31 @@ def _append_agent_workflow_step(
             "agent": spec["stepKey"],
             "agentName": resolved["agentName"],
             "stage": spec["stage"],
-            "content": f"{spec['completed']}：{spec['next']}",
+            "content": message_content,
             "stepId": encode_id(step.id),
         },
     )
     return artifacts
 
 
+def _build_agent_planning_brief(goal: str, context_snapshot: Dict[str, Any]) -> str:
+    selected_nodes = context_snapshot.get("selectedNodes") if isinstance(context_snapshot, dict) else []
+    selected_count = len(selected_nodes) if isinstance(selected_nodes, list) else 0
+    clean_goal = goal.strip()
+    context_line = f"已读取 {selected_count} 个选中节点作为上下文。" if selected_count else "当前先以你刚发送的灵感作为创作起点。"
+    return (
+        "我先整理这次任务的规划，不会立刻把完整剧本写进画布。\n\n"
+        f"1. 输入目标：{clean_goal}\n"
+        f"2. 上下文：{context_line}\n"
+        "3. 执行顺序：先确认创作边界，再交给 Director Agent 定方向，之后由 Scriptwriter Agent 展开剧本和镜头节拍。\n"
+        "4. 需要你确认：主题、类型、主要情绪和不希望出现的内容是否需要补充。"
+    )
+
+
 def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
     prompt = _agent_run_prompt(goal, context_snapshot)
+    if artifact_type == "planning_brief":
+        return _build_agent_planning_brief(goal, context_snapshot)
     llm_body = _try_deepseek_agent_artifact_body(
         artifact_type=artifact_type,
         goal=goal,
@@ -1548,7 +1567,7 @@ def _try_deepseek_agent_artifact_body(
 ) -> Optional[str]:
     if not settings.DEEPSEEK_API_KEY:
         return None
-    if artifact_type in {"image_placeholder", "video_placeholder", "report"}:
+    if artifact_type in {"image_placeholder", "video_placeholder", "report", "planning_brief"}:
         return None
     type_labels = {
         "text_node": "短片剧本草案",
