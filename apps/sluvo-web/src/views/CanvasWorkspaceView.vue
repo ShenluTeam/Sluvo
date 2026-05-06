@@ -1183,7 +1183,7 @@
                     <p>{{ message.content }}</p>
                     <div v-if="message.loading" class="canvas-agent-message__loading">
                       <span />
-                      <span>处理中</span>
+                      <span>正在思考</span>
                     </div>
                   </div>
                 </div>
@@ -1265,7 +1265,7 @@
               <p>{{ getAgentRunNextAction(agentPanel.activeRun) }}</p>
               <small>需要修改？在下方输入框描述调整意见后点击发送。</small>
             </div>
-            <button type="button" :disabled="agentPanel.busy" @click="continueAgentRun('满意，继续下一步')">
+            <button type="button" :disabled="agentPanel.busy" @click="continueAgentRunWithConfirmation">
               <Check :size="16" />
               满意，继续下一步
             </button>
@@ -3066,6 +3066,12 @@ async function runAgentPrompt(content, options = {}) {
 
 async function continueAgentRun(content) {
   return submitAgentRunContinuation(content, 'continue')
+}
+
+async function continueAgentRunWithConfirmation() {
+  const feedback = agentPanel.input.trim()
+  const content = feedback ? `满意，继续下一步\n补充意见：${feedback}` : '满意，继续下一步'
+  return continueAgentRun(content)
 }
 
 async function reviseAgentRun(content) {

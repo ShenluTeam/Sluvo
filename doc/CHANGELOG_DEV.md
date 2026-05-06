@@ -4,6 +4,24 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Included typed composer feedback in the visible `满意，继续下一步` user message when users confirm a stage with extra instructions.
+- Forwarded non-empty continue feedback into the next Agent artifact prompt so downstream Agent output can reflect the user's added opinion.
+- Strengthened the Agent thinking indicator with a moving scan bar and animated dots so the panel clearly shows work in progress while waiting for the backend.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Type a note while a run is waiting, click `满意，继续下一步`, and verify the right-aligned user message contains the note before the next Agent starts thinking.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:

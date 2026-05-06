@@ -1426,6 +1426,10 @@ def _append_agent_workflow_step(
             "handoffTo": resolved["agentName"],
         },
     )
+    artifact_goal = goal
+    clean_feedback = str(feedback or "").strip()
+    if clean_feedback and clean_feedback not in {"继续", "继续下一步", "满意，继续下一步"}:
+        artifact_goal = f"{goal}\n\n用户确认 / 补充：{clean_feedback}"
     artifacts = []
     for artifact_title, artifact_type, policy in spec["artifacts"]:
         artifacts.append(
@@ -1435,7 +1439,7 @@ def _append_agent_workflow_step(
                 step=step,
                 title=artifact_title,
                 artifact_type=artifact_type,
-                body=_artifact_body(artifact_type, goal, context_snapshot or {}, str(resolved["modelCode"])),
+                body=_artifact_body(artifact_type, artifact_goal, context_snapshot or {}, str(resolved["modelCode"])),
                 write_policy=policy,
                 preview={"estimatedWrite": "canvas_node", "estimatePoints": 20 if artifact_type == "video_placeholder" else 8 if artifact_type == "image_placeholder" else 0},
             )
