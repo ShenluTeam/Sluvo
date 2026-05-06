@@ -4,6 +4,22 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Constrained right-aligned user chat bubbles so short user messages no longer stretch across the Agent panel.
+- Displayed the signed-in creator nickname and initial for user messages instead of the generic `你` label.
+- Standardized live Agent message chips to `Agent + 中文岗位名`, such as `Agent 需求引导` and `Agent 导演`, while keeping the existing Sluvo color palette.
+
+Verification suggestions:
+- `npm run build`
+- Send a message and continue a waiting step, then verify user bubbles stay compact and Agent badges use the new Chinese role naming.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `backend/services/sluvo_service.py`
 - `doc/CHANGELOG_DEV.md`
 

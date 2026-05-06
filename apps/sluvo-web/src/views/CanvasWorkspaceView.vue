@@ -1722,6 +1722,7 @@ import {
   uploadSluvoCanvasAsset
 } from '../api/sluvoApi'
 import { buildApiUrl } from '../api/client'
+import { useAuthStore } from '../stores/authStore'
 import { useCanvasStore } from '../stores/canvasStore'
 import { useProjectStore } from '../stores/projectStore'
 
@@ -1868,6 +1869,7 @@ const nodeMeta = {
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const canvasStore = useCanvasStore()
 const projectStore = useProjectStore()
 const projectTitle = ref(copy.untitled)
@@ -2043,47 +2045,56 @@ const agentModelOptions = [
   { id: 'deepseek-v4-pro', label: 'DeepSeek v4 Pro' }
 ]
 const agentConversationNameLabels = {
-  onboarding: '需求引导 Agent',
-  'onboarding agent': '需求引导 Agent',
-  director: '导演 Agent',
-  'director agent': '导演 Agent',
-  scriptwriter: '编剧 Agent',
-  'scriptwriter agent': '编剧 Agent',
-  character_artist: '角色设计 Agent',
-  'character artist agent': '角色设计 Agent',
-  storyboard_artist: '分镜设计 Agent',
-  'storyboard artist agent': '分镜设计 Agent',
-  video_generator: '视频生成 Agent',
-  'video generator agent': '视频生成 Agent',
-  video_merger: '成片合成 Agent',
-  'video merger agent': '成片合成 Agent',
-  review: '审核反馈 Agent',
-  'review agent': '审核反馈 Agent',
-  'agent team': '协作团队',
-  system: '系统',
-  user: '你'
-}
-const agentConversationRoleLabels = {
-  onboarding: '引导',
-  'onboarding agent': '引导',
+  onboarding: '需求引导',
+  'onboarding agent': '需求引导',
   director: '导演',
   'director agent': '导演',
   scriptwriter: '编剧',
   'scriptwriter agent': '编剧',
-  character_artist: '角色',
-  'character artist agent': '角色',
-  storyboard_artist: '分镜',
-  'storyboard artist agent': '分镜',
-  video_generator: '视频',
-  'video generator agent': '视频',
-  video_merger: '合成',
-  'video merger agent': '合成',
-  review: '反馈',
-  'review agent': '反馈',
+  character_artist: '角色设计',
+  'character artist agent': '角色设计',
+  storyboard_artist: '分镜设计',
+  'storyboard artist agent': '分镜设计',
+  video_generator: '视频生成',
+  'video generator agent': '视频生成',
+  video_merger: '成片合成',
+  'video merger agent': '成片合成',
+  review: '审核反馈',
+  'review agent': '审核反馈',
+  'agent team': '协作团队',
+  system: '系统'
+}
+const agentConversationRoleLabels = {
+  onboarding: 'Agent',
+  'onboarding agent': 'Agent',
+  director: 'Agent',
+  'director agent': 'Agent',
+  scriptwriter: 'Agent',
+  'scriptwriter agent': 'Agent',
+  character_artist: 'Agent',
+  'character artist agent': 'Agent',
+  storyboard_artist: 'Agent',
+  'storyboard artist agent': 'Agent',
+  video_generator: 'Agent',
+  'video generator agent': 'Agent',
+  video_merger: 'Agent',
+  'video merger agent': 'Agent',
+  review: 'Agent',
+  'review agent': 'Agent',
   'agent team': '团队',
   system: '系统',
   user: '用户'
 }
+const agentConversationTextReplacements = [
+  ['需求引导 Agent', '需求引导'],
+  ['导演 Agent', '导演'],
+  ['编剧 Agent', '编剧'],
+  ['角色设计 Agent', '角色设计'],
+  ['分镜设计 Agent', '分镜设计'],
+  ['视频生成 Agent', '视频生成'],
+  ['成片合成 Agent', '成片合成'],
+  ['审核反馈 Agent', '审核反馈']
+]
 const onboardingConfigGroups = [
   {
     key: 'image.model_code',
@@ -3558,7 +3569,22 @@ function getAgentConversationIdentityKey(value) {
     .toLowerCase()
 }
 
+function isAgentConversationUser(messageOrName) {
+  if (typeof messageOrName === 'object') {
+    const key = getAgentConversationIdentityKey(messageOrName?.agentKey || messageOrName?.agentName)
+    return messageOrName?.type === 'user' || key === 'user' || key === '你'
+  }
+  const key = getAgentConversationIdentityKey(messageOrName)
+  return key === 'user' || key === '你'
+}
+
+function getAgentUserDisplayName() {
+  const displayName = String(authStore.displayName || '').trim()
+  return displayName || '你'
+}
+
 function getAgentConversationDisplayName(messageOrName) {
+  if (isAgentConversationUser(messageOrName)) return getAgentUserDisplayName()
   const name = typeof messageOrName === 'object'
     ? (messageOrName.agentName || messageOrName.agentKey || '')
     : messageOrName
@@ -3570,10 +3596,12 @@ function getAgentConversationDisplayName(messageOrName) {
 }
 
 function getAgentConversationRoleLabel(message) {
+  if (isAgentConversationUser(message)) return '用户'
   const keyLabel = agentConversationRoleLabels[getAgentConversationIdentityKey(message?.agentKey)]
   if (keyLabel) return keyLabel
   const nameLabel = agentConversationRoleLabels[getAgentConversationIdentityKey(message?.agentName)]
   if (nameLabel) return nameLabel
+  if (String(message?.agentName || message?.agentKey || '').toLowerCase().includes('agent')) return 'Agent'
   return getAgentConversationKey(message?.agentName || message?.agentKey || 'agent')
 }
 
@@ -3586,6 +3614,10 @@ function localizeAgentConversationText(content) {
       const pattern = new RegExp(source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
       text = text.replace(pattern, target)
     })
+  agentConversationTextReplacements.forEach(([source, target]) => {
+    const pattern = new RegExp(source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    text = text.replace(pattern, target)
+  })
   return text
 }
 
@@ -3730,7 +3762,7 @@ function getAgentConversationMessageClass(message) {
 }
 
 function getAgentConversationAvatar(message) {
-  if (message.type === 'user') return '你'
+  if (message.type === 'user') return getAgentUserDisplayName().slice(0, 1).toUpperCase() || '你'
   if (message.type === 'handoff') return 'H'
   if (message.type === 'system' || message.type === 'separator') return 'S'
   const name = String(getAgentConversationDisplayName(message) || 'A').trim()
