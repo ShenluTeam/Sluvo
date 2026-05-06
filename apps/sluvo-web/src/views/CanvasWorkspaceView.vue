@@ -3316,7 +3316,7 @@ function getAgentRunAwaitingAgent(timeline) {
 function getAgentAttachmentSteps(timeline) {
   return (timeline?.steps || []).filter((step) => {
     if (step.stepKey === 'answer_question') return false
-    return getVisibleAgentArtifacts(step).length || getAgentStepArtifactSummary(step)
+    return getVisibleAgentArtifacts(step).length
   })
 }
 
@@ -3676,7 +3676,7 @@ function getAgentStageProgress(timeline) {
       label: getAgentStageLabel(stage),
       steps: steps.filter((step) => (step.input?.stage || step.output?.stage) === stage)
     }))
-    .filter((stage) => stage.steps.length || stage.key !== 'deploy')
+    .filter((stage) => stage.steps.length)
   const currentStage = [...steps].reverse().find((step) => !['succeeded', 'skipped'].includes(step.status))?.input?.stage
     || [...steps].reverse().find((step) => step.status === 'succeeded')?.input?.stage
   return stages.map((stage) => {

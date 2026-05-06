@@ -8,6 +8,23 @@ Changed files:
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
+- Fixed the planning message serialization bug that could mark a new Agent Run as failed after the first stage.
+- Changed the Agent panel to reveal only stages that have actually appeared, so future visual/generation phases no longer show up immediately after send.
+- Suppressed read-only planning briefs from the attachment timeline; they now live in the chat message stream, while real canvas/media artifacts appear later as the workflow advances.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Send a short inspiration and verify the panel first shows the user message, planning Agent message, and current-stage confirmation without future phases or readonly attachment cards.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
 - Added immediate optimistic chat messages so the user's sent text and the Agent thinking state appear before canvas save and Run creation finish.
 - Changed the first Agent stage into a read-only planning brief so a short inspiration does not instantly write a full story, role, or scene node to the canvas.
 - Made the first Agent message explain planning, context, stage order, and confirmation needs before downstream creative Agents generate artifacts.

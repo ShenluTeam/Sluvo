@@ -1468,7 +1468,10 @@ def _append_agent_workflow_step(
         },
     )
     planning_artifact = next((artifact for artifact in artifacts if artifact.artifact_type == "planning_brief"), None)
-    message_content = planning_artifact.body if planning_artifact else f"{spec['completed']}：{spec['next']}"
+    planning_payload = _json_load(planning_artifact.payload_json, {}) if planning_artifact else {}
+    message_content = str(planning_payload.get("body") or "").strip() if planning_payload else ""
+    if not message_content:
+        message_content = f"{spec['completed']}：{spec['next']}"
     _append_sluvo_run_event(
         session,
         run=run,
@@ -1967,8 +1970,8 @@ def create_sluvo_agent_run(
             "agentName": agent_name,
             "modelCode": normalized_model,
             "intent": intent,
-            "artifactCount": _agent_run_artifact_count(session, run),
-            "nodeCount": _agent_run_artifact_count(session, run),
+            "artifactCount": len([artifact for artifact in step_artifacts if artifact.write_policy != "readonly"]),
+            "nodeCount": len([artifact for artifact in step_artifacts if artifact.write_policy not in {"readonly", "requires_cost_confirmation"}]),
             "edgeCount": 0,
             "estimatePoints": 0,
             "workflow": _agent_workflow_public_specs(),
