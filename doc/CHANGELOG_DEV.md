@@ -59,6 +59,28 @@ Verification suggestions:
 ## 2026-05-06
 
 Changed files:
+- `backend/services/sluvo_service.py`
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Reworked the Agent Run workflow into the six production groups `总览`、`剧本`、`角色/场景/道具`、`分镜`、`图片`、`视频`, removing the separate Director stage from new runs.
+- Added onboarding duration configuration (`durationMode` and `durationSeconds`) and carried the global media config into downstream image/video artifact parameters.
+- Added script, asset, storyboard-table, storyboard-image, shot-video, and merged-video artifact types so canvas nodes follow the intended production chain.
+- Rendered a vertical six-step workflow overview in the Agent panel and deduplicated repeated stage attachment rows after revisions.
+- Reused existing canvas nodes for same-stage revision artifacts when possible so feedback updates do not create a second disconnected stage node.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Start a fresh Agent Run and verify it advances from 总览 to 剧本, then 角色/场景/道具, 分镜, 图片, 视频 without creating a Director planning node.
+
+## 2026-05-06
+
+Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `backend/services/sluvo_service.py`
 - `doc/UI_REQUIREMENTS.md`

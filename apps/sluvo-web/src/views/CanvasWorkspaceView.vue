@@ -1304,6 +1304,17 @@
                     {{ option.label }}
                   </button>
                 </div>
+                <input
+                  v-if="group.inputType === 'number'"
+                  class="canvas-agent-onboarding-config__input"
+                  type="number"
+                  :min="group.min || 1"
+                  :max="group.max || 600"
+                  :step="group.step || 1"
+                  :value="getAgentOnboardingConfigValue(group.key)"
+                  :disabled="agentPanel.busy"
+                  @input="setAgentOnboardingConfig(group.key, Number($event.target.value || group.min || 1))"
+                />
               </section>
             </div>
             <button type="button" :disabled="agentPanel.busy" @click="continueAgentRunWithConfirmation">
@@ -1927,105 +1938,91 @@ const publishDialog = reactive({
 const agentProfiles = [
   { id: 'auto', label: '自动派发（推荐）' },
   { id: 'onboarding', label: 'Onboarding Agent' },
-  { id: 'director', label: 'Director Agent' },
   { id: 'scriptwriter', label: 'Scriptwriter Agent' },
-  { id: 'character_artist', label: 'Character Artist Agent' },
+  { id: 'character_artist', label: 'Visual Asset Agent' },
   { id: 'storyboard_artist', label: 'Storyboard Artist Agent' },
+  { id: 'image_generator', label: 'Image Generator Agent' },
   { id: 'video_generator', label: 'Video Generator Agent' },
-  { id: 'video_merger', label: 'Video Merger Agent' },
   { id: 'review', label: 'Review Agent' }
 ]
 const officialAgentCards = [
   {
     name: 'Onboarding Agent',
-    description: '分析故事目标、输入素材和创作边界，决定是否进入完整流水线。',
+    description: '确认灵感/剧本、创作边界、时长和全局生成配置。',
     stepKey: 'onboarding',
-    stage: 'ideate',
+    stage: 'overview',
     profileKey: 'onboarding',
-    output: '需求分析',
-    rolePrompt: '你是 Onboarding Agent，负责理解用户创作目标、输入素材、风格偏好和边界，并把任务交给导演规划。',
-    useCases: ['需求分析', '创作边界', '输入整理'],
+    output: '总览确认',
+    rolePrompt: '你是 Onboarding Agent，负责理解用户创作目标、输入素材、风格偏好、时长和全局生成配置。',
+    useCases: ['需求分析', '时长确认', '全局配置'],
     inputTypes: ['text', 'image', 'canvas'],
     outputTypes: ['brief', 'note'],
     tools: ['read_canvas', 'route_agents']
   },
   {
-    name: 'Director Agent',
-    description: '规划整体故事方向、风格、情绪、节奏和镜头策略。',
-    stepKey: 'director',
-    stage: 'ideate',
-    profileKey: 'director',
-    output: '导演规划',
-    rolePrompt: '你是 Director Agent，负责把需求转为故事方向、视听风格、节奏规划和后续 Agent 的工作边界。',
-    useCases: ['导演规划', '风格设定', '节奏设计'],
-    inputTypes: ['text', 'canvas'],
-    outputTypes: ['director_plan', 'note'],
-    tools: ['read_canvas', 'propose_canvas_patch']
-  },
-  {
     name: 'Scriptwriter Agent',
-    description: '创作剧本、角色关系、场景节拍和可拆分镜头结构。',
+    description: '根据灵感生成剧本正文，或整理用户已有剧本。',
     stepKey: 'scriptwriter',
-    stage: 'ideate',
+    stage: 'script',
     profileKey: 'scriptwriter',
-    output: '剧本/镜头',
-    rolePrompt: '你是 Scriptwriter Agent，负责生成剧本、角色关系、场景节拍和分镜草案。',
-    useCases: ['剧本创作', '角色关系', '分镜草案'],
+    output: '剧本正文',
+    rolePrompt: '你是 Scriptwriter Agent，负责生成或整理剧本正文，并根据用户反馈修订当前剧本。',
+    useCases: ['剧本创作', '剧本整理', '剧本修改'],
     inputTypes: ['text', 'canvas'],
     outputTypes: ['script', 'storyboard_plan'],
     tools: ['read_canvas', 'propose_canvas_patch']
   },
   {
-    name: 'Character Artist Agent',
-    description: '生成角色外观、服装、道具和一致性视觉锚点。',
-    stepKey: 'character_artist',
-    stage: 'visualize',
+    name: 'Visual Asset Agent',
+    description: '从剧本中提取角色、场景、道具，并准备对应图片占位。',
+    stepKey: 'asset_artist',
+    stage: 'assets',
     profileKey: 'character_artist',
-    output: '角色图',
-    rolePrompt: '你是 Character Artist Agent，负责把角色描述转成稳定视觉设定和角色图生成计划。',
-    useCases: ['角色设定', '一致性锚点', '角色图生成'],
+    output: '角色/场景/道具',
+    rolePrompt: '你是 Visual Asset Agent，负责从剧本提取角色、场景、道具，并输出稳定视觉设定和图片生成计划。',
+    useCases: ['角色提取', '场景提取', '道具提取'],
     inputTypes: ['text', 'image', 'canvas'],
     outputTypes: ['character_brief', 'image_placeholder'],
     tools: ['read_canvas', 'propose_canvas_patch']
   },
   {
     name: 'Storyboard Artist Agent',
-    description: '为每个镜头规划分镜首帧、构图、景别和画面提示词。',
+    description: '基于剧本和视觉资产生成分镜表格。',
     stepKey: 'storyboard_artist',
-    stage: 'visualize',
+    stage: 'storyboard',
     profileKey: 'storyboard_artist',
-    output: '分镜首帧',
-    rolePrompt: '你是 Storyboard Artist Agent，负责把镜头计划转成分镜首帧、构图、景别和画面提示词。',
-    useCases: ['分镜首帧', '构图设计', '画面提示词'],
+    output: '分镜表格',
+    rolePrompt: '你是 Storyboard Artist Agent，负责把剧本、角色、场景和道具转成可确认的分镜表格。',
+    useCases: ['分镜表格', '镜头拆解', '节奏规划'],
     inputTypes: ['text', 'image', 'canvas'],
     outputTypes: ['storyboard', 'image_prompt', 'image_placeholder'],
     tools: ['read_canvas', 'propose_canvas_patch']
   },
   {
+    name: 'Image Generator Agent',
+    description: '根据分镜表格生成分镜图和首帧图占位。',
+    stepKey: 'image_generator',
+    stage: 'image',
+    profileKey: 'storyboard_artist',
+    output: '分镜图',
+    rolePrompt: '你是 Image Generator Agent，负责把已确认分镜表格转成分镜图和首帧图生成计划。',
+    useCases: ['分镜图', '首帧图', '图片生成'],
+    inputTypes: ['text', 'storyboard', 'canvas'],
+    outputTypes: ['storyboard_image_placeholder'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
     name: 'Video Generator Agent',
-    description: '基于首帧和镜头动作创建视频生成任务，并等待扣费确认。',
+    description: '根据分镜图创建分镜视频任务，并准备合成视频。',
     stepKey: 'video_generator',
-    stage: 'animate',
+    stage: 'video',
     profileKey: 'video_generator',
-    output: '视频任务',
-    rolePrompt: '你是 Video Generator Agent，负责根据首帧、镜头运动和动作描述创建视频生成任务；扣费媒体任务必须等待用户确认。',
-    useCases: ['图生视频', '文生视频', '扣费确认'],
+    output: '分镜视频/合成',
+    rolePrompt: '你是 Video Generator Agent，负责根据分镜图、镜头运动和动作描述创建分镜视频与合成视频任务；扣费媒体任务必须等待用户确认。',
+    useCases: ['分镜视频', '合成视频', '扣费确认'],
     inputTypes: ['image', 'text', 'storyboard'],
     outputTypes: ['video_placeholder', 'media_result'],
     tools: ['read_canvas', 'propose_canvas_patch', 'estimate_cost']
-  },
-  {
-    name: 'Video Merger Agent',
-    description: '拼接视频片段，整理最终预览、导出和交付状态。',
-    stepKey: 'video_merger',
-    stage: 'deploy',
-    profileKey: 'video_merger',
-    output: '成片',
-    rolePrompt: '你是 Video Merger Agent，负责把分镜视频合成为最终成片，并整理导出与交付信息。',
-    useCases: ['视频拼接', '成片预览', '导出'],
-    inputTypes: ['video', 'canvas'],
-    outputTypes: ['media_result', 'report'],
-    tools: ['read_canvas', 'propose_canvas_patch']
   },
   {
     name: 'Review Agent',
@@ -2086,8 +2083,12 @@ const agentConversationNameLabels = {
   'scriptwriter agent': '编剧',
   character_artist: '角色设计',
   'character artist agent': '角色设计',
+  asset_artist: '角色/场景/道具',
+  'visual asset agent': '角色/场景/道具',
   storyboard_artist: '分镜设计',
   'storyboard artist agent': '分镜设计',
+  image_generator: '图片生成',
+  'image generator agent': '图片生成',
   video_generator: '视频生成',
   'video generator agent': '视频生成',
   video_merger: '成片合成',
@@ -2106,8 +2107,12 @@ const agentConversationRoleLabels = {
   'scriptwriter agent': 'Agent',
   character_artist: 'Agent',
   'character artist agent': 'Agent',
+  asset_artist: 'Agent',
+  'visual asset agent': 'Agent',
   storyboard_artist: 'Agent',
   'storyboard artist agent': 'Agent',
+  image_generator: 'Agent',
+  'image generator agent': 'Agent',
   video_generator: 'Agent',
   'video generator agent': 'Agent',
   video_merger: 'Agent',
@@ -2123,12 +2128,35 @@ const agentConversationTextReplacements = [
   ['导演 Agent', '导演'],
   ['编剧 Agent', '编剧'],
   ['角色设计 Agent', '角色设计'],
+  ['视觉资产 Agent', '角色/场景/道具'],
   ['分镜设计 Agent', '分镜设计'],
+  ['图片生成 Agent', '图片生成'],
   ['视频生成 Agent', '视频生成'],
   ['成片合成 Agent', '成片合成'],
   ['审核反馈 Agent', '审核反馈']
 ]
 const onboardingConfigGroups = [
+  {
+    key: 'durationMode',
+    label: '成片时长',
+    options: [
+      { value: 'under_60s', label: '1分钟以内' },
+      { value: 'over_60s', label: '大于1分钟' }
+    ]
+  },
+  {
+    key: 'durationSeconds',
+    label: '自定义时长(秒)',
+    inputType: 'number',
+    min: 5,
+    max: 600,
+    step: 1,
+    options: [
+      { value: 45, label: '45秒' },
+      { value: 90, label: '90秒' },
+      { value: 180, label: '180秒' }
+    ]
+  },
   {
     key: 'image.model_code',
     label: '图片模型',
@@ -2171,15 +2199,6 @@ const onboardingConfigGroups = [
       { value: 'text_to_video', label: '文生视频' },
       { value: 'image_to_video', label: '图生视频' },
       { value: 'reference_to_video', label: '多模态参考' }
-    ]
-  },
-  {
-    key: 'video.duration',
-    label: '视频时长',
-    options: [
-      { value: 5, label: '5秒' },
-      { value: 8, label: '8秒' },
-      { value: 12, label: '12秒' }
     ]
   },
   {
@@ -2229,6 +2248,8 @@ const agentPanel = reactive({
   conversationRevealSchedule: {},
   conversationRevealLastCursor: 0,
   onboardingConfig: {
+    durationMode: 'under_60s',
+    durationSeconds: 45,
     image: {
       model_code: 'nano-banana-pro',
       resolution: '2k',
@@ -3534,10 +3555,16 @@ function getAssignedAgentName(agent) {
 
 function getAgentStageLabel(stage) {
   return {
-    ideate: '构思',
-    visualize: '视觉',
-    animate: '生成',
-    deploy: '交付'
+    overview: '总览',
+    script: '剧本',
+    assets: '角色/场景/道具',
+    storyboard: '分镜',
+    image: '图片',
+    video: '视频',
+    ideate: '总览',
+    visualize: '图片',
+    animate: '视频',
+    deploy: '视频'
   }[stage] || '阶段'
 }
 
@@ -3560,14 +3587,20 @@ function getAgentCurrentStageInfo(timeline) {
   const steps = Array.isArray(timeline?.steps) ? timeline.steps : []
   const latestWaiting = [...steps].reverse().find((step) => !['succeeded', 'skipped'].includes(step.status))
   const latestDone = [...steps].reverse().find((step) => step.status === 'succeeded')
-  const stage = latestWaiting?.input?.stage || latestWaiting?.output?.stage || latestDone?.input?.stage || latestDone?.output?.stage || 'ideate'
+  const stage = latestWaiting?.input?.groupKey || latestWaiting?.output?.groupKey || latestWaiting?.input?.stage || latestWaiting?.output?.stage || latestDone?.input?.groupKey || latestDone?.output?.groupKey || latestDone?.input?.stage || latestDone?.output?.stage || 'overview'
   const map = {
-    ideate: { title: '构思阶段', description: '描述你的故事想法，Agent Team 会先理解目标并创作剧本。', mark: 'I' },
-    visualize: { title: '可视化阶段', description: '正在设计角色形象、分镜首帧和画面提示词。', mark: 'V' },
-    animate: { title: '动画阶段', description: '正在准备图片和视频生成任务，扣费动作会等待确认。', mark: 'A' },
-    deploy: { title: '交付阶段', description: '正在整理成片、导出和最终交付状态。', mark: 'D' }
+    overview: { title: '总览', description: '确认灵感/剧本、时长和全局生成配置。', mark: '总' },
+    script: { title: '剧本', description: '正在生成或整理剧本正文。', mark: '剧' },
+    assets: { title: '角色/场景/道具', description: '正在提取角色、场景、道具并准备对应图片。', mark: '资' },
+    storyboard: { title: '分镜', description: '正在生成可确认的分镜表格。', mark: '镜' },
+    image: { title: '图片', description: '正在准备分镜图和首帧图生成。', mark: '图' },
+    video: { title: '视频', description: '正在准备分镜视频和合成视频。', mark: '视' },
+    ideate: { title: '总览', description: '确认灵感/剧本、时长和全局生成配置。', mark: '总' },
+    visualize: { title: '图片', description: '正在准备可视化素材。', mark: '图' },
+    animate: { title: '视频', description: '正在准备图片和视频生成任务，扣费动作会等待确认。', mark: '视' },
+    deploy: { title: '视频', description: '正在整理成片、导出和最终交付状态。', mark: '视' }
   }
-  return map[stage] || map.ideate
+  return map[stage] || map.overview
 }
 
 function getAgentRunAwaitingAgent(timeline) {
@@ -3579,10 +3612,16 @@ function getAgentRunAwaitingAgent(timeline) {
 }
 
 function getAgentAttachmentSteps(timeline) {
-  return (timeline?.steps || []).filter((step) => {
+  const visible = (timeline?.steps || []).filter((step) => {
     if (step.stepKey === 'answer_question') return false
     return getVisibleAgentArtifacts(step).length
   })
+  const latestByStage = new Map()
+  visible.forEach((step) => {
+    const key = step.input?.groupKey || step.output?.groupKey || step.input?.stage || step.output?.stage || step.stepKey || step.id
+    latestByStage.set(key, step)
+  })
+  return visible.filter((step) => latestByStage.get(step.input?.groupKey || step.output?.groupKey || step.input?.stage || step.output?.stage || step.stepKey || step.id) === step)
 }
 
 function isAgentOnboardingConfigVisible() {
@@ -3616,7 +3655,8 @@ function buildAgentOnboardingConfigSummary() {
   return onboardingConfigGroups
     .map((group) => {
       const value = getAgentOnboardingConfigValue(group.key)
-      return value ? `${group.label}：${value}` : ''
+      const option = group.options?.find((item) => String(item.value) === String(value))
+      return value ? `${group.label}：${option?.label || value}` : ''
     })
     .filter(Boolean)
     .join('；')
@@ -4138,13 +4178,21 @@ function getAgentArtifactStatusLabel(status) {
 function getAgentArtifactTypeLabel(type) {
   return {
     text_node: '文本节点',
+    script_body: '剧本正文',
     storyboard_plan: '分镜计划',
+    storyboard_table: '分镜表格',
     character_brief: '角色设定',
     scene_brief: '场景设定',
     prop_brief: '道具设定',
     prompt: 'Prompt',
     image_placeholder: '图片占位',
+    character_image_placeholder: '角色图',
+    scene_image_placeholder: '场景图',
+    prop_image_placeholder: '道具图',
+    storyboard_image_placeholder: '分镜图',
     video_placeholder: '视频占位',
+    shot_video_placeholder: '分镜视频',
+    merged_video_placeholder: '合成视频',
     audio_placeholder: '音频占位',
     media_result: '媒体结果',
     planning_brief: '规划',
@@ -4172,16 +4220,34 @@ function getAgentRunTeamLine(timeline) {
 
 function getAgentStageProgress(timeline) {
   const steps = Array.isArray(timeline?.steps) ? timeline.steps : []
-  const stageOrder = ['ideate', 'visualize', 'animate', 'deploy']
-  const stages = stageOrder
-    .map((stage) => ({
-      key: stage,
-      label: getAgentStageLabel(stage),
-      steps: steps.filter((step) => (step.input?.stage || step.output?.stage) === stage)
+  const workflow = Array.isArray(timeline?.run?.summary?.workflow) ? timeline.run.summary.workflow : []
+  const fallbackGroups = [
+    { key: 'overview', label: '总览' },
+    { key: 'script', label: '剧本' },
+    { key: 'assets', label: '角色/场景/道具' },
+    { key: 'storyboard', label: '分镜' },
+    { key: 'image', label: '图片' },
+    { key: 'video', label: '视频' }
+  ]
+  const seen = new Set()
+  const groups = (workflow.length ? workflow : fallbackGroups)
+    .map((item) => ({
+      key: item.groupKey || item.stage || item.key,
+      label: item.groupLabel || getAgentStageLabel(item.groupKey || item.stage || item.key)
     }))
-    .filter((stage) => stage.steps.length)
-  const currentStage = [...steps].reverse().find((step) => !['succeeded', 'skipped'].includes(step.status))?.input?.stage
-    || [...steps].reverse().find((step) => step.status === 'succeeded')?.input?.stage
+    .filter((group) => {
+      if (!group.key || seen.has(group.key)) return false
+      seen.add(group.key)
+      return true
+    })
+  const stages = groups.map((group) => ({
+    ...group,
+    steps: steps.filter((step) => (step.input?.groupKey || step.output?.groupKey || step.input?.stage || step.output?.stage) === group.key)
+  }))
+  const latestWaiting = [...steps].reverse().find((step) => !['succeeded', 'skipped'].includes(step.status))
+  const latestDone = [...steps].reverse().find((step) => step.status === 'succeeded')
+  const currentStage = latestWaiting?.input?.groupKey || latestWaiting?.output?.groupKey || latestWaiting?.input?.stage || latestWaiting?.output?.stage
+    || latestDone?.input?.groupKey || latestDone?.output?.groupKey || latestDone?.input?.stage || latestDone?.output?.stage
   return stages.map((stage) => {
     const failed = stage.steps.some((step) => step.status === 'failed')
     const waiting = stage.steps.some((step) => ['waiting_user', 'waiting_cost_confirmation', 'running', 'queued'].includes(step.status))

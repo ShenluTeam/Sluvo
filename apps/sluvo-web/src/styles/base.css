@@ -748,43 +748,67 @@ body {
 }
 
 .canvas-agent-stage-strip {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 1px;
+  display: grid;
+  gap: 0;
+  border-left: 1px solid rgba(205, 244, 124, 0.18);
+  margin-left: 7px;
+  padding: 2px 0 2px 12px;
 }
 
 .canvas-agent-stage-strip span {
-  flex: 1 0 64px;
+  position: relative;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 999px;
-  padding: 5px 7px;
+  border: 0;
+  border-radius: 0;
+  padding: 5px 0 5px 10px;
   color: rgba(242, 242, 234, 0.62);
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 11px;
-  text-align: center;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.canvas-agent-stage-strip span::before {
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(242, 242, 234, 0.4);
+  transform: translateY(-50%);
+  content: "";
+}
+
 .canvas-agent-stage-strip span.is-succeeded {
-  border-color: rgba(205, 244, 124, 0.2);
   color: #dff7aa;
-  background: rgba(205, 244, 124, 0.13);
+  background: transparent;
+}
+
+.canvas-agent-stage-strip span.is-succeeded::before {
+  background: #cdf47c;
 }
 
 .canvas-agent-stage-strip span.is-waiting,
 .canvas-agent-stage-strip span.is-current {
-  border-color: rgba(255, 207, 112, 0.28);
   color: #ffe2a5;
-  background: rgba(255, 207, 112, 0.12);
+  background: rgba(255, 207, 112, 0.08);
+}
+
+.canvas-agent-stage-strip span.is-waiting::before,
+.canvas-agent-stage-strip span.is-current::before {
+  background: #ffe2a5;
 }
 
 .canvas-agent-stage-strip span.is-failed {
-  border-color: rgba(255, 115, 115, 0.36);
   color: #ffd1d1;
-  background: rgba(255, 115, 115, 0.11);
+  background: transparent;
+}
+
+.canvas-agent-stage-strip span.is-failed::before {
+  background: #ffd1d1;
 }
 
 .canvas-agent-conversation {
@@ -1296,6 +1320,16 @@ body {
   color: #cdf47c;
   background: rgba(205, 244, 124, 0.12);
   box-shadow: inset 0 0 0 1px rgba(205, 244, 124, 0.16);
+}
+
+.canvas-agent-onboarding-config__input {
+  min-height: 34px;
+  border: 1px solid rgba(205, 244, 124, 0.22);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: rgba(246, 246, 239, 0.9);
+  background: rgba(255, 255, 255, 0.055);
+  font: inherit;
 }
 
 .canvas-agent-run__continue span {
