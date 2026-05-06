@@ -1785,6 +1785,28 @@ def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin:
     )
 
 
+def _latest_agent_run_canvas_node(
+    session: Session,
+    run: SluvoAgentRun,
+    *,
+    exclude_artifact_ids: Optional[set[int]] = None,
+) -> Optional[SluvoCanvasNode]:
+    excluded = exclude_artifact_ids or set()
+    previous_artifacts = session.exec(
+        select(SluvoAgentArtifact)
+        .where(SluvoAgentArtifact.run_id == run.id)
+        .where(SluvoAgentArtifact.canvas_node_id != None)
+        .order_by(SluvoAgentArtifact.id.desc())
+    ).all()
+    for artifact in previous_artifacts:
+        if artifact.id in excluded or not artifact.canvas_node_id:
+            continue
+        node = session.get(SluvoCanvasNode, artifact.canvas_node_id)
+        if node and node.deleted_at is None:
+            return node
+    return None
+
+
 def _write_agent_run_artifacts_to_canvas(
     session: Session,
     *,
@@ -1797,9 +1819,19 @@ def _write_agent_run_artifacts_to_canvas(
         return
     canvas = _require_canvas(session, run.canvas_id)
     context_snapshot = _json_load(run.context_snapshot_json, {})
-    origin = _agent_run_origin(context_snapshot)
+    previous_node = _latest_agent_run_canvas_node(
+        session,
+        run,
+        exclude_artifact_ids={int(item.id or 0) for item in writable if item.id},
+    )
+    if previous_node:
+        origin = (float(previous_node.position_x) + float(previous_node.width or 330) + 140, float(previous_node.position_y))
+    else:
+        origin = _agent_run_origin(context_snapshot)
     nodes = [_agent_run_node_payload(item, index=index, origin=origin) for index, item in enumerate(writable)]
     edges = []
+    if previous_node and nodes:
+        edges.append(_agent_patch_edge_from_node(encode_id(previous_node.id), nodes[0]["clientId"], "dependency", "上一步"))
     for index in range(1, len(nodes)):
         edges.append(_agent_patch_edge(nodes[index - 1]["clientId"], nodes[index]["clientId"], "dependency", "Agent 产物"))
     batch = SluvoCanvasBatchRequest(expectedRevision=canvas.revision, nodes=nodes, edges=edges)

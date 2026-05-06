@@ -1173,8 +1173,8 @@
                 <div class="canvas-agent-message__content">
                   <header class="canvas-agent-message__meta">
                     <span class="canvas-agent-message__agent-chip">
-                      <b>{{ message.agentKey }}</b>
-                      {{ message.agentName }}
+                      <b>{{ getAgentConversationRoleLabel(message) }}</b>
+                      {{ getAgentConversationDisplayName(message) }}
                     </span>
                     <strong>{{ message.kindLabel }}</strong>
                     <time>{{ message.timeLabel }}</time>
@@ -2025,6 +2025,48 @@ const agentModelOptions = [
   { id: 'deepseek-v4-flash', label: 'DeepSeek v4 Flash' },
   { id: 'deepseek-v4-pro', label: 'DeepSeek v4 Pro' }
 ]
+const agentConversationNameLabels = {
+  onboarding: '需求引导 Agent',
+  'onboarding agent': '需求引导 Agent',
+  director: '导演 Agent',
+  'director agent': '导演 Agent',
+  scriptwriter: '编剧 Agent',
+  'scriptwriter agent': '编剧 Agent',
+  character_artist: '角色设计 Agent',
+  'character artist agent': '角色设计 Agent',
+  storyboard_artist: '分镜设计 Agent',
+  'storyboard artist agent': '分镜设计 Agent',
+  video_generator: '视频生成 Agent',
+  'video generator agent': '视频生成 Agent',
+  video_merger: '成片合成 Agent',
+  'video merger agent': '成片合成 Agent',
+  review: '审核反馈 Agent',
+  'review agent': '审核反馈 Agent',
+  'agent team': '协作团队',
+  system: '系统',
+  user: '你'
+}
+const agentConversationRoleLabels = {
+  onboarding: '引导',
+  'onboarding agent': '引导',
+  director: '导演',
+  'director agent': '导演',
+  scriptwriter: '编剧',
+  'scriptwriter agent': '编剧',
+  character_artist: '角色',
+  'character artist agent': '角色',
+  storyboard_artist: '分镜',
+  'storyboard artist agent': '分镜',
+  video_generator: '视频',
+  'video generator agent': '视频',
+  video_merger: '合成',
+  'video merger agent': '合成',
+  review: '反馈',
+  'review agent': '反馈',
+  'agent team': '团队',
+  system: '系统',
+  user: '用户'
+}
 const agentPanel = reactive({
   visible: true,
   advancedOpen: false,
@@ -3313,10 +3355,10 @@ function getAgentCurrentStageInfo(timeline) {
 
 function getAgentRunAwaitingAgent(timeline) {
   const summaryAgent = String(timeline?.run?.summary?.awaitingAgent || '').trim()
-  if (summaryAgent) return summaryAgent
+  if (summaryAgent) return getAgentConversationDisplayName(summaryAgent)
   const waitingStep = [...(timeline?.steps || [])].reverse().find((step) => ['waiting_user', 'waiting_cost_confirmation'].includes(step.status))
-  if (waitingStep?.agentName) return waitingStep.agentName
-  return 'Agent Team'
+  if (waitingStep?.agentName) return getAgentConversationDisplayName(waitingStep.agentName)
+  return getAgentConversationDisplayName('Agent Team')
 }
 
 function getAgentAttachmentSteps(timeline) {
@@ -3350,6 +3392,46 @@ function getAgentConversationKey(agentName, fallback = 'agent') {
   return normalized || fallback
 }
 
+function getAgentConversationIdentityKey(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^@/, '')
+    .replace(/-/g, '_')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+}
+
+function getAgentConversationDisplayName(messageOrName) {
+  const name = typeof messageOrName === 'object'
+    ? (messageOrName.agentName || messageOrName.agentKey || '')
+    : messageOrName
+  const key = typeof messageOrName === 'object' ? messageOrName.agentKey : ''
+  const keyLabel = agentConversationNameLabels[getAgentConversationIdentityKey(key)]
+  if (keyLabel) return keyLabel
+  const nameLabel = agentConversationNameLabels[getAgentConversationIdentityKey(name)]
+  return nameLabel || String(name || 'Agent')
+}
+
+function getAgentConversationRoleLabel(message) {
+  const keyLabel = agentConversationRoleLabels[getAgentConversationIdentityKey(message?.agentKey)]
+  if (keyLabel) return keyLabel
+  const nameLabel = agentConversationRoleLabels[getAgentConversationIdentityKey(message?.agentName)]
+  if (nameLabel) return nameLabel
+  return getAgentConversationKey(message?.agentName || message?.agentKey || 'agent')
+}
+
+function localizeAgentConversationText(content) {
+  let text = String(content || '')
+  Object.entries(agentConversationNameLabels)
+    .filter(([key]) => key.includes('agent') || key === 'agent team')
+    .sort((a, b) => b[0].length - a[0].length)
+    .forEach(([source, target]) => {
+      const pattern = new RegExp(source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+      text = text.replace(pattern, target)
+    })
+  return text
+}
+
 function buildAgentConversationMessages(timeline, optimisticMessages = []) {
   const events = Array.isArray(timeline?.events) ? timeline.events : []
   const messages = []
@@ -3366,7 +3448,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         status: 'running',
         statusLabel: '运行中',
         timeLabel: getAgentConversationTimeLabel(event),
-        content: '新的创作流程已开始'
+        content: localizeAgentConversationText('新的创作流程已开始')
       })
       return
     }
@@ -3398,7 +3480,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         statusLabel: payload.isLoading ? '处理中' : '已完成',
         timeLabel: getAgentConversationTimeLabel(event),
         loading: Boolean(payload.isLoading),
-        content: payload.content || ''
+        content: localizeAgentConversationText(payload.content || '')
       })
       return
     }
@@ -3411,7 +3493,9 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         status: 'succeeded',
         statusLabel: '接力',
         timeLabel: getAgentConversationTimeLabel(event),
-        content: payload.message || `${payload.from_agent || '上一位 Agent'} 邀请 ${payload.to_agent || '下一位 Agent'} 加入群聊`
+        content: payload.from_agent || payload.to_agent
+          ? `${getAgentConversationDisplayName(payload.from_agent || '上一位 Agent')} 邀请 ${getAgentConversationDisplayName(payload.to_agent || '下一位 Agent')} 加入群聊`
+          : localizeAgentConversationText(payload.message || '上一位 Agent 邀请下一位 Agent 加入群聊')
       })
       return
     }
@@ -3426,7 +3510,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         status: 'waiting_user',
         statusLabel: '待确认',
         timeLabel: getAgentConversationTimeLabel(event),
-        content: payload.message || payload.question || '请确认是否继续下一步。'
+        content: localizeAgentConversationText(payload.message || payload.question || '请确认是否继续下一步。')
       })
       return
     }
@@ -3439,7 +3523,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         status: 'succeeded',
         statusLabel: '继续',
         timeLabel: getAgentConversationTimeLabel(event),
-        content: payload.message || '已确认，继续执行下一步。'
+        content: localizeAgentConversationText(payload.message || '已确认，继续执行下一步。')
       })
       return
     }
@@ -3452,7 +3536,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         status: 'succeeded',
         statusLabel: '完成',
         timeLabel: getAgentConversationTimeLabel(event),
-        content: 'Agent Team 已完成本轮协作。'
+        content: localizeAgentConversationText('Agent Team 已完成本轮协作。')
       })
       return
     }
@@ -3465,7 +3549,7 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         status: 'failed',
         statusLabel: '失败',
         timeLabel: getAgentConversationTimeLabel(event),
-        content: payload.error || payload.message || 'Agent Run 执行失败。'
+        content: localizeAgentConversationText(payload.error || payload.message || 'Agent Run 执行失败。')
       })
     }
   })
@@ -3492,7 +3576,7 @@ function getAgentConversationAvatar(message) {
   if (message.type === 'user') return '你'
   if (message.type === 'handoff') return 'H'
   if (message.type === 'system' || message.type === 'separator') return 'S'
-  const name = String(message.agentName || 'A').trim()
+  const name = String(getAgentConversationDisplayName(message) || 'A').trim()
   return name.slice(0, 1).toUpperCase()
 }
 

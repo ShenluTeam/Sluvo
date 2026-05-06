@@ -4,6 +4,23 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Connected each new Agent stage's first canvas artifact to the latest canvas node already written by the same Agent Run, so later stages extend the existing chain instead of starting a disconnected branch.
+- Positioned later-stage Agent artifacts to the right of the previous Agent node, keeping the generated workflow visually continuous.
+- Localized official Agent names in the conversation stream and handoff text while preserving backend agent keys.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Run several Agent stages and verify the new stage connects from the previous generated node, and the chat displays Chinese Agent role names.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
 - `backend/services/sluvo_service.py`
 - `doc/CHANGELOG_DEV.md`
