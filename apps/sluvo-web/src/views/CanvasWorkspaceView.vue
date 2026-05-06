@@ -3134,7 +3134,11 @@ async function sendAgentPrompt() {
   const content = agentPanel.input.trim()
   if (!content || agentPanel.busy) return
   if (agentPanel.runId && agentPanel.activeRun?.run?.status === 'waiting_user') {
-    await reviseAgentRun(content)
+    if (isAgentContinueIntent(content)) {
+      await continueAgentRun(content)
+    } else {
+      await reviseAgentRun(content)
+    }
   } else {
     await runAgentPrompt(content)
   }
@@ -3247,6 +3251,11 @@ async function runAgentPrompt(content, options = {}) {
 
 async function continueAgentRun(content) {
   return submitAgentRunContinuation(content, 'continue')
+}
+
+function isAgentContinueIntent(content) {
+  const normalized = String(content || '').replace(/\s+/g, '').replace(/，/g, ',')
+  return ['满意,继续下一步', '继续下一步', '继续'].includes(normalized)
 }
 
 async function continueAgentRunWithConfirmation() {
@@ -3719,6 +3728,7 @@ function localizeAgentConversationText(content) {
 function buildAgentConversationMessages(timeline, optimisticMessages = []) {
   const events = Array.isArray(timeline?.events) ? timeline.events : []
   const messages = []
+  const joinedAgentKeys = new Set()
   events.forEach((event, index) => {
     const payload = event.payload || {}
     const eventType = event.eventType || payload.eventType || ''
@@ -3759,6 +3769,8 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
       const agentName = payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent'
       const messageId = event.id || `agent-${index}`
       const agentKey = getAgentConversationKey(payload.agent || agentName)
+      const identityKey = getAgentConversationIdentityKey(agentKey)
+      const hasJoined = joinedAgentKeys.has(identityKey)
       if (!payload.isLoading) {
         messages.push({
           id: `${messageId}-thinking`,
@@ -3781,16 +3793,21 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         type: 'agent',
         agentKey,
         agentName,
-        kindLabel: payload.isLoading ? '思考中' : '登场',
+        kindLabel: payload.isLoading ? '思考中' : hasJoined ? '继续处理' : '登场',
         status: payload.isLoading ? 'running' : 'succeeded',
         statusLabel: payload.isLoading ? '处理中' : '已完成',
         timeLabel: getAgentConversationTimeLabel(event),
         loading: Boolean(payload.isLoading),
         content: localizeAgentConversationText(payload.content || '')
       })
+      if (!payload.isLoading && identityKey) joinedAgentKeys.add(identityKey)
       return
     }
     if (eventType === 'agent_handoff') {
+      const fromAgent = payload.from_agent || '上一位 Agent'
+      const toAgent = payload.to_agent || '下一位 Agent'
+      const toKey = getAgentConversationIdentityKey(toAgent)
+      const hasJoined = joinedAgentKeys.has(toKey)
       messages.push({
         id: event.id || `handoff-${index}`,
         sourceEventKey: eventKey,
@@ -3801,7 +3818,9 @@ function buildAgentConversationMessages(timeline, optimisticMessages = []) {
         statusLabel: '接力',
         timeLabel: getAgentConversationTimeLabel(event),
         content: payload.from_agent || payload.to_agent
-          ? `${getAgentConversationDisplayName(payload.from_agent || '上一位 Agent')} 邀请 ${getAgentConversationDisplayName(payload.to_agent || '下一位 Agent')} 加入群聊`
+          ? hasJoined
+            ? `${getAgentConversationDisplayName(fromAgent)} 将反馈交回 ${getAgentConversationDisplayName(toAgent)} 继续处理`
+            : `${getAgentConversationDisplayName(fromAgent)} 邀请 ${getAgentConversationDisplayName(toAgent)} 加入群聊`
           : localizeAgentConversationText(payload.message || '上一位 Agent 邀请下一位 Agent 加入群聊')
       })
       return
@@ -3888,7 +3907,7 @@ function isAgentRunConfirmationReady() {
   if (timeline?.run?.status !== 'waiting_user') return false
   if (agentPanel.busy) return false
   const visibleMessages = agentConversationMessages.value || []
-  if (visibleMessages.some((message) => message.loading || message.status === 'running')) return false
+  if (visibleMessages.some((message) => message.loading)) return false
   const events = Array.isArray(timeline.events) ? timeline.events : []
   const awaitingEntry = [...events.entries()]
     .reverse()

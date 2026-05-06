@@ -2150,6 +2150,9 @@ def continue_sluvo_agent_run(
 ) -> Dict[str, Any]:
     clean_content = str(content or "").strip()
     normalized_action = str(action or "continue").strip().lower()
+    normalized_continue_text = clean_content.replace("，", ",").replace(" ", "").replace("\n", "")
+    if normalized_action in {"revise", "feedback", "补充", "修改"} and normalized_continue_text in {"继续", "继续下一步", "满意,继续下一步"}:
+        normalized_action = "continue"
     if not clean_content and normalized_action in {"revise", "feedback", "补充", "修改"}:
         raise HTTPException(status_code=400, detail="补充需求不能为空")
     if not clean_content and normalized_action == "continue":

@@ -4,6 +4,24 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Fixed the waiting confirmation card so non-Agent running separator messages no longer prevent `满意，继续下一步` from appearing after Agent thinking finishes.
+- Treated an exact typed `满意，继续下一步` composer message as a continue action instead of Review feedback, with backend normalization as a safety net.
+- Prevented repeat Agent participation from showing another `加入群聊` invitation or `登场` label; repeated stages now read as feedback being handed back for continued processing.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Continue a waiting Agent step, confirm the card appears after thinking, and verify manually typing `满意，继续下一步` advances instead of creating a revision duplicate.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
 - `doc/UI_REQUIREMENTS.md`
 - `doc/CHANGELOG_DEV.md`
