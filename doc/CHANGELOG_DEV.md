@@ -4,6 +4,23 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Reworked onboarding choices from generic creative preferences into real media generation parameters: image model/resolution/aspect ratio plus Seedance 2.0 model/generation type/duration/resolution/aspect ratio/audio.
+- Sent the selected onboarding media parameters as structured Run context, not only as chat text, so downstream Agent artifacts can read them.
+- Stored the selected media parameters on generated image/video placeholder nodes, artifact previews, cost estimates, and submitted generation records.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Select onboarding media parameters, continue to image/video stages, and verify artifact/node preview data and generation records include those parameters.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
 - `apps/sluvo-web/src/styles/base.css`
 - `doc/CHANGELOG_DEV.md`
 

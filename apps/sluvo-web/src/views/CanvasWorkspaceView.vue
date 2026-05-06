@@ -2086,51 +2086,82 @@ const agentConversationRoleLabels = {
 }
 const onboardingConfigGroups = [
   {
-    key: 'format',
-    label: '创作形态',
+    key: 'image.model_code',
+    label: '图片模型',
     options: [
-      { value: '剧情短片', label: '剧情短片' },
-      { value: '漫画分镜', label: '漫画分镜' },
-      { value: '宣传短片', label: '宣传短片' }
+      { value: 'nano-banana-pro', label: 'Nano Pro' },
+      { value: 'nano-banana-2', label: 'Nano 2' },
+      { value: 'gpt-image-2-fast', label: 'GPT Image Fast' }
     ]
   },
   {
-    key: 'duration',
-    label: '片长',
+    key: 'image.resolution',
+    label: '图片清晰度',
     options: [
-      { value: '30秒内', label: '30秒内' },
-      { value: '1分钟内', label: '1分钟内' },
-      { value: '1-3分钟', label: '1-3分钟' }
+      { value: '1k', label: '1K' },
+      { value: '2k', label: '2K' },
+      { value: '4k', label: '4K' }
     ]
   },
   {
-    key: 'ratio',
-    label: '画幅比例',
+    key: 'image.aspect_ratio',
+    label: '图片画幅',
     options: [
-      { value: '横版 16:9', label: '横版 16:9' },
-      { value: '竖版 9:16', label: '竖版 9:16' },
-      { value: '方形 1:1', label: '方形 1:1' }
+      { value: '16:9', label: '16:9' },
+      { value: '9:16', label: '9:16' },
+      { value: '1:1', label: '1:1' }
     ]
   },
   {
-    key: 'language',
-    label: '对白语言',
+    key: 'video.model_code',
+    label: '视频模型',
     options: [
-      { value: '中文', label: '中文' },
-      { value: '英文', label: '英文' },
-      { value: '日文', label: '日文' }
+      { value: 'seedance_20_fast', label: 'Seedance 2.0 Fast' },
+      { value: 'seedance_20', label: 'Seedance 2.0' }
     ]
   },
   {
-    key: 'mood',
-    label: '情绪关键词',
+    key: 'video.generation_type',
+    label: '视频方式',
     options: [
-      { value: '悬疑', label: '悬疑' },
-      { value: '治愈', label: '治愈' },
-      { value: '热血', label: '热血' },
-      { value: '浪漫', label: '浪漫' },
-      { value: '科幻', label: '科幻' },
-      { value: '喜剧', label: '喜剧' }
+      { value: 'text_to_video', label: '文生视频' },
+      { value: 'image_to_video', label: '图生视频' },
+      { value: 'reference_to_video', label: '多模态参考' }
+    ]
+  },
+  {
+    key: 'video.duration',
+    label: '视频时长',
+    options: [
+      { value: 5, label: '5秒' },
+      { value: 8, label: '8秒' },
+      { value: 12, label: '12秒' }
+    ]
+  },
+  {
+    key: 'video.resolution',
+    label: '视频清晰度',
+    options: [
+      { value: '720p', label: '720p' },
+      { value: '1080p', label: '1080p' },
+      { value: '2k', label: '2K' }
+    ]
+  },
+  {
+    key: 'video.aspect_ratio',
+    label: '视频画幅',
+    options: [
+      { value: 'adaptive', label: '自适应' },
+      { value: '16:9', label: '16:9' },
+      { value: '9:16', label: '9:16' }
+    ]
+  },
+  {
+    key: 'video.audio_enabled',
+    label: '视频音频',
+    options: [
+      { value: false, label: '无音频' },
+      { value: true, label: '生成音频' }
     ]
   }
 ]
@@ -2151,11 +2182,21 @@ const agentPanel = reactive({
   runs: [],
   optimisticMessages: [],
   onboardingConfig: {
-    format: '剧情短片',
-    duration: '1分钟内',
-    ratio: '横版 16:9',
-    language: '中文',
-    mood: '悬疑'
+    image: {
+      model_code: 'nano-banana-pro',
+      resolution: '2k',
+      aspect_ratio: '16:9'
+    },
+    video: {
+      model_code: 'seedance_20_fast',
+      generation_type: 'text_to_video',
+      duration: 5,
+      resolution: '720p',
+      aspect_ratio: 'adaptive',
+      audio_enabled: false,
+      real_person_mode: false,
+      web_search: false
+    }
   },
   loadingRuns: false,
   confirmingCost: false,
@@ -3036,6 +3077,7 @@ function buildAgentContextSnapshot(options = {}) {
     targetNode: targetNode ? serializeAgentContextNode(targetNode) : null,
     targetNodeId: targetNode?.id || '',
     sourceSurface,
+    onboardingConfig: cloneAgentOnboardingConfig(),
     agentProfile: options.agentProfile || agentTemplateId || agentPanel.profile,
     agentTemplateId,
     agentName,
@@ -3453,11 +3495,23 @@ function isAgentOnboardingConfigVisible() {
 }
 
 function getAgentOnboardingConfigValue(key) {
-  return agentPanel.onboardingConfig?.[key] || ''
+  const keys = String(key || '').split('.').filter(Boolean)
+  return keys.reduce((value, item) => (value && typeof value === 'object' ? value[item] : undefined), agentPanel.onboardingConfig) ?? ''
 }
 
 function setAgentOnboardingConfig(key, value) {
-  agentPanel.onboardingConfig[key] = value
+  const keys = String(key || '').split('.').filter(Boolean)
+  if (!keys.length) return
+  let target = agentPanel.onboardingConfig
+  keys.slice(0, -1).forEach((item) => {
+    if (!target[item] || typeof target[item] !== 'object') target[item] = {}
+    target = target[item]
+  })
+  target[keys.at(-1)] = value
+}
+
+function cloneAgentOnboardingConfig() {
+  return JSON.parse(JSON.stringify(agentPanel.onboardingConfig || {}))
 }
 
 function buildAgentOnboardingConfigSummary() {

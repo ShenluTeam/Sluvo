@@ -1432,6 +1432,7 @@ def _append_agent_workflow_step(
         artifact_goal = f"{goal}\n\n用户确认 / 补充：{clean_feedback}"
     artifacts = []
     for artifact_title, artifact_type, policy in spec["artifacts"]:
+        generation_params = _agent_generation_params_for_artifact(artifact_type, context_snapshot or {})
         artifacts.append(
             _create_agent_run_artifact(
                 session,
@@ -1441,7 +1442,11 @@ def _append_agent_workflow_step(
                 artifact_type=artifact_type,
                 body=_artifact_body(artifact_type, artifact_goal, context_snapshot or {}, str(resolved["modelCode"])),
                 write_policy=policy,
-                preview={"estimatedWrite": "canvas_node", "estimatePoints": 20 if artifact_type == "video_placeholder" else 8 if artifact_type == "image_placeholder" else 0},
+                preview={
+                    "estimatedWrite": "canvas_node",
+                    "estimatePoints": _agent_generation_estimate_points(artifact_type, generation_params),
+                    "generationParams": generation_params,
+                },
             )
         )
     _finish_agent_run_step(
@@ -1504,6 +1509,70 @@ def _build_agent_planning_brief(goal: str, context_snapshot: Dict[str, Any]) -> 
         "3. 执行顺序：先确认创作边界，再交给 Director Agent 定方向，之后由 Scriptwriter Agent 展开剧本和镜头节拍。\n"
         "4. 需要你确认：主题、类型、主要情绪和不希望出现的内容是否需要补充。"
     )
+
+
+def _agent_media_config(context_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    raw = context_snapshot.get("onboardingConfig") if isinstance(context_snapshot, dict) else {}
+    raw = raw if isinstance(raw, dict) else {}
+    image = raw.get("image") if isinstance(raw.get("image"), dict) else {}
+    video = raw.get("video") if isinstance(raw.get("video"), dict) else {}
+    return {
+        "image": {
+            "model_code": str(image.get("model_code") or raw.get("image_model_code") or "nano-banana-pro").strip(),
+            "generation_type": "text_to_image",
+            "resolution": str(image.get("resolution") or raw.get("image_resolution") or "2k").strip().lower(),
+            "aspect_ratio": str(image.get("aspect_ratio") or raw.get("image_aspect_ratio") or "16:9").strip(),
+            "reference_images": [],
+        },
+        "video": {
+            "model_code": str(video.get("model_code") or raw.get("video_model_code") or "seedance_20_fast").strip(),
+            "generation_type": str(video.get("generation_type") or raw.get("video_generation_type") or "text_to_video").strip(),
+            "duration": int(video.get("duration") or raw.get("video_duration") or 5),
+            "resolution": str(video.get("resolution") or raw.get("video_resolution") or "720p").strip().lower(),
+            "aspect_ratio": str(video.get("aspect_ratio") or raw.get("video_aspect_ratio") or "adaptive").strip(),
+            "audio_enabled": bool(video.get("audio_enabled", raw.get("video_audio_enabled", False))),
+            "real_person_mode": bool(video.get("real_person_mode", raw.get("video_real_person_mode", False))),
+            "web_search": bool(video.get("web_search", raw.get("video_web_search", False))),
+        },
+    }
+
+
+def _agent_image_estimate_points(params: Dict[str, Any]) -> int:
+    model_code = str(params.get("model_code") or "").strip()
+    resolution = str(params.get("resolution") or "2k").strip().lower()
+    if model_code == "nano-banana-2-低价版":
+        return {"1k": 2, "2k": 2, "4k": 3}.get(resolution, 2)
+    if model_code == "nano-banana-2":
+        return {"1k": 5, "2k": 6, "4k": 8}.get(resolution, 6)
+    if model_code == "gpt-image-2-fast":
+        return 3
+    if model_code == "gpt-image-2":
+        return {"1k": 12, "2k": 18, "4k": 28}.get(resolution, 18)
+    return {"1k": 9, "2k": 11, "4k": 13}.get(resolution, 11)
+
+
+def _agent_video_estimate_points(params: Dict[str, Any]) -> int:
+    duration = max(int(params.get("duration") or 5), 1)
+    resolution = str(params.get("resolution") or "720p").strip().lower()
+    resolution_multiplier = {"480p": 0.8, "720p": 1.0, "1080p": 1.35, "2k": 1.8, "4k": 2.4}.get(resolution, 1.0)
+    return max(int(round(duration * 4 * resolution_multiplier)), 1)
+
+
+def _agent_generation_params_for_artifact(artifact_type: str, context_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    media_config = _agent_media_config(context_snapshot)
+    if artifact_type == "image_placeholder":
+        return media_config["image"]
+    if artifact_type == "video_placeholder":
+        return media_config["video"]
+    return {}
+
+
+def _agent_generation_estimate_points(artifact_type: str, generation_params: Dict[str, Any]) -> int:
+    if artifact_type == "image_placeholder":
+        return _agent_image_estimate_points(generation_params)
+    if artifact_type == "video_placeholder":
+        return _agent_video_estimate_points(generation_params)
+    return 0
 
 
 def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
@@ -1740,6 +1809,8 @@ def _append_sluvo_run_event(
 
 def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin: tuple[float, float]) -> Dict[str, Any]:
     payload = _json_load(artifact.payload_json, {})
+    preview = _json_load(artifact.preview_json, {})
+    generation_params = preview.get("generationParams") if isinstance(preview.get("generationParams"), dict) else {}
     body = str(payload.get("body") or payload.get("prompt") or "").strip()
     x, y = origin
     position = {"x": x + (index % 2) * 360, "y": y + (index // 2) * 260}
@@ -1758,7 +1829,16 @@ def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin:
             position=position,
             prompt=body,
             size={"width": 420, "height": 340},
-            data={**common, "generationStatus": "waiting_confirmation", "generationMessage": "等待确认灵感值后生成图片", "imageEstimatePoints": 8},
+            data={
+                **common,
+                "generationStatus": "waiting_confirmation",
+                "generationMessage": "等待确认灵感值后生成图片",
+                "imageEstimatePoints": int(preview.get("estimatePoints") or _agent_image_estimate_points(generation_params)),
+                "imageParams": generation_params,
+                "modelCode": generation_params.get("model_code"),
+                "resolution": generation_params.get("resolution"),
+                "aspectRatio": generation_params.get("aspect_ratio"),
+            },
         )
     if artifact.artifact_type == "video_placeholder":
         return _agent_patch_node(
@@ -1770,7 +1850,18 @@ def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin:
             position=position,
             prompt=body,
             size={"width": 420, "height": 340},
-            data={**common, "generationStatus": "waiting_confirmation", "generationMessage": "等待确认灵感值后生成视频", "videoEstimatePoints": 20},
+            data={
+                **common,
+                "generationStatus": "waiting_confirmation",
+                "generationMessage": "等待确认灵感值后生成视频",
+                "videoEstimatePoints": int(preview.get("estimatePoints") or _agent_video_estimate_points(generation_params)),
+                "videoParams": generation_params,
+                "modelCode": generation_params.get("model_code"),
+                "generationType": generation_params.get("generation_type"),
+                "duration": generation_params.get("duration"),
+                "resolution": generation_params.get("resolution"),
+                "aspectRatio": generation_params.get("aspect_ratio"),
+            },
         )
     return _agent_patch_node(
         client_id=f"agent-run-{artifact.run_id}-artifact-{artifact.id}",
@@ -2070,6 +2161,9 @@ def continue_sluvo_agent_run(
     base_context = _json_load(run.context_snapshot_json, {})
     previous_artifacts = _agent_run_previous_artifacts(session, run)
     merged_context = {**base_context, **(context_snapshot or {}), "previousArtifacts": previous_artifacts}
+    if isinstance(context_snapshot, dict) and context_snapshot.get("onboardingConfig"):
+        persisted_context = {**base_context, **context_snapshot}
+        run.context_snapshot_json = _json_dump(persisted_context)
     root_template_id = _decode_optional_safe(str(base_context.get("agentTemplateId") or ""))
     root_template = session.get(SluvoAgentTemplate, root_template_id) if root_template_id else None
     intent = summary.get("intent") if isinstance(summary.get("intent"), dict) else base_context.get("intent") if isinstance(base_context.get("intent"), dict) else {}
@@ -2162,19 +2256,26 @@ def continue_sluvo_agent_run(
                 "contextCount": _agent_run_context_count(merged_context),
             },
         )
-        artifacts = [
-            _create_agent_run_artifact(
-                session,
-                run=run,
-                step=step,
-                title=artifact_title,
-                artifact_type=artifact_type,
-                body=_artifact_body(artifact_type, revision_goal, merged_context, str(resolved["modelCode"])),
-                write_policy=policy,
-                preview={"estimatedWrite": "canvas_node", "revision": True, "estimatePoints": 20 if artifact_type == "video_placeholder" else 8 if artifact_type == "image_placeholder" else 0},
+        artifacts = []
+        for artifact_title, artifact_type, policy in spec["artifacts"]:
+            generation_params = _agent_generation_params_for_artifact(artifact_type, merged_context)
+            artifacts.append(
+                _create_agent_run_artifact(
+                    session,
+                    run=run,
+                    step=step,
+                    title=artifact_title,
+                    artifact_type=artifact_type,
+                    body=_artifact_body(artifact_type, revision_goal, merged_context, str(resolved["modelCode"])),
+                    write_policy=policy,
+                    preview={
+                        "estimatedWrite": "canvas_node",
+                        "revision": True,
+                        "estimatePoints": _agent_generation_estimate_points(artifact_type, generation_params),
+                        "generationParams": generation_params,
+                    },
+                )
             )
-            for artifact_title, artifact_type, policy in spec["artifacts"]
-        ]
         _finish_agent_run_step(
             session,
             step,
@@ -2239,6 +2340,7 @@ def continue_sluvo_agent_run(
             feedback=clean_content,
         )
         waiting_cost = any(item.write_policy == "requires_cost_confirmation" for item in artifacts)
+        estimate_points = sum(int((_json_load(item.preview_json, {}) or {}).get("estimatePoints") or 0) for item in artifacts)
         used_agents = summary.get("agentTeam") if isinstance(summary.get("agentTeam"), list) else _resolved_agent_team(session, context_snapshot=base_context, root_template=root_template, model_code=model_code)
         next_agent = used_agents[workflow_index + 1]["agentName"] if workflow_index + 1 < len(used_agents) else None
         run.status = "waiting_cost_confirmation" if waiting_cost else "waiting_user"
@@ -2254,7 +2356,7 @@ def continue_sluvo_agent_run(
             "nextStepIndex": workflow_index + 1 if workflow_index + 1 < len(SLUVO_AGENT_WORKFLOW_SPECS) else None,
             "awaitingAgent": next_agent,
             "nextQuestion": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["question"],
-            "estimatePoints": 28 if waiting_cost else 0,
+            "estimatePoints": estimate_points if waiting_cost else 0,
         })
         status_event_payload = {
             "agent": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["stepKey"],
@@ -2341,6 +2443,7 @@ def confirm_sluvo_agent_run_cost(
             continue
         payload = _json_load(artifact.payload_json, {})
         preview = _json_load(artifact.preview_json, {})
+        generation_params = preview.get("generationParams") if isinstance(preview.get("generationParams"), dict) else {}
         record_type = "video" if artifact.artifact_type == "video_placeholder" else "image" if artifact.artifact_type == "image_placeholder" else "asset"
         record = GenerationRecord(
             user_id=user.id,
@@ -2352,8 +2455,20 @@ def confirm_sluvo_agent_run_cost(
             target_id=artifact.canvas_node_id,
             status="queued",
             prompt=str(payload.get("prompt") or payload.get("body") or ""),
-            params_internal_json=_json_dump({"source": "sluvo_agent_run", "runId": encode_id(run.id), "artifactId": encode_id(artifact.id)}),
-            params_public_json=_json_dump({"title": artifact.title, "artifactType": artifact.artifact_type}),
+            params_internal_json=_json_dump({
+                "source": "sluvo_agent_run",
+                "runId": encode_id(run.id),
+                "artifactId": encode_id(artifact.id),
+                "request_payload": {
+                    **generation_params,
+                    "prompt": str(payload.get("prompt") or payload.get("body") or ""),
+                },
+            }),
+            params_public_json=_json_dump({
+                "title": artifact.title,
+                "artifactType": artifact.artifact_type,
+                **generation_params,
+            }),
             estimate_points=int(preview.get("estimatePoints") or (20 if record_type == "video" else 8)),
             points_status="confirmed",
             created_at=now,
@@ -2377,8 +2492,10 @@ def confirm_sluvo_agent_run_cost(
                     })
                     if record_type == "image":
                         data["imageEstimateStatus"] = "confirmed"
+                        data["imageParams"] = generation_params
                     if record_type == "video":
                         data["videoEstimateStatus"] = "confirmed"
+                        data["videoParams"] = generation_params
                     node.data_json = _json_dump(data)
                     node.status = "queued"
                     node.revision = int(node.revision or 1) + 1
