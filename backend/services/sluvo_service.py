@@ -99,6 +99,46 @@ SLUVO_UPLOAD_MIME_TYPES = {
 }
 
 SLUVO_OFFICIAL_AGENT_PROFILES = {
+    "onboarding": {
+        "name": "Onboarding Agent",
+        "description": "理解创作目标、输入素材和边界，并决定进入哪条创作流水线。",
+        "tools": ["read_canvas", "route_agents"],
+    },
+    "director": {
+        "name": "Director Agent",
+        "description": "规划故事方向、视听风格、节奏和后续 Agent 的工作边界。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "scriptwriter": {
+        "name": "Scriptwriter Agent",
+        "description": "创作剧本、角色关系、场景节拍和可拆分镜头结构。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "character_artist": {
+        "name": "Character Artist Agent",
+        "description": "生成角色外观、服装、道具和一致性视觉锚点。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "storyboard_artist": {
+        "name": "Storyboard Artist Agent",
+        "description": "规划分镜首帧、构图、景别和画面提示词。",
+        "tools": ["read_canvas", "propose_canvas_patch"],
+    },
+    "video_generator": {
+        "name": "Video Generator Agent",
+        "description": "基于首帧和镜头动作创建视频生成任务，并等待扣费确认。",
+        "tools": ["read_canvas", "propose_canvas_patch", "estimate_cost"],
+    },
+    "video_merger": {
+        "name": "Video Merger Agent",
+        "description": "拼接视频片段，整理最终预览、导出和交付状态。",
+        "tools": ["read_canvas", "propose_report"],
+    },
+    "review": {
+        "name": "Review Agent",
+        "description": "处理用户反馈，判断应从哪位 Agent 重新进入流水线。",
+        "tools": ["read_canvas", "route_agents"],
+    },
     "canvas_agent": {
         "name": "画布协作 Agent",
         "description": "读取选区和上下文，生成可审阅的画布提案。",
@@ -655,9 +695,18 @@ def _serialize_agent_run_timeline(session: Session, run: SluvoAgentRun) -> Dict[
         .order_by(SluvoAgentStep.order_index.asc(), SluvoAgentStep.id.asc())
     ).all()
     session_item = session.get(SluvoAgentSession, run.session_id) if run.session_id else None
+    events = []
+    if session_item:
+        session_events = session.exec(
+            select(SluvoAgentEvent)
+            .where(SluvoAgentEvent.session_id == session_item.id)
+            .order_by(SluvoAgentEvent.sequence_no.asc(), SluvoAgentEvent.id.asc())
+        ).all()
+        events = [serialize_sluvo_agent_event(item) for item in session_events]
     return {
         "run": serialize_sluvo_agent_run(run),
         "steps": [serialize_sluvo_agent_step(session, item) for item in steps],
+        "events": events,
         "latestSession": serialize_sluvo_agent_session(session_item) if session_item else None,
     }
 
@@ -965,12 +1014,45 @@ def _agent_run_prompt(goal: str, context_snapshot: Dict[str, Any]) -> str:
             prompt = str(item.get("prompt") or "").strip()
             node_lines.append(f"- {title}: {prompt[:180]}")
     source = "\n".join(node_lines) or "暂无选区，按项目画布目标展开。"
-    return f"{goal.strip()}\n\n上下文：\n{source}"
+    previous = context_snapshot.get("previousArtifacts") if isinstance(context_snapshot, dict) else []
+    artifact_lines = []
+    if isinstance(previous, list):
+        for item in previous[:6]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "上一步产物").strip()
+            body = str(item.get("body") or "").strip()
+            if body:
+                artifact_lines.append(f"- {title}: {body[:420]}")
+    artifact_context = "\n".join(artifact_lines) or "暂无已生成产物。"
+    return f"{goal.strip()}\n\n画布上下文：\n{source}\n\n已生成产物：\n{artifact_context}"
 
 
 def _agent_run_context_count(context_snapshot: Dict[str, Any]) -> int:
     selected = context_snapshot.get("selectedNodes") if isinstance(context_snapshot, dict) else []
     return len(selected) if isinstance(selected, list) else 0
+
+
+def _agent_run_previous_artifacts(session: Session, run: SluvoAgentRun, limit: int = 8) -> List[Dict[str, Any]]:
+    artifacts = session.exec(
+        select(SluvoAgentArtifact)
+        .where(SluvoAgentArtifact.run_id == run.id)
+        .order_by(SluvoAgentArtifact.id.asc())
+    ).all()
+    result: List[Dict[str, Any]] = []
+    for artifact in artifacts:
+        if len(result) >= limit:
+            break
+        payload = _json_load(artifact.payload_json, {})
+        body = str(payload.get("body") or payload.get("prompt") or "").strip()
+        if not body:
+            continue
+        result.append({
+            "title": artifact.title,
+            "artifactType": artifact.artifact_type,
+            "body": _compact_story_source(body, 1000),
+        })
+    return result
 
 
 def _agent_run_origin(context_snapshot: Dict[str, Any]) -> tuple[float, float]:
@@ -1004,87 +1086,189 @@ def _agent_question_answer(goal: str) -> str:
     return f"我先按普通询问处理：{text}\n\n如果你想进入创作流程，可以直接输入一个灵感或贴一段剧本，我会先识别意图，再决定是否扩写剧本、提取角色/场景/道具或继续做分镜。"
 
 
+def _story_title_from_goal(goal: str) -> str:
+    source = re.sub(r"\s+", "", str(goal or "").strip())
+    source = re.sub(r"[#*_`《》\"“”'，。！？、：；,.!?;:]", "", source)
+    if not source:
+        return "未命名故事"
+    if len(source) <= 12:
+        return source
+    return source[:12]
+
+
+def _story_mood_from_goal(goal: str) -> str:
+    text = str(goal or "")
+    if any(word in text for word in ("雨", "夜", "凌晨", "霓虹")):
+        return "潮湿、低照度、带一点危险感和都市悬疑感"
+    if any(word in text for word in ("校园", "少年", "夏")):
+        return "青春、明亮，但有尚未说出口的秘密"
+    if any(word in text for word in ("废墟", "末日", "逃")):
+        return "压迫、荒凉、动作节奏强"
+    return "保留原始灵感的情绪，把它转成可被镜头捕捉的悬念"
+
+
+def _story_scene_anchor_from_goal(goal: str) -> str:
+    text = str(goal or "")
+    if "迈巴赫" in text:
+        return "雨夜街口、黑色迈巴赫车内外、被雨水拉长的车灯反光"
+    if "雨" in text or "夜" in text:
+        return "雨夜街道、昏暗灯牌、湿冷反光的路面"
+    if "校园" in text:
+        return "放学后的校园、走廊、操场边缘或天台"
+    return "从输入中最有画面感的地点建立主场景，并固定时间、天气和光线"
+
+
+def _story_prop_from_goal(goal: str) -> str:
+    text = str(goal or "")
+    if "迈巴赫" in text:
+        return "黑色迈巴赫、后座半开的车窗、车内冷光、被雨水打湿的车门把手"
+    if "信号" in text:
+        return "异常信号、手机屏幕、闪烁的定位点"
+    if "钥匙" in text:
+        return "钥匙、门禁卡或能打开秘密空间的小物件"
+    return "提取输入里最能推动剧情的物件，作为角色行动和镜头特写的核心"
+
+
+def _story_protagonist_from_goal(goal: str) -> str:
+    text = str(goal or "")
+    if any(word in text for word in ("少年", "男孩", "女孩", "少女")):
+        return "一个被夜色和秘密推着向前的年轻主角"
+    if "迈巴赫" in text:
+        return "一个在雨夜撞见豪车秘密的人，身份可以是代驾、学生、记者或被追踪者"
+    return "一个必须在短时间内做选择的人，目标要和输入中的核心意象直接相关"
+
+
+def _story_concept_from_goal(goal: str) -> str:
+    title = _story_title_from_goal(goal)
+    if "迈巴赫" in goal:
+        return f"雨夜里，一辆不该出现的迈巴赫停在主角面前。它像邀请，也像陷阱。主角必须弄清车里藏着的人、信息或交易，才知道自己是旁观者还是已经被卷入局中。"
+    return f"围绕「{goal.strip() or title}」建立一个可拍摄的短片开端：主角先被一个强画面吸引，随后发现它背后有更具体的目标、阻碍和危险。"
+
+
+def _story_scene_from_goal(goal: str) -> str:
+    title = _story_title_from_goal(goal)
+    scene = _story_scene_anchor_from_goal(goal)
+    prop = _story_prop_from_goal(goal)
+    protagonist = _story_protagonist_from_goal(goal)
+    mood = _story_mood_from_goal(goal)
+    return (
+        f"### 场 1：{scene}\n"
+        f"雨声或环境声压低城市的底噪。{protagonist}停在画面边缘，注意到{prop}。镜头先不解释原因，只让观众看到主角的迟疑。\n\n"
+        f"### 场 2：接近\n"
+        "主角试图绕开，却发现这件事和自己有关：一条消息、一个熟悉的名字、或车内一瞬间露出的影子，把主角拉回现场。"
+        f"画面情绪保持{mood}。\n\n"
+        f"### 场 3：转折\n"
+        f"当主角靠近「{title}」的核心线索时，车灯、手机或环境突然变化。主角意识到这不是偶遇，而是有人故意让自己看见。"
+    )
+
+
 def _build_script_seed(goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
     classification = context_snapshot.get("intent") if isinstance(context_snapshot, dict) else {}
     intent = classification.get("intent") if isinstance(classification, dict) else "inspiration"
-    title = "剧本整理" if intent == "script" else "灵感扩写剧本"
+    source = _compact_story_source(goal, 900)
+    title = _story_title_from_goal(source)
+    if intent == "script":
+        return (
+            f"# 《{title}》剧本整理\n\n"
+            "## 故事核心\n"
+            f"{source}\n\n"
+            "## 可拍摄场次\n"
+            f"1. 开场：用一个强画面建立「{title}」的地点、时间和情绪。\n"
+            "2. 对抗：让主角在具体动作中遭遇阻力，冲突需要能被镜头看见。\n"
+            "3. 转折：用人物选择、关键道具或环境变化留下下一场的钩子。\n\n"
+            "## 下一步拆解\n"
+            "从这版剧本继续提取角色、场景、道具和分镜。"
+        )
     return (
-        f"{title}\n"
-        f"- 核心输入：{goal.strip()}\n"
-        "- 故事钩子：保留用户原始表达里的核心冲突，把它扩成一个可拍摄的短片开端。\n"
-        "- 主角目标：明确主角想得到什么，以及阻碍来自人物、环境或秘密信息。\n"
-        "- 三段结构：开端建立处境，中段升级冲突，结尾留下清晰转折或生成下一镜的悬念。\n"
-        "- 可视化线索：记录关键场景、可识别道具、光线气氛和动作节奏，方便后续拆角色、场景、道具和分镜。\n"
-        f"\n模型：{model_code}"
+        f"# 《{title}》短片剧本草案\n\n"
+        f"## 概念\n{_story_concept_from_goal(source)}\n\n"
+        "## 剧本\n"
+        f"{_story_scene_from_goal(source)}\n\n"
+        "## 继续拆解锚点\n"
+        f"- 主角：{_story_protagonist_from_goal(source)}\n"
+        f"- 场景：{_story_scene_anchor_from_goal(source)}\n"
+        f"- 道具：{_story_prop_from_goal(source)}\n"
+        f"- 情绪：{_story_mood_from_goal(source)}"
     )
 
 
 SLUVO_AGENT_WORKFLOW_SPECS = [
     {
-        "stepKey": "understand_story",
+        "stepKey": "onboarding",
         "stage": "ideate",
-        "agentName": "创作总监",
-        "agentProfile": "canvas_agent",
-        "title": "识别意图并起草剧本",
-        "completed": "已识别创作意图并形成剧本草案",
-        "next": "接下来由故事发展 Agent 打磨剧情结构",
-        "question": "剧本方向是否正确？",
-        "artifacts": [("剧本草案", "text_node", "auto_canvas")],
+        "agentName": "Onboarding Agent",
+        "agentProfile": "onboarding",
+        "title": "整理创作目标",
+        "completed": "已理解创作目标并整理输入边界",
+        "next": "接下来 Director Agent 会规划整体故事方向",
+        "question": "创作目标和边界是否正确？",
+        "artifacts": [("需求规划", "planning_brief", "readonly")],
     },
     {
-        "stepKey": "develop_story",
+        "stepKey": "director",
         "stage": "ideate",
-        "agentName": "故事发展 Agent",
-        "agentProfile": "story_director",
-        "title": "发展故事",
-        "completed": "已完成故事结构整理",
-        "next": "接下来提取角色、场景、道具和一致性锚点",
-        "question": "故事总览是否符合预期？",
-        "artifacts": [("故事结构", "storyboard_plan", "auto_canvas")],
+        "agentName": "Director Agent",
+        "agentProfile": "director",
+        "title": "规划导演方案",
+        "completed": "已完成导演规划",
+        "next": "接下来 Scriptwriter Agent 会展开剧本和镜头节拍",
+        "question": "故事方向、风格和节奏是否符合预期？",
+        "artifacts": [("导演规划", "storyboard_plan", "auto_canvas")],
     },
     {
-        "stepKey": "extract_assets",
+        "stepKey": "scriptwriter",
+        "stage": "ideate",
+        "agentName": "Scriptwriter Agent",
+        "agentProfile": "scriptwriter",
+        "title": "创作剧本与镜头节拍",
+        "completed": "已完成剧本与镜头节拍",
+        "next": "接下来 Character Artist Agent 会建立角色视觉锚点",
+        "question": "剧本、角色关系和镜头节拍是否可继续？",
+        "artifacts": [("剧本草案", "text_node", "auto_canvas"), ("镜头节拍", "storyboard_plan", "auto_canvas")],
+    },
+    {
+        "stepKey": "character_artist",
         "stage": "visualize",
-        "agentName": "角色场景 Agent",
-        "agentProfile": "story_director",
-        "title": "提取角色与场景",
-        "completed": "已完成角色与场景设定",
-        "next": "接下来分镜导演会拆解镜头链路",
-        "question": "角色和场景设定是否满意？",
-        "artifacts": [("角色设定", "character_brief", "auto_canvas"), ("场景设定", "scene_brief", "auto_canvas"), ("道具设定", "prop_brief", "auto_canvas")],
+        "agentName": "Character Artist Agent",
+        "agentProfile": "character_artist",
+        "title": "设计角色视觉",
+        "completed": "已完成角色视觉设定",
+        "next": "接下来 Storyboard Artist Agent 会规划分镜首帧",
+        "question": "角色外观、服装和一致性锚点是否满意？",
+        "artifacts": [("角色设定", "character_brief", "auto_canvas"), ("角色图占位", "image_placeholder", "auto_canvas")],
     },
     {
-        "stepKey": "plan_storyboard",
+        "stepKey": "storyboard_artist",
         "stage": "visualize",
-        "agentName": "分镜导演 Agent",
-        "agentProfile": "storyboard_director",
-        "title": "规划分镜链路",
-        "completed": "已完成分镜链路规划",
-        "next": "接下来 Prompt 精修 Agent 会稳定首帧提示词",
-        "question": "分镜节奏和镜头数量是否合适？",
-        "artifacts": [("分镜计划", "storyboard_plan", "auto_canvas")],
+        "agentName": "Storyboard Artist Agent",
+        "agentProfile": "storyboard_artist",
+        "title": "规划分镜首帧",
+        "completed": "已完成分镜首帧规划",
+        "next": "接下来 Video Generator Agent 会创建视频生成任务",
+        "question": "分镜构图、景别和画面提示是否合适？",
+        "artifacts": [("分镜计划", "storyboard_plan", "auto_canvas"), ("首帧 Prompt", "prompt", "auto_canvas"), ("首帧图片占位", "image_placeholder", "auto_canvas")],
     },
     {
-        "stepKey": "polish_prompt",
-        "stage": "visualize",
-        "agentName": "Prompt 精修 Agent",
-        "agentProfile": "prompt_polisher",
-        "title": "精修生成提示词",
-        "completed": "已完成首帧 Prompt 精修",
-        "next": "接下来制片调度 Agent 会创建媒体生成占位",
-        "question": "提示词是否需要补充风格或镜头约束？",
-        "artifacts": [("首帧 Prompt", "prompt", "auto_canvas")],
-    },
-    {
-        "stepKey": "prepare_generation",
+        "stepKey": "video_generator",
         "stage": "animate",
-        "agentName": "制片调度 Agent",
-        "agentProfile": "production_planner",
-        "title": "创建媒体占位",
-        "completed": "已创建媒体生成占位",
-        "next": "确认后提交图片和视频生成任务",
+        "agentName": "Video Generator Agent",
+        "agentProfile": "video_generator",
+        "title": "创建视频生成任务",
+        "completed": "已创建视频生成任务",
+        "next": "确认后提交生成任务，并交给 Video Merger Agent 整理成片",
         "question": "是否确认消耗灵感值并提交生成？",
-        "artifacts": [("首帧图片占位", "image_placeholder", "requires_cost_confirmation"), ("视频生成占位", "video_placeholder", "requires_cost_confirmation")],
+        "artifacts": [("视频生成占位", "video_placeholder", "requires_cost_confirmation")],
+    },
+    {
+        "stepKey": "video_merger",
+        "stage": "deploy",
+        "agentName": "Video Merger Agent",
+        "agentProfile": "video_merger",
+        "title": "整理成片交付",
+        "completed": "已整理成片合成计划",
+        "next": "本轮 Agent Team 协作已完成",
+        "question": "最终成片计划是否可用？",
+        "artifacts": [("成片合成计划", "report", "readonly")],
     },
 ]
 
@@ -1210,6 +1394,19 @@ def _append_agent_workflow_step(
             model_code=model_code,
         )
         next_agent_name = next_agent["agentName"]
+    if spec_index > 0:
+        previous_spec = SLUVO_AGENT_WORKFLOW_SPECS[spec_index - 1]
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="agent_handoff",
+            payload={
+                "from_agent": previous_spec["stepKey"],
+                "to_agent": spec["stepKey"],
+                "message": f"@{previous_spec['stepKey']} 邀请 @{spec['stepKey']} 加入了群聊",
+            },
+        )
     step = _create_agent_run_step(
         session,
         run=run,
@@ -1229,19 +1426,29 @@ def _append_agent_workflow_step(
             "handoffTo": resolved["agentName"],
         },
     )
-    artifacts = [
-        _create_agent_run_artifact(
-            session,
-            run=run,
-            step=step,
-            title=artifact_title,
-            artifact_type=artifact_type,
-            body=_artifact_body(artifact_type, goal, context_snapshot or {}, str(resolved["modelCode"])),
-            write_policy=policy,
-            preview={"estimatedWrite": "canvas_node", "estimatePoints": 20 if artifact_type == "video_placeholder" else 8 if artifact_type == "image_placeholder" else 0},
+    artifact_goal = goal
+    clean_feedback = str(feedback or "").strip()
+    if clean_feedback and clean_feedback not in {"继续", "继续下一步", "满意，继续下一步"}:
+        artifact_goal = f"{goal}\n\n用户确认 / 补充：{clean_feedback}"
+    artifacts = []
+    for artifact_title, artifact_type, policy in spec["artifacts"]:
+        generation_params = _agent_generation_params_for_artifact(artifact_type, context_snapshot or {})
+        artifacts.append(
+            _create_agent_run_artifact(
+                session,
+                run=run,
+                step=step,
+                title=artifact_title,
+                artifact_type=artifact_type,
+                body=_artifact_body(artifact_type, artifact_goal, context_snapshot or {}, str(resolved["modelCode"])),
+                write_policy=policy,
+                preview={
+                    "estimatedWrite": "canvas_node",
+                    "estimatePoints": _agent_generation_estimate_points(artifact_type, generation_params),
+                    "generationParams": generation_params,
+                },
+            )
         )
-        for artifact_title, artifact_type, policy in spec["artifacts"]
-    ]
     _finish_agent_run_step(
         session,
         step,
@@ -1257,21 +1464,165 @@ def _append_agent_workflow_step(
     )
     session.commit()
     _write_agent_run_artifacts_to_canvas(session, run=run, user=user, artifacts=artifacts)
+    _append_sluvo_run_event(
+        session,
+        run=run,
+        role="agent",
+        event_type="run_progress",
+        payload={
+            "current_agent": spec["stepKey"],
+            "currentAgent": spec["stepKey"],
+            "stage": spec["stage"],
+            "progress": min((spec_index + 1) / max(len(SLUVO_AGENT_WORKFLOW_SPECS), 1), 1),
+        },
+    )
+    planning_artifact = next((artifact for artifact in artifacts if artifact.artifact_type == "planning_brief"), None)
+    planning_payload = _json_load(planning_artifact.payload_json, {}) if planning_artifact else {}
+    message_content = str(planning_payload.get("body") or "").strip() if planning_payload else ""
+    if not message_content:
+        message_content = f"{spec['completed']}：{spec['next']}"
+    _append_sluvo_run_event(
+        session,
+        run=run,
+        role="agent",
+        event_type="run_message",
+        payload={
+            "agent": spec["stepKey"],
+            "agentName": resolved["agentName"],
+            "stage": spec["stage"],
+            "content": message_content,
+            "stepId": encode_id(step.id),
+        },
+    )
     return artifacts
+
+
+def _build_agent_planning_brief(goal: str, context_snapshot: Dict[str, Any]) -> str:
+    selected_nodes = context_snapshot.get("selectedNodes") if isinstance(context_snapshot, dict) else []
+    selected_count = len(selected_nodes) if isinstance(selected_nodes, list) else 0
+    clean_goal = goal.strip()
+    context_line = f"已读取 {selected_count} 个选中节点作为上下文。" if selected_count else "当前先以你刚发送的灵感作为创作起点。"
+    return (
+        "我先整理这次任务的规划，不会立刻把完整剧本写进画布。\n\n"
+        f"1. 输入目标：{clean_goal}\n"
+        f"2. 上下文：{context_line}\n"
+        "3. 执行顺序：先确认创作边界，再交给 Director Agent 定方向，之后由 Scriptwriter Agent 展开剧本和镜头节拍。\n"
+        "4. 需要你确认：主题、类型、主要情绪和不希望出现的内容是否需要补充。"
+    )
+
+
+def _agent_media_config(context_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    raw = context_snapshot.get("onboardingConfig") if isinstance(context_snapshot, dict) else {}
+    raw = raw if isinstance(raw, dict) else {}
+    image = raw.get("image") if isinstance(raw.get("image"), dict) else {}
+    video = raw.get("video") if isinstance(raw.get("video"), dict) else {}
+    return {
+        "image": {
+            "model_code": str(image.get("model_code") or raw.get("image_model_code") or "nano-banana-pro").strip(),
+            "generation_type": "text_to_image",
+            "resolution": str(image.get("resolution") or raw.get("image_resolution") or "2k").strip().lower(),
+            "aspect_ratio": str(image.get("aspect_ratio") or raw.get("image_aspect_ratio") or "16:9").strip(),
+            "reference_images": [],
+        },
+        "video": {
+            "model_code": str(video.get("model_code") or raw.get("video_model_code") or "seedance_20_fast").strip(),
+            "generation_type": str(video.get("generation_type") or raw.get("video_generation_type") or "text_to_video").strip(),
+            "duration": int(video.get("duration") or raw.get("video_duration") or 5),
+            "resolution": str(video.get("resolution") or raw.get("video_resolution") or "720p").strip().lower(),
+            "aspect_ratio": str(video.get("aspect_ratio") or raw.get("video_aspect_ratio") or "adaptive").strip(),
+            "audio_enabled": bool(video.get("audio_enabled", raw.get("video_audio_enabled", False))),
+            "real_person_mode": bool(video.get("real_person_mode", raw.get("video_real_person_mode", False))),
+            "web_search": bool(video.get("web_search", raw.get("video_web_search", False))),
+        },
+    }
+
+
+def _agent_image_estimate_points(params: Dict[str, Any]) -> int:
+    model_code = str(params.get("model_code") or "").strip()
+    resolution = str(params.get("resolution") or "2k").strip().lower()
+    if model_code == "nano-banana-2-低价版":
+        return {"1k": 2, "2k": 2, "4k": 3}.get(resolution, 2)
+    if model_code == "nano-banana-2":
+        return {"1k": 5, "2k": 6, "4k": 8}.get(resolution, 6)
+    if model_code == "gpt-image-2-fast":
+        return 3
+    if model_code == "gpt-image-2":
+        return {"1k": 12, "2k": 18, "4k": 28}.get(resolution, 18)
+    return {"1k": 9, "2k": 11, "4k": 13}.get(resolution, 11)
+
+
+def _agent_video_estimate_points(params: Dict[str, Any]) -> int:
+    duration = max(int(params.get("duration") or 5), 1)
+    resolution = str(params.get("resolution") or "720p").strip().lower()
+    resolution_multiplier = {"480p": 0.8, "720p": 1.0, "1080p": 1.35, "2k": 1.8, "4k": 2.4}.get(resolution, 1.0)
+    return max(int(round(duration * 4 * resolution_multiplier)), 1)
+
+
+def _agent_generation_params_for_artifact(artifact_type: str, context_snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    media_config = _agent_media_config(context_snapshot)
+    if artifact_type == "image_placeholder":
+        return media_config["image"]
+    if artifact_type == "video_placeholder":
+        return media_config["video"]
+    return {}
+
+
+def _agent_generation_estimate_points(artifact_type: str, generation_params: Dict[str, Any]) -> int:
+    if artifact_type == "image_placeholder":
+        return _agent_image_estimate_points(generation_params)
+    if artifact_type == "video_placeholder":
+        return _agent_video_estimate_points(generation_params)
+    return 0
 
 
 def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, Any], model_code: str) -> str:
     prompt = _agent_run_prompt(goal, context_snapshot)
+    if artifact_type == "planning_brief":
+        return _build_agent_planning_brief(goal, context_snapshot)
+    llm_body = _try_deepseek_agent_artifact_body(
+        artifact_type=artifact_type,
+        goal=goal,
+        context_snapshot=context_snapshot,
+        model_code=model_code,
+    )
+    if llm_body:
+        return llm_body
     if artifact_type == "text_node":
         return _build_script_seed(goal, context_snapshot, model_code)
     if artifact_type == "report":
         return _agent_question_answer(goal)
     if artifact_type == "character_brief":
-        return f"角色设定草稿\n- 主角：围绕目标中的核心人物建立外观、欲望、阻力和标志性道具。\n- 关系：把冲突双方、协作者和环境压力拆为后续可复用节点。\n- 一致性：记录服装、色彩、年龄感和镜头可识别特征。\n\n来源：{goal.strip()}"
+        return (
+            "# 角色设定\n\n"
+            f"## 主角\n{_story_protagonist_from_goal(goal)}。外观应能匹配「{_story_mood_from_goal(goal)}」的气质，动作目标围绕「{goal.strip()}」展开。\n\n"
+            "## 对手 / 压力\n"
+            "对手不一定马上露脸，可以先表现为车内影子、陌生来电、监控视角、追踪者或环境压力。\n\n"
+            "## 一致性锚点\n"
+            f"- 服装与色彩：贴合{_story_mood_from_goal(goal)}。\n"
+            f"- 关键物件：{_story_prop_from_goal(goal)}。\n"
+            "- 表演重点：先克制观察，再被迫行动。"
+        )
     if artifact_type == "scene_brief":
-        return f"场景设定草稿\n- 主场景：从目标里提取时间、地点、天气、光线和情绪。\n- 可生成元素：环境道具、空间层次、色彩气氛、镜头运动约束。\n- 连续性：为后续图片/视频节点保留统一场景锚点。"
+        return (
+            "# 场景设定\n\n"
+            f"## 主场景\n{_story_scene_anchor_from_goal(goal)}。\n\n"
+            "## 光线与空间\n"
+            "使用低照度、局部高亮和前后景遮挡，让观众先看到线索，再看到人物反应。\n\n"
+            "## 连续性锚点\n"
+            f"- 情绪：{_story_mood_from_goal(goal)}。\n"
+            f"- 核心道具：{_story_prop_from_goal(goal)}。\n"
+            "- 镜头约束：湿润反光、近景表情、车窗/门缝/屏幕等框中框构图。"
+        )
     if artifact_type == "prop_brief":
-        return f"道具设定草稿\n- 核心道具：提取推动剧情的信息物、信物、工具或环境装置。\n- 视觉特征：记录形状、材质、颜色、磨损痕迹和可识别细节。\n- 剧情功能：说明道具如何制造线索、冲突、误会或转折。\n\n来源：{goal.strip()}"
+        return (
+            "# 道具设定\n\n"
+            f"## 核心道具\n{_story_prop_from_goal(goal)}。\n\n"
+            "## 剧情功能\n"
+            "道具不是背景装饰，而是让主角接近真相或陷入危险的触发器。\n\n"
+            "## 特写建议\n"
+            "- 水滴、反光、指纹、屏幕亮光或门把手动作。\n"
+            "- 先给局部细节，再用反应镜头说明它对主角的意义。"
+        )
     if artifact_type == "storyboard_plan":
         return _build_storyboard_plan(prompt, model_code)
     if artifact_type == "prompt":
@@ -1281,6 +1632,91 @@ def _artifact_body(artifact_type: str, goal: str, context_snapshot: Dict[str, An
     if artifact_type == "video_placeholder":
         return _build_video_prompt(prompt)
     return prompt
+
+
+def _try_deepseek_agent_artifact_body(
+    *,
+    artifact_type: str,
+    goal: str,
+    context_snapshot: Dict[str, Any],
+    model_code: str,
+) -> Optional[str]:
+    if not settings.DEEPSEEK_API_KEY:
+        return None
+    if artifact_type in {"image_placeholder", "video_placeholder", "report", "planning_brief"}:
+        return None
+    type_labels = {
+        "text_node": "短片剧本草案",
+        "storyboard_plan": "故事结构或分镜计划",
+        "character_brief": "角色设定",
+        "scene_brief": "场景设定",
+        "prop_brief": "道具设定",
+        "prompt": "首帧/视频生成提示词",
+    }
+    label = type_labels.get(artifact_type, "创作产物")
+    selected_nodes = context_snapshot.get("selectedNodes") if isinstance(context_snapshot, dict) else []
+    context_lines = []
+    if isinstance(selected_nodes, list):
+        for item in selected_nodes[:6]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "未命名节点").strip()
+            content = str(item.get("prompt") or item.get("body") or item.get("content") or "").strip()
+            if content:
+                context_lines.append(f"- {title}: {content[:600]}")
+    previous_artifacts = context_snapshot.get("previousArtifacts") if isinstance(context_snapshot, dict) else []
+    if isinstance(previous_artifacts, list):
+        for item in previous_artifacts[:6]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "上一步产物").strip()
+            body = str(item.get("body") or "").strip()
+            if body:
+                context_lines.append(f"- {title}: {body[:900]}")
+    context_text = "\n".join(context_lines) or "暂无上游节点。"
+    try:
+        payload = chat_json(
+            model=normalize_sluvo_agent_model_code(model_code),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是 Sluvo 画布 Agent Team 的创作成员。"
+                        "请输出 JSON 对象，字段只有 body。body 是可直接写入画布文本节点的 Markdown 正文。"
+                        "不要写模板说明、不要写占位指令、不要提模型、不要提“下一步由谁处理”。"
+                        "必须围绕用户输入生成具体故事内容、角色/场景/道具或分镜信息。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"用户输入：{goal.strip()}\n"
+                        f"当前要生成的产物类型：{label}\n"
+                        f"上游上下文：\n{context_text}\n\n"
+                        "要求：\n"
+                        "1. 内容要具体，能被画面拍出来。\n"
+                        "2. 如果是剧本草案，要包含故事概念、2-4 个场次或剧情段落、角色/场景/道具锚点。\n"
+                        "3. 如果是角色/场景/道具设定，要从输入里提取具体名称、外观、功能和一致性锚点。\n"
+                        "4. 如果是分镜计划，要列出镜号、景别、画面、动作、声音/情绪和生成提示。\n"
+                    ),
+                },
+            ],
+            thinking_enabled=normalize_sluvo_agent_model_code(model_code) == "deepseek-v4-pro",
+            max_tokens=1800,
+            temperature=0.36,
+            route_tag="sluvo_agent_artifact",
+        )
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    body = str(payload.get("body") or "").strip()
+    if not body or len(body) < 24:
+        return None
+    forbidden = ("核心输入：", "故事钩子：保留用户原始表达", "模型：", "模板", "占位")
+    if any(item in body for item in forbidden):
+        return None
+    return body[:16000]
 
 
 def _create_agent_run_step(
@@ -1349,8 +1785,32 @@ def _create_agent_run_artifact(
     return artifact
 
 
+def _append_sluvo_run_event(
+    session: Session,
+    *,
+    run: SluvoAgentRun,
+    role: str,
+    event_type: str,
+    payload: Dict[str, Any],
+) -> Optional[SluvoAgentEvent]:
+    if not run.session_id:
+        return None
+    agent_session = session.get(SluvoAgentSession, run.session_id)
+    if not agent_session:
+        return None
+    return append_sluvo_agent_event(
+        session,
+        agent_session=agent_session,
+        role=role,
+        event_type=event_type,
+        payload={"runId": encode_id(run.id), "run_id": encode_id(run.id), "eventType": event_type, **(payload or {})},
+    )
+
+
 def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin: tuple[float, float]) -> Dict[str, Any]:
     payload = _json_load(artifact.payload_json, {})
+    preview = _json_load(artifact.preview_json, {})
+    generation_params = preview.get("generationParams") if isinstance(preview.get("generationParams"), dict) else {}
     body = str(payload.get("body") or payload.get("prompt") or "").strip()
     x, y = origin
     position = {"x": x + (index % 2) * 360, "y": y + (index // 2) * 260}
@@ -1369,7 +1829,16 @@ def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin:
             position=position,
             prompt=body,
             size={"width": 420, "height": 340},
-            data={**common, "generationStatus": "waiting_confirmation", "generationMessage": "等待确认灵感值后生成图片", "imageEstimatePoints": 8},
+            data={
+                **common,
+                "generationStatus": "waiting_confirmation",
+                "generationMessage": "等待确认灵感值后生成图片",
+                "imageEstimatePoints": int(preview.get("estimatePoints") or _agent_image_estimate_points(generation_params)),
+                "imageParams": generation_params,
+                "modelCode": generation_params.get("model_code"),
+                "resolution": generation_params.get("resolution"),
+                "aspectRatio": generation_params.get("aspect_ratio"),
+            },
         )
     if artifact.artifact_type == "video_placeholder":
         return _agent_patch_node(
@@ -1381,7 +1850,18 @@ def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin:
             position=position,
             prompt=body,
             size={"width": 420, "height": 340},
-            data={**common, "generationStatus": "waiting_confirmation", "generationMessage": "等待确认灵感值后生成视频", "videoEstimatePoints": 20},
+            data={
+                **common,
+                "generationStatus": "waiting_confirmation",
+                "generationMessage": "等待确认灵感值后生成视频",
+                "videoEstimatePoints": int(preview.get("estimatePoints") or _agent_video_estimate_points(generation_params)),
+                "videoParams": generation_params,
+                "modelCode": generation_params.get("model_code"),
+                "generationType": generation_params.get("generation_type"),
+                "duration": generation_params.get("duration"),
+                "resolution": generation_params.get("resolution"),
+                "aspectRatio": generation_params.get("aspect_ratio"),
+            },
         )
     return _agent_patch_node(
         client_id=f"agent-run-{artifact.run_id}-artifact-{artifact.id}",
@@ -1396,6 +1876,28 @@ def _agent_run_node_payload(artifact: SluvoAgentArtifact, *, index: int, origin:
     )
 
 
+def _latest_agent_run_canvas_node(
+    session: Session,
+    run: SluvoAgentRun,
+    *,
+    exclude_artifact_ids: Optional[set[int]] = None,
+) -> Optional[SluvoCanvasNode]:
+    excluded = exclude_artifact_ids or set()
+    previous_artifacts = session.exec(
+        select(SluvoAgentArtifact)
+        .where(SluvoAgentArtifact.run_id == run.id)
+        .where(SluvoAgentArtifact.canvas_node_id != None)
+        .order_by(SluvoAgentArtifact.id.desc())
+    ).all()
+    for artifact in previous_artifacts:
+        if artifact.id in excluded or not artifact.canvas_node_id:
+            continue
+        node = session.get(SluvoCanvasNode, artifact.canvas_node_id)
+        if node and node.deleted_at is None:
+            return node
+    return None
+
+
 def _write_agent_run_artifacts_to_canvas(
     session: Session,
     *,
@@ -1408,9 +1910,19 @@ def _write_agent_run_artifacts_to_canvas(
         return
     canvas = _require_canvas(session, run.canvas_id)
     context_snapshot = _json_load(run.context_snapshot_json, {})
-    origin = _agent_run_origin(context_snapshot)
+    previous_node = _latest_agent_run_canvas_node(
+        session,
+        run,
+        exclude_artifact_ids={int(item.id or 0) for item in writable if item.id},
+    )
+    if previous_node:
+        origin = (float(previous_node.position_x) + float(previous_node.width or 330) + 140, float(previous_node.position_y))
+    else:
+        origin = _agent_run_origin(context_snapshot)
     nodes = [_agent_run_node_payload(item, index=index, origin=origin) for index, item in enumerate(writable)]
     edges = []
+    if previous_node and nodes:
+        edges.append(_agent_patch_edge_from_node(encode_id(previous_node.id), nodes[0]["clientId"], "dependency", "上一步"))
     for index in range(1, len(nodes)):
         edges.append(_agent_patch_edge(nodes[index - 1]["clientId"], nodes[index]["clientId"], "dependency", "Agent 产物"))
     batch = SluvoCanvasBatchRequest(expectedRevision=canvas.revision, nodes=nodes, edges=edges)
@@ -1509,6 +2021,8 @@ def create_sluvo_agent_run(
     session.commit()
     session.refresh(run)
     append_sluvo_agent_event(session, agent_session=agent_session, role="user", event_type="run_goal", payload={"content": clean_goal, "runId": encode_id(run.id)})
+    _append_sluvo_run_event(session, run=run, role="user", event_type="user_message", payload={"content": clean_goal})
+    _append_sluvo_run_event(session, run=run, role="system", event_type="run_started", payload={"projectId": encode_id(project.id)})
 
     if intent["intent"] == "question":
         step = _create_agent_run_step(
@@ -1553,6 +2067,14 @@ def create_sluvo_agent_run(
         session.add(run)
         session.commit()
         append_sluvo_agent_event(session, agent_session=agent_session, role="agent", event_type="run_answer", payload={"content": _agent_question_answer(clean_goal), "runId": encode_id(run.id)})
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_message",
+            payload={"agent": "onboarding", "agentName": "Onboarding Agent", "stage": "ideate", "content": _agent_question_answer(clean_goal)},
+        )
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_completed", payload={})
         session.refresh(run)
         return _serialize_agent_run_timeline(session, run)
 
@@ -1575,8 +2097,8 @@ def create_sluvo_agent_run(
             "agentName": agent_name,
             "modelCode": normalized_model,
             "intent": intent,
-            "artifactCount": _agent_run_artifact_count(session, run),
-            "nodeCount": _agent_run_artifact_count(session, run),
+            "artifactCount": len([artifact for artifact in step_artifacts if artifact.write_policy != "readonly"]),
+            "nodeCount": len([artifact for artifact in step_artifacts if artifact.write_policy not in {"readonly", "requires_cost_confirmation"}]),
             "edgeCount": 0,
             "estimatePoints": 0,
             "workflow": _agent_workflow_public_specs(),
@@ -1589,12 +2111,20 @@ def create_sluvo_agent_run(
         run.updated_at = _utc_now()
         session.add(run)
         session.commit()
-        append_sluvo_agent_event(
+        _append_sluvo_run_event(
             session,
-            agent_session=agent_session,
+            run=run,
             role="agent",
             event_type="run_awaiting_confirm",
-            payload={"content": "第一阶段已完成，等待确认后交给下一位 Agent。", "runId": encode_id(run.id), "artifactCount": len(step_artifacts)},
+            payload={
+                "agent": SLUVO_AGENT_WORKFLOW_SPECS[0]["stepKey"],
+                "agentName": SLUVO_AGENT_WORKFLOW_SPECS[0]["agentName"],
+                "stage": SLUVO_AGENT_WORKFLOW_SPECS[0]["stage"],
+                "message": SLUVO_AGENT_WORKFLOW_SPECS[0]["question"],
+                "question": SLUVO_AGENT_WORKFLOW_SPECS[0]["question"],
+                "next_step": SLUVO_AGENT_WORKFLOW_SPECS[0]["next"],
+                "artifactCount": len(step_artifacts),
+            },
         )
     except Exception as exc:
         session.rollback()
@@ -1616,15 +2146,27 @@ def continue_sluvo_agent_run(
     user: User,
     content: str,
     context_snapshot: Dict[str, Any],
+    action: Optional[str] = "continue",
 ) -> Dict[str, Any]:
     clean_content = str(content or "").strip()
-    if not clean_content:
+    normalized_action = str(action or "continue").strip().lower()
+    normalized_continue_text = clean_content.replace("，", ",").replace(" ", "").replace("\n", "")
+    if normalized_action in {"revise", "feedback", "补充", "修改"} and normalized_continue_text in {"继续", "继续下一步", "满意,继续下一步"}:
+        normalized_action = "continue"
+    if not clean_content and normalized_action in {"revise", "feedback", "补充", "修改"}:
         raise HTTPException(status_code=400, detail="补充需求不能为空")
+    if not clean_content and normalized_action == "continue":
+        clean_content = "继续下一步"
+    _append_sluvo_run_event(session, run=run, role="user", event_type="user_message", payload={"content": clean_content, "action": normalized_action})
     existing_steps = session.exec(select(SluvoAgentStep).where(SluvoAgentStep.run_id == run.id).order_by(SluvoAgentStep.order_index)).all()
     summary = _json_load(run.summary_json, {})
     model_code = normalize_sluvo_agent_model_code(summary.get("modelCode") or "deepseek-v4-flash")
     base_context = _json_load(run.context_snapshot_json, {})
-    merged_context = {**base_context, **(context_snapshot or {})}
+    previous_artifacts = _agent_run_previous_artifacts(session, run)
+    merged_context = {**base_context, **(context_snapshot or {}), "previousArtifacts": previous_artifacts}
+    if isinstance(context_snapshot, dict) and context_snapshot.get("onboardingConfig"):
+        persisted_context = {**base_context, **context_snapshot}
+        run.context_snapshot_json = _json_dump(persisted_context)
     root_template_id = _decode_optional_safe(str(base_context.get("agentTemplateId") or ""))
     root_template = session.get(SluvoAgentTemplate, root_template_id) if root_template_id else None
     intent = summary.get("intent") if isinstance(summary.get("intent"), dict) else base_context.get("intent") if isinstance(base_context.get("intent"), dict) else {}
@@ -1658,9 +2200,137 @@ def continue_sluvo_agent_run(
         session.add(run)
         session.commit()
         session.refresh(run)
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_message",
+            payload={"agent": "onboarding", "agentName": "Onboarding Agent", "stage": "ideate", "content": _agent_question_answer(clean_content)},
+        )
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_completed", payload={})
         return _serialize_agent_run_timeline(session, run)
     workflow_index = _workflow_step_count(session, run)
+    if normalized_action in {"revise", "feedback", "补充", "修改"} and workflow_index > 0:
+        current_index = max(workflow_index - 1, 0)
+        spec = SLUVO_AGENT_WORKFLOW_SPECS[current_index]
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_message",
+            payload={
+                "agent": "review",
+                "agentName": "Review Agent",
+                "stage": "ideate",
+                "content": f"Review Agent 已收到反馈：{clean_content}。我会把修改重路由给 {spec['agentName']}。",
+            },
+        )
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="agent_handoff",
+            payload={"from_agent": "review", "to_agent": spec["stepKey"], "message": f"@review 邀请 @{spec['stepKey']} 重新加入群聊"},
+        )
+        resolved = _resolve_agent_for_workflow_step(
+            session,
+            context_snapshot=merged_context,
+            spec=spec,
+            order_index=current_index,
+            root_template=root_template,
+            model_code=model_code,
+        )
+        revision_goal = f"{run.goal}\n\n用户补充 / 修改：{clean_content}"
+        step = _create_agent_run_step(
+            session,
+            run=run,
+            step_key=f"revise_{spec['stepKey']}_{len(existing_steps) + 1}",
+            agent_name=str(resolved["agentName"]),
+            agent_profile=str(resolved["agentProfile"]),
+            model_code=str(resolved["modelCode"]),
+            title=f"更新{spec['title']}",
+            order_index=len(existing_steps),
+            agent_template_id=_decode_optional_safe(str(resolved.get("agentTemplateId") or "")),
+            input_payload={
+                "goal": run.goal,
+                "content": clean_content,
+                "action": "revise",
+                "stage": spec["stage"],
+                "contextCount": _agent_run_context_count(merged_context),
+            },
+        )
+        artifacts = []
+        for artifact_title, artifact_type, policy in spec["artifacts"]:
+            generation_params = _agent_generation_params_for_artifact(artifact_type, merged_context)
+            artifacts.append(
+                _create_agent_run_artifact(
+                    session,
+                    run=run,
+                    step=step,
+                    title=artifact_title,
+                    artifact_type=artifact_type,
+                    body=_artifact_body(artifact_type, revision_goal, merged_context, str(resolved["modelCode"])),
+                    write_policy=policy,
+                    preview={
+                        "estimatedWrite": "canvas_node",
+                        "revision": True,
+                        "estimatePoints": _agent_generation_estimate_points(artifact_type, generation_params),
+                        "generationParams": generation_params,
+                    },
+                )
+            )
+        _finish_agent_run_step(
+            session,
+            step,
+            output={
+                "artifactCount": len(artifacts),
+                "stage": spec["stage"],
+                "completed": "已根据补充更新当前阶段",
+                "question": spec["question"],
+                "revision": True,
+            },
+        )
+        session.commit()
+        _write_agent_run_artifacts_to_canvas(session, run=run, user=user, artifacts=artifacts)
+        used_agents = summary.get("agentTeam") if isinstance(summary.get("agentTeam"), list) else _resolved_agent_team(session, context_snapshot=base_context, root_template=root_template, model_code=model_code)
+        next_agent = used_agents[workflow_index]["agentName"] if workflow_index < len(used_agents) else None
+        run.status = "waiting_user"
+        run.summary_json = _json_dump({
+            **summary,
+            "contextCount": _agent_run_context_count(base_context),
+            "modelCode": model_code,
+            "artifactCount": _agent_run_artifact_count(session, run),
+            "nodeCount": _agent_run_artifact_count(session, run),
+            "workflow": _agent_workflow_public_specs(),
+            "agentTeam": used_agents,
+            "currentStepIndex": current_index,
+            "nextStepIndex": workflow_index if workflow_index < len(SLUVO_AGENT_WORKFLOW_SPECS) else None,
+            "awaitingAgent": next_agent,
+            "nextQuestion": spec["question"],
+            "estimatePoints": 0,
+        })
+        run.updated_at = _utc_now()
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_awaiting_confirm",
+            payload={
+                "agent": spec["stepKey"],
+                "agentName": spec["agentName"],
+                "stage": spec["stage"],
+                "message": spec["question"],
+                "question": spec["question"],
+                "next_step": spec["next"],
+            },
+        )
+        return _serialize_agent_run_timeline(session, run)
+
     if workflow_index < len(SLUVO_AGENT_WORKFLOW_SPECS):
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_confirmed", payload={"message": "已确认，继续下一位 Agent。"})
         artifacts = _append_agent_workflow_step(
             session,
             run=run,
@@ -1673,6 +2343,7 @@ def continue_sluvo_agent_run(
             feedback=clean_content,
         )
         waiting_cost = any(item.write_policy == "requires_cost_confirmation" for item in artifacts)
+        estimate_points = sum(int((_json_load(item.preview_json, {}) or {}).get("estimatePoints") or 0) for item in artifacts)
         used_agents = summary.get("agentTeam") if isinstance(summary.get("agentTeam"), list) else _resolved_agent_team(session, context_snapshot=base_context, root_template=root_template, model_code=model_code)
         next_agent = used_agents[workflow_index + 1]["agentName"] if workflow_index + 1 < len(used_agents) else None
         run.status = "waiting_cost_confirmation" if waiting_cost else "waiting_user"
@@ -1688,8 +2359,23 @@ def continue_sluvo_agent_run(
             "nextStepIndex": workflow_index + 1 if workflow_index + 1 < len(SLUVO_AGENT_WORKFLOW_SPECS) else None,
             "awaitingAgent": next_agent,
             "nextQuestion": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["question"],
-            "estimatePoints": 28 if waiting_cost else 0,
+            "estimatePoints": estimate_points if waiting_cost else 0,
         })
+        status_event_payload = {
+            "agent": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["stepKey"],
+            "agentName": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["agentName"],
+            "stage": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["stage"],
+            "message": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["question"],
+            "question": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["question"],
+            "next_step": SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]["next"],
+        }
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_awaiting_confirm",
+            payload=status_event_payload,
+        )
     else:
         step = _create_agent_run_step(
             session,
@@ -1724,6 +2410,8 @@ def continue_sluvo_agent_run(
     if run.session_id:
         agent_session = require_sluvo_agent_session(session, run.session_id)
         append_sluvo_agent_event(session, agent_session=agent_session, role="user", event_type="run_continue", payload={"content": clean_content, "runId": encode_id(run.id)})
+    if run.status == "succeeded":
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_completed", payload={})
     session.refresh(run)
     return _serialize_agent_run_timeline(session, run)
 
@@ -1758,6 +2446,7 @@ def confirm_sluvo_agent_run_cost(
             continue
         payload = _json_load(artifact.payload_json, {})
         preview = _json_load(artifact.preview_json, {})
+        generation_params = preview.get("generationParams") if isinstance(preview.get("generationParams"), dict) else {}
         record_type = "video" if artifact.artifact_type == "video_placeholder" else "image" if artifact.artifact_type == "image_placeholder" else "asset"
         record = GenerationRecord(
             user_id=user.id,
@@ -1769,8 +2458,20 @@ def confirm_sluvo_agent_run_cost(
             target_id=artifact.canvas_node_id,
             status="queued",
             prompt=str(payload.get("prompt") or payload.get("body") or ""),
-            params_internal_json=_json_dump({"source": "sluvo_agent_run", "runId": encode_id(run.id), "artifactId": encode_id(artifact.id)}),
-            params_public_json=_json_dump({"title": artifact.title, "artifactType": artifact.artifact_type}),
+            params_internal_json=_json_dump({
+                "source": "sluvo_agent_run",
+                "runId": encode_id(run.id),
+                "artifactId": encode_id(artifact.id),
+                "request_payload": {
+                    **generation_params,
+                    "prompt": str(payload.get("prompt") or payload.get("body") or ""),
+                },
+            }),
+            params_public_json=_json_dump({
+                "title": artifact.title,
+                "artifactType": artifact.artifact_type,
+                **generation_params,
+            }),
             estimate_points=int(preview.get("estimatePoints") or (20 if record_type == "video" else 8)),
             points_status="confirmed",
             created_at=now,
@@ -1794,16 +2495,63 @@ def confirm_sluvo_agent_run_cost(
                     })
                     if record_type == "image":
                         data["imageEstimateStatus"] = "confirmed"
+                        data["imageParams"] = generation_params
                     if record_type == "video":
                         data["videoEstimateStatus"] = "confirmed"
+                        data["videoParams"] = generation_params
                     node.data_json = _json_dump(data)
                     node.status = "queued"
                     node.revision = int(node.revision or 1) + 1
                     node.updated_at = now
                     session.add(node)
-    run.status = "succeeded"
-    run.updated_at = now
-    run.finished_at = now
+    _append_sluvo_run_event(
+        session,
+        run=run,
+        role="system",
+        event_type="run_confirmed",
+        payload={"agent": "video_generator", "message": "媒体生成已确认，任务进入队列"},
+    )
+    summary = _json_load(run.summary_json, {})
+    context_snapshot = _json_load(run.context_snapshot_json, {})
+    model_code = normalize_sluvo_agent_model_code(summary.get("modelCode") or "deepseek-v4-flash")
+    workflow_index = _workflow_step_count(session, run)
+    if workflow_index < len(SLUVO_AGENT_WORKFLOW_SPECS):
+        root_template_id = _decode_optional_safe(str(context_snapshot.get("agentTemplateId") or ""))
+        root_template = session.get(SluvoAgentTemplate, root_template_id) if root_template_id else None
+        _append_agent_workflow_step(
+            session,
+            run=run,
+            user=user,
+            spec_index=workflow_index,
+            goal=run.goal,
+            context_snapshot=context_snapshot,
+            root_template=root_template,
+            model_code=model_code,
+        )
+        spec = SLUVO_AGENT_WORKFLOW_SPECS[workflow_index]
+        run.status = "waiting_user"
+        run.summary_json = _json_dump({
+            **summary,
+            "artifactCount": _agent_run_artifact_count(session, run),
+            "nodeCount": _agent_run_artifact_count(session, run),
+            "currentStepIndex": workflow_index,
+            "nextStepIndex": workflow_index + 1 if workflow_index + 1 < len(SLUVO_AGENT_WORKFLOW_SPECS) else None,
+            "awaitingAgent": None,
+            "nextQuestion": spec["question"],
+            "estimatePoints": 0,
+        })
+        _append_sluvo_run_event(
+            session,
+            run=run,
+            role="agent",
+            event_type="run_awaiting_confirm",
+            payload={"agent": spec["stepKey"], "agentName": spec["agentName"], "stage": spec["stage"], "message": spec["question"], "question": spec["question"], "next_step": spec["next"]},
+        )
+    else:
+        run.status = "succeeded"
+        run.finished_at = now
+        _append_sluvo_run_event(session, run=run, role="system", event_type="run_completed", payload={})
+    run.updated_at = _utc_now()
     session.add(run)
     session.commit()
     session.refresh(run)
@@ -3925,11 +4673,11 @@ def _selected_node_titles(selected_nodes: List[Dict[str, Any]]) -> str:
 
 
 def _build_canvas_suggestion(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:
-    return f"基于「{_selected_node_titles(selected_nodes)}」的创作建议：\n1. 明确故事目标和主要情绪。\n2. 把可复用角色、场景、风格拆成独立参考节点。\n3. 从关键镜头开始生成图片，再连接视频节点。\n\n用户需求：{prompt}\n模型：{model_code}"
+    return f"基于「{_selected_node_titles(selected_nodes)}」的创作建议：\n1. 明确故事目标和主要情绪。\n2. 把可复用角色、场景、风格拆成独立参考节点。\n3. 从关键镜头开始生成图片，再连接视频节点。\n\n用户需求：{prompt}"
 
 
 def _build_consistency_report(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:
-    return f"一致性检查报告：\n- 检查对象：{_selected_node_titles(selected_nodes)}。\n- 建议固定角色外观、服装、道具和光线风格。\n- 后续生成前，请把角色参考图连接到每个图片/视频节点。\n\n检查要求：{prompt}\n模型：{model_code}"
+    return f"一致性检查报告：\n- 检查对象：{_selected_node_titles(selected_nodes)}。\n- 建议固定角色外观、服装、道具和光线风格。\n- 后续生成前，请把角色参考图连接到每个图片/视频节点。\n\n检查要求：{prompt}"
 
 
 def _build_polished_prompt(prompt: str, selected_nodes: List[Dict[str, Any]]) -> str:
@@ -3951,34 +4699,32 @@ def _compact_story_source(text: str, limit: int = 900) -> str:
 def _build_story_intake(prompt: str, model_code: str) -> str:
     source = _compact_story_source(prompt)
     return (
-        "项目理解\n"
-        f"原始灵感 / 剧本：{source}\n\n"
-        "制片目标：先提取角色、场景、道具和风格约束，再拆成可生成的分镜链路。\n"
-        "下一步：确认故事核心、主角目标、冲突和视觉风格后继续细化。"
-        f"\n模型：{model_code}"
+        f"# 《{_story_title_from_goal(source)}》项目理解\n\n"
+        f"## 故事概念\n{_story_concept_from_goal(source)}\n\n"
+        f"## 主场景\n{_story_scene_anchor_from_goal(source)}\n\n"
+        f"## 情绪基调\n{_story_mood_from_goal(source)}"
     )
 
 
 def _build_character_prop_brief(prompt: str, model_code: str) -> str:
     source = _compact_story_source(prompt, 700)
     return (
-        "角色 / 道具提取\n"
-        "1. 主角：从灵感中提取身份、年龄感、服装、情绪和可复用外观特征。\n"
-        "2. 配角：提取和主角产生冲突或推动剧情的人物。\n"
-        "3. 道具：提取对剧情、动作或镜头有视觉价值的物件。\n"
-        "4. 一致性：每个角色保留固定发型、服装、色彩和标志物。\n\n"
-        f"来源：{source}\n模型：{model_code}"
+        "# 角色 / 道具提取\n\n"
+        f"- 主角：{_story_protagonist_from_goal(source)}。\n"
+        "- 对手：可以先用影子、车内人声、陌生来电或环境监控表现，不急于正面露出。\n"
+        f"- 道具：{_story_prop_from_goal(source)}。\n"
+        f"- 一致性：服装、光线和表演都服务于「{_story_mood_from_goal(source)}」。"
     )
 
 
 def _build_scene_brief(prompt: str, model_code: str) -> str:
     source = _compact_story_source(prompt, 700)
     return (
-        "场景设定\n"
-        "1. 主场景：提取故事发生的核心空间、时代、天气和光线。\n"
-        "2. 氛围：定义色调、质感、镜头情绪和参考风格。\n"
-        "3. 场景约束：列出每个镜头需要保持连续的环境元素。\n\n"
-        f"来源：{source}\n模型：{model_code}"
+        "# 场景设定\n\n"
+        f"- 主场景：{_story_scene_anchor_from_goal(source)}。\n"
+        f"- 氛围：{_story_mood_from_goal(source)}。\n"
+        "- 画面约束：保持天气、光线方向、反光质感和空间层次连续。\n"
+        "- 可生成元素：人物近景、道具特写、环境建立镜头、带遮挡的窥视视角。"
     )
 
 
@@ -4003,18 +4749,17 @@ def _build_video_prompt(prompt: str) -> str:
 def _build_storyboard_plan(prompt: str, model_code: str) -> str:
     source = _compact_story_source(prompt, 800)
     return (
-        "分镜计划\n"
-        "1. 开场镜头：建立场景、主角状态和故事氛围。\n"
-        "2. 推进镜头：呈现主角动作、冲突或关键线索。\n"
-        "3. 情绪镜头：强化角色表情、道具和环境细节。\n"
-        "4. 转折镜头：制造变化、悬念或节奏推进。\n"
-        "5. 收束镜头：形成可继续生成下一个节点的画面结果。\n\n"
-        f"来源：{source}\n模型：{model_code}"
+        "# 分镜计划\n\n"
+        f"1. 建立镜头：{_story_scene_anchor_from_goal(source)}，用环境声和远景建立气氛。\n"
+        f"2. 发现镜头：主角注意到{_story_prop_from_goal(source)}，镜头切到眼神和手部动作。\n"
+        "3. 接近镜头：中近景跟随主角移动，前景遮挡制造不确定感。\n"
+        "4. 线索镜头：道具或屏幕出现关键信息，声音突然变弱或被雨声吞没。\n"
+        "5. 转折镜头：车灯、门缝、人影或来电打断主角，留下下一镜悬念。"
     )
 
 
 def _build_workflow_plan(prompt: str, selected_nodes: List[Dict[str, Any]], model_code: str) -> str:
-    return f"分镜工作流计划：\n1. 从需求中提取场景目标和角色动作。\n2. 生成 3-5 个关键镜头，每个镜头保留景别、动作、情绪和画面提示词。\n3. 先生成首帧图片，再接视频生成节点。\n\n需求：{prompt}\n来源：{_selected_node_titles(selected_nodes)}\n模型：{model_code}"
+    return f"分镜工作流计划：\n1. 从需求中提取场景目标和角色动作。\n2. 生成 3-5 个关键镜头，每个镜头保留景别、动作、情绪和画面提示词。\n3. 先生成首帧图片，再接视频生成节点。\n\n需求：{prompt}\n来源：{_selected_node_titles(selected_nodes)}"
 
 
 def create_sluvo_agent_action(

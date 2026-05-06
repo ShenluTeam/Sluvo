@@ -4,52 +4,19 @@
 
 Changed files:
 - `apps/sluvo-web/src/views/HomeView.vue`
-- `apps/sluvo-web/public/media/home/agent-team-flow.mp4`
-- `apps/sluvo-web/public/media/home/canvas-skill-pack.mp4`
-- `apps/sluvo-web/public/media/home/community-remix-network.mp4`
-- `media/hyperframes/agent-team-flow/DESIGN.md`
-- `media/hyperframes/agent-team-flow/index.html`
-- `media/hyperframes/canvas-skill-pack/DESIGN.md`
-- `media/hyperframes/canvas-skill-pack/index.html`
-- `media/hyperframes/community-remix-network/DESIGN.md`
-- `media/hyperframes/community-remix-network/index.html`
+- `apps/sluvo-web/src/views/CommunityDirectoryView.vue`
+- `apps/sluvo-web/src/router/index.js`
+- `apps/sluvo-web/src/views/ProjectListView.vue`
+- `apps/sluvo-web/public/media/model-icons/*`
 - `doc/CHANGELOG_DEV.md`
 
 Impact scope:
-- Added HyperFrames-authored homepage preview videos for the Agent Team, Canvas Skill, and Community cards.
-- Wired the three remaining preview cards to the same muted looping hover-video logic used by the Open Canvas card.
-- Kept each preview grounded in its product meaning: agent orchestration, reusable skill packaging, and community publishing/remixing.
+- Reworked the homepage connected-model area into two continuously scrolling brand/logo rows, limited to providers actually used by the project.
+- Added community directory pages for canvas, Agent, and Skill sections with the shared Sluvo top bar and a return-home action.
+- Removed excluded providers from the model showcase and added the HappyHorse icon asset.
 
-Verification:
-- `npx hyperframes lint`
-- `npx hyperframes validate`
-- `npx hyperframes inspect --samples 12`
-- `npx hyperframes render --output D:\work\Sluvo\apps\sluvo-web\public\media\home\agent-team-flow.mp4 --quality standard --fps 30 --workers 1`
-- `npx hyperframes render --output D:\work\Sluvo\apps\sluvo-web\public\media\home\canvas-skill-pack.mp4 --quality standard --fps 30 --workers 1`
-- `npx hyperframes render --output D:\work\Sluvo\apps\sluvo-web\public\media\home\community-remix-network.mp4 --quality standard --fps 30 --workers 1`
+Verification suggestions:
 - `npm run build --workspace sluvo-web`
-- `git diff --check`
-- `Invoke-WebRequest -Method Head http://127.0.0.1:5174/media/home/{video}.mp4`
-
-## 2026-05-06
-
-Changed files:
-- `apps/sluvo-web/src/views/HomeView.vue`
-- `apps/sluvo-web/public/media/home/share-fork-canvas.mp4`
-- `media/hyperframes/share-fork-canvas/DESIGN.md`
-- `media/hyperframes/share-fork-canvas/index.html`
-- `doc/CHANGELOG_DEV.md`
-
-Impact scope:
-- Added a HyperFrames-authored homepage preview video for the logged-out hero "创作过程可分享" card.
-- Wired the first Open Canvas preview card to show the local muted looping video in its reserved media area while preserving the existing placeholder animation for the other cards.
-- Kept the video aligned with Sluvo's black/gold homepage palette and exported it as a lightweight 6-second MP4.
-
-Verification:
-- `npx hyperframes lint`
-- `npx hyperframes validate`
-- `npx hyperframes inspect --samples 12`
-- `npx hyperframes render --output D:\work\Sluvo\apps\sluvo-web\public\media\home\share-fork-canvas.mp4 --quality standard --fps 30 --workers 1`
 
 ## 2026-05-06
 
@@ -63,24 +30,358 @@ Changed files:
 
 Impact scope:
 - Added MiniMax speech tag and pause tag controls to the backend audio catalog based on the `t2a_async_v2` API docs.
-- Normalized Chinese speech-tag aliases like `（叹气）` and `（清嗓子）` into real MiniMax tags such as `(sighs)` and `(clear-throat)` before billing and submission.
-- Updated the async MiniMax audio request payload to use `audio_setting.audio_sample_rate` as documented.
-- Expanded the audio node speech-token menu to show all MiniMax speech tags, displaying Chinese labels while inserting the real provider tag into the prompt.
-- Changed the locate-canvas action to jump back to the most recently touched node instead of fitting the whole canvas.
-- Marked newly created nodes as the most recent locate target, including nodes created by dragging a new connection line.
-- Kept MiniMax speech-token chips displayed in Chinese while preserving the official provider tag as the submitted prompt value.
-- Made the audio reset action restore the default ability, model tier, voice, and base settings, then refresh the inspiration estimate.
-- Added a local audio inspiration estimate fallback so the default model tier shows a cost immediately while the backend estimate is pending.
-- Added a direct play button to generated audio cards and wired it to the node's audio element.
-- Rebuilt audio generation prompts from prompt segments so Chinese speech-token chips submit the real MiniMax tag values, with speech tags spaced as standalone provider tokens.
-- Completed the frontend audio emotion options to match the backend catalog and load them dynamically from audio model fields when available.
-- Passed `voice_setting.emotion` through the async MiniMax audio request path as well as the sync path.
-- Made text-heavy prompt nodes drag-first by default, with markdown text selection enabled via double-click.
+- Normalized Chinese speech-tag aliases into MiniMax provider tags before billing and submission.
+- Added local audio inspiration estimates, direct playback controls, prompt-segment submission, dynamic emotion options, and drag-first markdown behavior for text-heavy prompt nodes.
 
 Verification suggestions:
 - `npm run build --workspace sluvo-web`
 - `python -m pytest backend/tests/test_audio_model_registry.py`
 - `python -m py_compile backend/services/audio_model_registry.py backend/services/generation_record_service.py`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/HomeView.vue`
+- `apps/sluvo-web/public/media/home/*.mp4`
+- `media/hyperframes/*`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added HyperFrames-authored homepage preview videos for the Open Canvas, Agent Team, Canvas Skill, and Community preview cards.
+- Wired the homepage preview cards to muted looping local MP4 media while preserving the Sluvo black/gold visual direction.
+
+Verification suggestions:
+- `npx hyperframes lint`
+- `npx hyperframes validate`
+- `npx hyperframes inspect --samples 12`
+- `npm run build --workspace sluvo-web`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Fixed the waiting confirmation card so non-Agent running separator messages no longer prevent `满意，继续下一步` from appearing after Agent thinking finishes.
+- Treated an exact typed `满意，继续下一步` composer message as a continue action instead of Review feedback, with backend normalization as a safety net.
+- Prevented repeat Agent participation from showing another `加入群聊` invitation or `登场` label; repeated stages now read as feedback being handed back for continued processing.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Continue a waiting Agent step, confirm the card appears after thinking, and verify manually typing `满意，继续下一步` advances instead of creating a revision duplicate.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Delayed Agent timeline reveal so handoff invitations pause briefly before the next Agent thinking animation and final response appear.
+- Hid the `满意，继续下一步` confirmation card until the waiting-confirmation message is visible and no Agent thinking animation is still running.
+- Added a small animated ellipsis to handoff invitations to make the pause feel intentional instead of stalled.
+
+Verification suggestions:
+- `npm run build`
+- Start or continue an Agent run and verify the sequence is user message, handoff invitation, brief pause, next Agent thinking, result, then confirmation controls.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Updated the live Agent arrival badge to `登场` so the conversation flow feels more like a creative production handoff.
+
+Verification suggestions:
+- `npm run build`
+- Start an Agent run and verify completed Agent message headers show `登场`.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Constrained right-aligned user chat bubbles so short user messages no longer stretch across the Agent panel.
+- Displayed the signed-in creator nickname and initial for user messages instead of the generic `你` label.
+- Standardized live Agent message chips to `Agent + 中文岗位名`, such as `Agent 需求引导` and `Agent 导演`, while keeping the existing Sluvo color palette.
+
+Verification suggestions:
+- `npm run build`
+- Send a message and continue a waiting step, then verify user bubbles stay compact and Agent badges use the new Chinese role naming.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Reworked onboarding choices from generic creative preferences into real media generation parameters: image model/resolution/aspect ratio plus Seedance 2.0 model/generation type/duration/resolution/aspect ratio/audio.
+- Sent the selected onboarding media parameters as structured Run context, not only as chat text, so downstream Agent artifacts can read them.
+- Stored the selected media parameters on generated image/video placeholder nodes, artifact previews, cost estimates, and submitted generation records.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Select onboarding media parameters, continue to image/video stages, and verify artifact/node preview data and generation records include those parameters.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added a lightweight configuration picker to the 需求引导 Agent confirmation step for creative format, duration, aspect ratio, dialogue language, and mood keyword.
+- Included selected onboarding configuration in the visible user confirmation message before advancing to downstream Agents.
+- Kept the picker scoped to the first onboarding confirmation so later Agent stages stay focused on review and feedback.
+
+Verification suggestions:
+- `npm run build`
+- Start a new Agent run, change onboarding options, click `满意，继续下一步`, and verify the user message includes the selected configuration.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Connected each new Agent stage's first canvas artifact to the latest canvas node already written by the same Agent Run, so later stages extend the existing chain instead of starting a disconnected branch.
+- Positioned later-stage Agent artifacts to the right of the previous Agent node, keeping the generated workflow visually continuous.
+- Localized official Agent names in the conversation stream and handoff text while preserving backend agent keys.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Run several Agent stages and verify the new stage connects from the previous generated node, and the chat displays Chinese Agent role names.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Included typed composer feedback in the visible `满意，继续下一步` user message when users confirm a stage with extra instructions.
+- Forwarded non-empty continue feedback into the next Agent artifact prompt so downstream Agent output can reflect the user's added opinion.
+- Strengthened the Agent thinking indicator with a moving scan bar and animated dots so the panel clearly shows work in progress while waiting for the backend.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Type a note while a run is waiting, click `满意，继续下一步`, and verify the right-aligned user message contains the note before the next Agent starts thinking.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed the waiting-confirmation button to send `满意，继续下一步` as a visible user chat message.
+- Labeled persisted continue events as user confirmation messages instead of generic input messages in the Agent conversation stream.
+
+Verification suggestions:
+- `npm run build`
+- Start a waiting Agent run, click `满意，继续下一步`, and verify a right-aligned user confirmation bubble appears before the next Agent handoff.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Fixed the planning message serialization bug that could mark a new Agent Run as failed after the first stage.
+- Changed the Agent panel to reveal only stages that have actually appeared, so future visual/generation phases no longer show up immediately after send.
+- Suppressed read-only planning briefs from the attachment timeline; they now live in the chat message stream, while real canvas/media artifacts appear later as the workflow advances.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Send a short inspiration and verify the panel first shows the user message, planning Agent message, and current-stage confirmation without future phases or readonly attachment cards.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/services/sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Added immediate optimistic chat messages so the user's sent text and the Agent thinking state appear before canvas save and Run creation finish.
+- Changed the first Agent stage into a read-only planning brief so a short inspiration does not instantly write a full story, role, or scene node to the canvas.
+- Made the first Agent message explain planning, context, stage order, and confirmation needs before downstream creative Agents generate artifacts.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py`
+- `npm run build`
+- Start a fresh Agent run from a short inspiration and verify the panel first shows the user bubble plus Onboarding Agent planning, with no new canvas story node until the next stages run.
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Reworked the Agent panel conversation into a chat-first flow with stage header, Agent entry badges, centered handoff messages, compact artifact attachments, and a dedicated waiting-confirmation card above the composer.
+- Kept the existing Sluvo visual palette while making the runtime conversation read like a multi-Agent handoff instead of a duplicated Run timeline.
+- Composer placeholder now changes by Run state so waiting confirmation treats typed text as feedback and the explicit confirmation button advances the next stage.
+
+Verification suggestions:
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/database.py`
+- `backend/models.py`
+- `backend/schemas.py`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/FRONTEND_ARCHITECTURE.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Aligned the right-side Agent panel with the target multi-Agent conversation shape by rendering user messages, Agent bubbles, handoff events, waiting-confirmation prompts, confirmation events, and completion/failure states above the existing artifact timeline.
+- Added persisted Sluvo Agent Run/Step/Artifact support, multi-Agent event payloads, Run create/list/read/continue/confirm-cost/retry endpoints, and an SSE Run event stream at `/api/sluvo/agent/runs/{run_id}/events`.
+- Updated the default official Agent team to the target creative pipeline: Onboarding, Director, Scriptwriter, Character Artist, Storyboard Artist, Video Generator, Video Merger, and Review.
+- Kept typed feedback separate from explicit `继续下一步` progression; feedback is routed through Review-style revision while continue advances the next production Agent.
+
+Verification suggestions:
+- `python3 -m py_compile models.py schemas.py routers/sluvo.py services/sluvo_service.py`
+- `npm run build`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `backend/schemas.py`
+- `backend/routers/sluvo.py`
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Split Agent waiting-state composer behavior from explicit stage progression: typed feedback now revises the current stage, while `继续下一步` advances to the next Agent.
+- Agent continuation now carries previous artifacts into the next stage context so story structure, character, scene, and storyboard outputs stay connected to the drafted script.
+- Added tests for revising the current inspiration stage without accidentally creating the next story-structure step.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/schemas.py backend/tests/test_sluvo_service.py`
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Improved Agent-written text nodes with an artifact chip, preserved Agent artifact metadata through frontend persistence, and added denser script/setting Markdown styling.
+- Script, character, scene, prop, and storyboard nodes now read more like production cards instead of oversized generic text blocks.
+
+Verification suggestions:
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed Agent workflow artifacts so inspiration inputs become concrete script, character, scene, prop, and storyboard content instead of workflow-template text.
+- Added an LLM-backed artifact drafting path with a specific non-template fallback when the model key is unavailable.
+- Covered short inspiration input like `雨夜迈巴赫` so the first text node contains a usable script draft and no model/debug labels.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/tests/test_sluvo_service.py`
+- `python3 -m pytest backend/tests/test_sluvo_service.py -q`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Removed internal status, routing, model, and canvas-write metadata from ordinary 创作总监 direct-answer cards.
+- Ordinary question runs now show only the user's message and the assistant answer, while creative workflow runs still keep their stage and artifact labels.
+
+Verification suggestions:
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/UI_REQUIREMENTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Changed ordinary 创作总监 question replies into a compact direct-answer conversation card instead of rendering them as staged production steps.
+- Kept creative inspiration and script inputs on the existing staged Agent Team timeline.
+
+Verification suggestions:
+- `npm run build --workspace sluvo-web`
+- `git diff --check`
+
+## 2026-05-06
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `backend/services/sluvo_service.py`
+- `backend/tests/test_sluvo_service.py`
+- `doc/API_DEVELOPMENT.md`
+- `doc/BACKEND_CONTRACTS.md`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Restored the text-node local analysis inspiration-point estimate flow across frontend and backend.
+- Added the missing shared prompt-message builder used by both estimate and analysis, preventing the text-node estimate endpoint from failing at runtime.
+- The selected text-node composer now shows an estimated inspiration-point badge and keeps the estimate in sync after analysis completes.
+
+Verification suggestions:
+- `python3 -m py_compile backend/services/sluvo_service.py backend/routers/sluvo.py backend/tests/test_sluvo_service.py`
+- `npm run build --workspace sluvo-web`
 - `git diff --check`
 
 ## 2026-05-05
@@ -1247,4 +1548,18 @@ Verification suggestions:
 - Run `python3 -m py_compile backend/services/sluvo_service.py`.
 - Run `npm run build --workspace sluvo-web`.
 - Enter `你是谁` and verify the panel answers directly without writing canvas nodes; then enter a creative idea and verify it starts with a script draft.
+
+Changed files:
+- `apps/sluvo-web/src/views/CanvasWorkspaceView.vue`
+- `apps/sluvo-web/src/styles/base.css`
+- `doc/CHANGELOG_DEV.md`
+
+Impact scope:
+- Tightened the Agent panel into a chat-first layout: the current task card is gone, the user prompt appears as a right-aligned message, and Agent steps read as the main conversation.
+- Team/history controls now sit in a slim toolbar, and quick creative starters only appear before a run starts.
+- Read-only answer artifacts are rendered as message text instead of redundant artifact chips, making ordinary Q&A feel like direct chat.
+
+Verification suggestions:
+- Run `npm run build --workspace sluvo-web`.
+- Ask `你是谁` and verify the panel shows a user bubble plus a concise Agent answer, with no canvas-write chips or workflow clutter.
 

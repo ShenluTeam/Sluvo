@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import base64
 import binascii
+import asyncio
+import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlmodel import Session
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
+from sqlmodel import Session, select
 
 from core.security import decode_id, encode_id
-from database import ensure_sluvo_agent_workflow_tables, get_session
+from database import ensure_sluvo_agent_workflow_tables, get_session, session_scope
 from dependencies import get_current_team, get_current_team_member, get_current_user, require_team_permission
 from models import Team, TeamMemberLink, User
 from schemas import (
@@ -149,6 +152,48 @@ def _access_canvas_project(
         project_id=encode_id(canvas.project_id),
         permission=permission,
     )
+
+
+def _resolve_sluvo_stream_user(session: Session, token: Optional[str], authorization: Optional[str]) -> User:
+    auth_token = token
+    if not auth_token and authorization:
+        auth_token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    if not auth_token:
+        raise HTTPException(status_code=401, detail="未登录，请先登录")
+    user = session.exec(select(User).where(User.session_token == auth_token)).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="账号已被禁用")
+    return user
+
+
+def _resolve_sluvo_stream_team(session: Session, user: User):
+    team_member = session.exec(select(TeamMemberLink).where(TeamMemberLink.user_id == user.id)).first()
+    if not team_member:
+        raise HTTPException(status_code=403, detail="当前账号未加入任何团队")
+    team = session.get(Team, team_member.team_id)
+    if not team:
+        raise HTTPException(status_code=404, detail="团队不存在")
+    return team, team_member
+
+
+def _load_sluvo_agent_run_stream_snapshot(run_id: int, user_id: int):
+    with session_scope() as stream_session:
+        user = stream_session.get(User, user_id)
+        if not user:
+            return {"error": "登录已过期，请重新登录"}
+        team, team_member = _resolve_sluvo_stream_team(stream_session, user)
+        run = require_sluvo_agent_run(stream_session, run_id)
+        _access_project(
+            stream_session,
+            user=user,
+            team=team,
+            team_member=team_member,
+            project_id=encode_id(run.project_id),
+            permission=SLUVO_PERMISSION_READ,
+        )
+        return get_sluvo_agent_run_timeline(stream_session, run)
 
 
 def _decode_optional_request_id(value: Optional[str]) -> Optional[int]:
@@ -880,6 +925,74 @@ async def get_sluvo_agent_run(
     return get_sluvo_agent_run_timeline(session, run)
 
 
+@router.get("/api/sluvo/agent/runs/{run_id}/events")
+async def stream_sluvo_agent_run_events(
+    run_id: str,
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+):
+    ensure_sluvo_agent_workflow_tables()
+    real_run_id = decode_id(run_id)
+    with session_scope() as stream_session:
+        user = _resolve_sluvo_stream_user(stream_session, token, authorization)
+        team, team_member = _resolve_sluvo_stream_team(stream_session, user)
+        run = require_sluvo_agent_run(stream_session, real_run_id)
+        _access_project(
+            stream_session,
+            user=user,
+            team=team,
+            team_member=team_member,
+            project_id=encode_id(run.project_id),
+            permission=SLUVO_PERMISSION_READ,
+        )
+        user_id = int(user.id)
+        initial_snapshot = get_sluvo_agent_run_timeline(stream_session, run)
+
+    async def event_generator():
+        previous_json = ""
+        loop = asyncio.get_event_loop()
+
+        async def snapshot_event(snapshot):
+            nonlocal previous_json
+            snapshot_json = json.dumps(snapshot, ensure_ascii=False, default=str, sort_keys=True)
+            if snapshot_json == previous_json:
+                return None
+            previous_json = snapshot_json
+            return "event: snapshot\ndata: {0}\n\n".format(
+                json.dumps({"type": "snapshot", "timeline": snapshot}, ensure_ascii=False, default=str)
+            )
+
+        first = await snapshot_event(initial_snapshot)
+        if first:
+            yield first
+
+        while True:
+            await asyncio.sleep(2)
+            try:
+                snapshot = await loop.run_in_executor(None, lambda: _load_sluvo_agent_run_stream_snapshot(real_run_id, user_id))
+                if snapshot.get("error"):
+                    yield "event: status\ndata: {0}\n\n".format(
+                        json.dumps({"type": "status", "status": "error", "detail": snapshot["error"]}, ensure_ascii=False)
+                    )
+                    return
+                event = await snapshot_event(snapshot)
+                if event:
+                    yield event
+                else:
+                    yield "event: heartbeat\ndata: {0}\n\n".format(json.dumps({"type": "heartbeat"}, ensure_ascii=False))
+            except Exception as exc:
+                yield "event: status\ndata: {0}\n\n".format(
+                    json.dumps({"type": "status", "status": "error", "detail": str(exc)}, ensure_ascii=False)
+                )
+                return
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/api/sluvo/agent/runs/{run_id}/continue")
 async def continue_sluvo_run(
     run_id: str,
@@ -893,7 +1006,7 @@ async def continue_sluvo_run(
     ensure_sluvo_agent_workflow_tables()
     run = require_sluvo_agent_run(session, decode_id(run_id))
     _access_project(session, user=user, team=team, team_member=team_member, project_id=encode_id(run.project_id), permission=SLUVO_PERMISSION_AGENT)
-    return continue_sluvo_agent_run(session, run=run, user=user, content=payload.content, context_snapshot=payload.contextSnapshot)
+    return continue_sluvo_agent_run(session, run=run, user=user, content=payload.content, context_snapshot=payload.contextSnapshot, action=payload.action)
 
 
 @router.post("/api/sluvo/agent/runs/{run_id}/confirm-cost")

@@ -121,7 +121,7 @@
           :key="node.id"
           :ref="(element) => registerDirectNodeElement(node.id, element)"
           class="direct-workflow-node"
-          :class="[`direct-workflow-node--${node.type}`, { 'is-selected': selectedDirectNodeIds.includes(node.id), 'has-open-video-settings': activeVideoSettingsNodeId === node.id }]"
+          :class="[`direct-workflow-node--${node.type}`, { 'is-selected': selectedDirectNodeIds.includes(node.id), 'has-open-video-settings': activeVideoSettingsNodeId === node.id, 'is-agent-artifact': isAgentArtifactNode(node) }]"
           :style="{ left: `${node.x}px`, top: `${node.y}px`, zIndex: getDirectNodeZIndex(node, index) }"
           :data-direct-node-id="node.id"
           draggable="false"
@@ -138,6 +138,7 @@
           <div class="direct-workflow-node__title" :class="{ 'direct-workflow-node__title--uploaded': node.type === 'uploaded_asset' }">
             <span>{{ node.icon }}</span>
             <span class="direct-workflow-node__title-text">{{ node.title }}</span>
+            <span v-if="getAgentArtifactKindLabel(node)" class="direct-workflow-node__artifact-chip">{{ getAgentArtifactKindLabel(node) }}</span>
             <span v-if="node.type === 'uploaded_asset'" class="direct-workflow-node__dimensions">
               {{ getUploadedAssetDimensions(node) }}
             </span>
@@ -178,13 +179,13 @@
               <div v-if="node.media?.kind === 'image' && getUploadedImageSrc(node)" class="uploaded-asset__preview">
                 <img :src="getUploadedImageSrc(node)" :alt="node.media.name" draggable="false" @error="handleUploadedImageError(node.id)" />
               </div>
-              <div v-else-if="node.media?.kind === 'video' && getUploadedVideoSrc(node)" class="uploaded-asset__preview">
-                <video :src="getUploadedVideoSrc(node)" controls preload="metadata" />
+              <div v-else-if="node.media?.kind === 'video' && node.media?.url" class="uploaded-asset__preview">
+                <video :src="node.media.url" controls />
               </div>
-              <div v-else-if="node.media?.kind === 'audio' && getUploadedAudioSrc(node)" class="uploaded-asset__audio">
+              <div v-else-if="node.media?.kind === 'audio' && node.media?.url" class="uploaded-asset__audio">
                 <Music2 :size="42" />
                 <strong>{{ node.media.name }}</strong>
-                <audio :src="getUploadedAudioSrc(node)" controls preload="metadata" />
+                <audio :src="node.media.url" controls />
               </div>
               <div v-else-if="node.upload?.status === 'error'" class="uploaded-asset__state uploaded-asset__state--error">
                 <strong>{{ node.upload.message || '上传失败' }}</strong>
@@ -335,6 +336,7 @@
               <div
                 v-if="node.type === 'prompt_note' && node.prompt.trim()"
                 class="direct-workflow-node__markdown"
+                :class="{ 'direct-workflow-node__markdown--agent': isAgentArtifactNode(node) }"
                 tabindex="0"
                 v-html="renderDirectMarkdown(node.prompt)"
                 @dblclick.stop.prevent="selectDirectMarkdownText($event)"
@@ -1038,20 +1040,18 @@
           <div>
             <span>Canvas Agent Studio</span>
             <h2>创作总监</h2>
-            <p>{{ getAgentPanelSubtitle() }}</p>
+            <p v-if="getAgentPanelSubtitle()">{{ getAgentPanelSubtitle() }}</p>
           </div>
           <button type="button" aria-label="收起 Agent 面板" @click="setAgentPanelVisible(false)">
             <X :size="22" />
           </button>
         </header>
 
-        <section class="canvas-agent-panel__brief">
+        <section class="canvas-agent-chat-toolbar">
           <div>
-            <span>当前任务</span>
-            <strong>{{ getAgentRunGoalTitle() }}</strong>
-            <small>{{ getAgentRunPlainSummary() }}</small>
+            <span v-if="getAgentRunPlainSummary()">{{ getAgentRunPlainSummary() }}</span>
           </div>
-          <footer>
+          <nav>
             <button type="button" @click="agentPanel.advancedOpen = !agentPanel.advancedOpen">
               <SlidersHorizontal :size="15" />
               团队
@@ -1059,7 +1059,7 @@
             <button type="button" @click="agentPanel.historyOpen = !agentPanel.historyOpen">
               历史
             </button>
-          </footer>
+          </nav>
         </section>
 
         <section v-if="agentPanel.advancedOpen" class="canvas-agent-panel__controls">
@@ -1141,7 +1141,7 @@
           </section>
         </section>
 
-        <section class="canvas-agent-panel__context">
+        <section v-if="!agentPanel.activeRun" class="canvas-agent-panel__context">
           <button type="button" @click="startAgentWithSelection('请把当前故事目标拆成故事总览、角色场景、分镜计划和生成占位。')">拆故事</button>
           <button type="button" @click="startAgentWithSelection('请提取当前目标或选区里的角色、场景、道具和一致性锚点。')">提角色场景</button>
           <button type="button" @click="startAgentWithSelection('请根据当前选区生成分镜链路、首帧图片占位和视频生成占位。')">生成分镜链路</button>
@@ -1166,11 +1166,59 @@
         </section>
 
         <section class="canvas-agent-run">
-          <div v-if="agentPanel.activeRun" class="canvas-agent-run__summary">
-            <span>{{ getAgentRunStatusLabel(agentPanel.activeRun.run.status) }}</span>
-            <strong>{{ getAgentRunNextAction(agentPanel.activeRun) }}</strong>
-            <small>{{ getAgentRunMeta(agentPanel.activeRun) }}</small>
-            <small v-if="getAgentRunTeamLine(agentPanel.activeRun)">{{ getAgentRunTeamLine(agentPanel.activeRun) }}</small>
+          <div v-if="agentPanel.activeRun && !isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-stage-card">
+            <div class="canvas-agent-stage-card__icon">{{ getAgentCurrentStageInfo(agentPanel.activeRun).mark }}</div>
+            <div>
+              <strong>{{ getAgentCurrentStageInfo(agentPanel.activeRun).title }}</strong>
+              <p>{{ getAgentCurrentStageInfo(agentPanel.activeRun).description }}</p>
+            </div>
+          </div>
+          <div v-if="agentConversationMessages.length" class="canvas-agent-conversation canvas-agent-conversation--live">
+            <article
+              v-for="message in agentConversationMessages"
+              :key="message.id"
+              class="canvas-agent-message canvas-agent-message--live"
+              :class="getAgentConversationMessageClass(message)"
+            >
+              <template v-if="message.type === 'separator'">
+                <div class="canvas-agent-message__separator">
+                  <span>{{ message.content }}</span>
+                </div>
+              </template>
+              <template v-else-if="message.type === 'handoff'">
+                <div class="canvas-agent-message__handoff">
+                  <span>{{ message.content }}</span>
+                </div>
+              </template>
+              <template v-else>
+                <div class="canvas-agent-message__avatar">
+                  <span>{{ getAgentConversationAvatar(message) }}</span>
+                </div>
+                <div class="canvas-agent-message__content">
+                  <header class="canvas-agent-message__meta">
+                    <span class="canvas-agent-message__agent-chip">
+                      <b>{{ getAgentConversationRoleLabel(message) }}</b>
+                      {{ getAgentConversationDisplayName(message) }}
+                    </span>
+                    <strong>{{ message.kindLabel }}</strong>
+                    <time>{{ message.timeLabel }}</time>
+                  </header>
+                  <div class="canvas-agent-message__bubble">
+                    <p>{{ message.content }}</p>
+                    <div v-if="message.loading" class="canvas-agent-message__loading">
+                      <span />
+                      <span>正在思考</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </article>
+          </div>
+          <div v-if="agentPanel.activeRun && !isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-run__status">
+            <div>
+              <span>{{ getAgentRunStatusLabel(agentPanel.activeRun.run.status) }}</span>
+              <small>{{ getAgentRunMeta(agentPanel.activeRun) }}</small>
+            </div>
             <div v-if="getAgentStageProgress(agentPanel.activeRun).length" class="canvas-agent-stage-strip">
               <span
                 v-for="stage in getAgentStageProgress(agentPanel.activeRun)"
@@ -1181,7 +1229,32 @@
               </span>
             </div>
           </div>
-          <div v-if="agentPanel.activeRun?.steps?.length" class="canvas-agent-conversation">
+          <article v-if="agentPanel.activeRun?.run?.goal && !agentConversationMessages.length" class="canvas-agent-user-message" :class="{ 'is-question': isAgentQuestionRun(agentPanel.activeRun) }">
+            <span>你</span>
+            <p>{{ agentPanel.activeRun.run.goal }}</p>
+          </article>
+          <div v-if="isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-qa-thread">
+            <article class="canvas-agent-answer-card">
+              <div class="canvas-agent-answer-card__avatar">
+                <Bot :size="16" />
+              </div>
+              <div class="canvas-agent-answer-card__body">
+                <p>{{ getAgentQuestionAnswerText(agentPanel.activeRun) }}</p>
+              </div>
+            </article>
+          </div>
+          <div v-if="agentPanel.activeRun?.steps?.length && !isAgentQuestionRun(agentPanel.activeRun)" class="canvas-agent-attachment-thread">
+            <article v-for="step in getAgentAttachmentSteps(agentPanel.activeRun)" :key="step.id" class="canvas-agent-attachment-line">
+              <span>{{ step.agentName || 'Agent' }}</span>
+              <div class="canvas-agent-artifacts">
+                <b v-if="!getVisibleAgentArtifacts(step).length">{{ getAgentStepArtifactSummary(step) }}</b>
+                <span v-for="artifact in getVisibleAgentArtifacts(step)" :key="artifact.id" :class="`is-${artifact.status}`">
+                  {{ artifact.title }} · {{ getAgentArtifactStatusLabel(artifact.status) }}
+                </span>
+              </div>
+            </article>
+          </div>
+          <div v-else-if="agentPanel.activeRun?.steps?.length && !agentConversationMessages.length" class="canvas-agent-conversation">
             <article v-for="step in agentPanel.activeRun.steps" :key="step.id" class="canvas-agent-message" :class="`is-${step.status}`">
               <div class="canvas-agent-message__avatar">
                 <span>{{ getAgentStepNumber(step) }}</span>
@@ -1196,8 +1269,8 @@
                 </header>
                 <h3>{{ step.title }}</h3>
                 <p>{{ getAgentStepConversationText(step) }}</p>
-                <div v-if="step.artifacts?.length" class="canvas-agent-artifacts">
-                  <span v-for="artifact in step.artifacts" :key="artifact.id" :class="`is-${artifact.status}`">
+                <div v-if="getVisibleAgentArtifacts(step).length" class="canvas-agent-artifacts">
+                  <span v-for="artifact in getVisibleAgentArtifacts(step)" :key="artifact.id" :class="`is-${artifact.status}`">
                     {{ artifact.title }} · {{ getAgentArtifactStatusLabel(artifact.status) }}
                   </span>
                 </div>
@@ -1209,11 +1282,33 @@
             </article>
           </div>
           <p v-else class="canvas-agent-panel__empty">输入目标后，Agent Team 会按阶段接力，并把结果同步到画布。</p>
-          <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_user'" class="canvas-agent-run__continue">
-            <span>{{ getAgentRunNextAction(agentPanel.activeRun) }}</span>
-            <button type="button" :disabled="agentPanel.busy" @click="continueAgentRun(agentPanel.input.trim() || '继续')">
+          <footer v-if="isAgentRunConfirmationReady()" class="canvas-agent-run__confirm">
+            <div>
+              <span>等待确认</span>
+              <strong>{{ getAgentRunAwaitingAgent(agentPanel.activeRun) }} 已完成</strong>
+              <p>{{ getAgentRunNextAction(agentPanel.activeRun) }}</p>
+              <small>需要修改？在下方输入框描述调整意见后点击发送。</small>
+            </div>
+            <div v-if="isAgentOnboardingConfigVisible()" class="canvas-agent-onboarding-config">
+              <section v-for="group in onboardingConfigGroups" :key="group.key">
+                <strong>{{ group.label }}</strong>
+                <div>
+                  <button
+                    v-for="option in group.options"
+                    :key="option.value"
+                    type="button"
+                    :class="{ 'is-active': getAgentOnboardingConfigValue(group.key) === option.value }"
+                    :disabled="agentPanel.busy"
+                    @click="setAgentOnboardingConfig(group.key, option.value)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+              </section>
+            </div>
+            <button type="button" :disabled="agentPanel.busy" @click="continueAgentRunWithConfirmation">
               <Check :size="16" />
-              继续下一步
+              满意，继续下一步
             </button>
           </footer>
           <footer v-if="agentPanel.activeRun?.run?.status === 'waiting_cost_confirmation'" class="canvas-agent-run__cost">
@@ -1259,7 +1354,7 @@
         </section>
 
         <form class="canvas-agent-panel__composer" @submit.prevent="sendAgentPrompt">
-          <textarea v-model="agentPanel.input" rows="3" placeholder="例如：一个雨夜少年追逐神秘信号的动画短片，帮我提取角色、场景、道具并拆分镜。" />
+          <textarea v-model="agentPanel.input" rows="3" :placeholder="getAgentComposerPlaceholder()" />
           <button type="submit" :disabled="agentPanel.busy || !agentPanel.input.trim()">
             <Send :size="17" />
           </button>
@@ -1423,7 +1518,7 @@
         v-if="addMenu.visible"
         :position="addMenu.screen"
         :show-resources="!pendingDirectConnection.sourceId"
-        :disabled-items="getPendingConnectionDisabledMenuItems()"
+        :allowed-items="getPendingConnectionAllowedMenuItems()"
         :on-select="handleMenuSelect"
         @click.stop
         @select-node="handleMenuSelect"
@@ -1435,7 +1530,7 @@
         variant="reference"
         :position="referenceMenu.screen"
         :show-resources="false"
-        :disabled-items="getReferenceMenuDisabledItems()"
+        :disabled-items="['compose']"
         :on-select="handleReferenceSelect"
         @click.stop
         @select-node="handleReferenceSelect"
@@ -1651,6 +1746,7 @@ import {
   uploadSluvoCanvasAsset
 } from '../api/sluvoApi'
 import { buildApiUrl } from '../api/client'
+import { useAuthStore } from '../stores/authStore'
 import { useCanvasStore } from '../stores/canvasStore'
 import { useProjectStore } from '../stores/projectStore'
 
@@ -1804,26 +1900,9 @@ const nodeMeta = {
   }
 }
 
-const referenceMenuNodeTypes = {
-  text: 'prompt_note',
-  image: 'image_unit',
-  video: 'video_unit',
-  compose: 'media_board',
-  audio: 'audio_unit',
-  script: 'script_episode',
-  agent: 'agent_node'
-}
-const referenceMenuItemIds = Object.keys(referenceMenuNodeTypes)
-const downstreamConnectionRules = {
-  prompt_note: ['prompt_note', 'image_unit', 'video_unit', 'audio_unit'],
-  image_unit: ['prompt_note', 'image_unit', 'video_unit'],
-  video_unit: ['prompt_note', 'video_unit'],
-  audio_unit: ['video_unit'],
-  asset_table: ['image_unit', 'video_unit', 'audio_unit']
-}
-
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const canvasStore = useCanvasStore()
 const projectStore = useProjectStore()
 const projectTitle = ref(copy.untitled)
@@ -1847,91 +1926,119 @@ const publishDialog = reactive({
 })
 const agentProfiles = [
   { id: 'auto', label: '自动派发（推荐）' },
-  { id: 'canvas_agent', label: '画布协作 Agent' },
-  { id: 'story_director', label: '故事发展 Agent' },
-  { id: 'storyboard_director', label: '分镜导演 Agent' },
-  { id: 'prompt_polisher', label: 'Prompt 精修 Agent' },
-  { id: 'consistency_checker', label: '一致性检查 Agent' },
-  { id: 'production_planner', label: '制片调度 Agent' }
+  { id: 'onboarding', label: 'Onboarding Agent' },
+  { id: 'director', label: 'Director Agent' },
+  { id: 'scriptwriter', label: 'Scriptwriter Agent' },
+  { id: 'character_artist', label: 'Character Artist Agent' },
+  { id: 'storyboard_artist', label: 'Storyboard Artist Agent' },
+  { id: 'video_generator', label: 'Video Generator Agent' },
+  { id: 'video_merger', label: 'Video Merger Agent' },
+  { id: 'review', label: 'Review Agent' }
 ]
 const officialAgentCards = [
   {
-    name: '创作总监',
-    description: '识别询问、灵感或剧本；普通问题直接回答，创作输入进入接力。',
-    stepKey: 'understand_story',
+    name: 'Onboarding Agent',
+    description: '分析故事目标、输入素材和创作边界，决定是否进入完整流水线。',
+    stepKey: 'onboarding',
     stage: 'ideate',
-    profileKey: 'canvas_agent',
-    output: '意图/剧本',
-    rolePrompt: '你是 Sluvo 创作总监，负责判断用户输入是询问、灵感还是剧本。询问直接回答；灵感先扩成剧本；剧本进入角色、场景、道具和分镜接力。',
-    useCases: ['意图识别', '直接问答', '灵感扩写'],
+    profileKey: 'onboarding',
+    output: '需求分析',
+    rolePrompt: '你是 Onboarding Agent，负责理解用户创作目标、输入素材、风格偏好和边界，并把任务交给导演规划。',
+    useCases: ['需求分析', '创作边界', '输入整理'],
     inputTypes: ['text', 'image', 'canvas'],
-    outputTypes: ['answer', 'script', 'note'],
-    tools: ['read_canvas', 'route_agents', 'propose_canvas_patch']
+    outputTypes: ['brief', 'note'],
+    tools: ['read_canvas', 'route_agents']
   },
   {
-    name: '故事发展 Agent',
-    description: '把灵感扩成故事结构、冲突、人物关系和剧情节奏。',
-    stepKey: 'develop_story',
+    name: 'Director Agent',
+    description: '规划整体故事方向、风格、情绪、节奏和镜头策略。',
+    stepKey: 'director',
     stage: 'ideate',
-    profileKey: 'story_director',
-    output: '故事总览',
-    rolePrompt: '你是故事发展 Agent，负责把灵感、剧本或选区内容扩展为故事结构、冲突、角色关系、剧情节奏和可继续拆解的文本节点。',
-    useCases: ['故事扩写', '冲突设计', '剧情节奏'],
+    profileKey: 'director',
+    output: '导演规划',
+    rolePrompt: '你是 Director Agent，负责把需求转为故事方向、视听风格、节奏规划和后续 Agent 的工作边界。',
+    useCases: ['导演规划', '风格设定', '节奏设计'],
     inputTypes: ['text', 'canvas'],
-    outputTypes: ['story_outline', 'note'],
+    outputTypes: ['director_plan', 'note'],
     tools: ['read_canvas', 'propose_canvas_patch']
   },
   {
-    name: '角色场景 Agent',
-    description: '提取角色外观、场景气氛、道具和一致性锚点。',
-    stepKey: 'extract_assets',
-    stage: 'visualize',
-    profileKey: 'custom_agent',
-    output: '角色/场景',
-    rolePrompt: '你是角色场景 Agent，负责提取角色外观、服装、道具、场景、光线、色彩和连续性约束，输出可写入画布的角色与场景设定。',
-    useCases: ['角色提取', '场景设定', '道具整理'],
-    inputTypes: ['text', 'image', 'canvas'],
-    outputTypes: ['character_brief', 'scene_brief', 'note'],
-    tools: ['read_canvas', 'propose_canvas_patch']
-  },
-  {
-    name: '分镜导演 Agent',
-    description: '把故事拆成镜头、景别、动作、情绪和生成链路。',
-    stepKey: 'plan_storyboard',
-    stage: 'visualize',
-    profileKey: 'storyboard_director',
-    output: '分镜计划',
-    rolePrompt: '你是分镜导演 Agent，负责把故事或选区拆成镜号、景别、动作、情绪、画面提示词，以及首帧图片和视频生成链路。',
-    useCases: ['分镜拆解', '镜头设计', '生成链路'],
-    inputTypes: ['text', 'image', 'canvas'],
-    outputTypes: ['storyboard', 'image_prompt', 'video_prompt'],
-    tools: ['read_canvas', 'propose_canvas_patch']
-  },
-  {
-    name: 'Prompt 精修 Agent',
-    description: '把口语描述改成适合图片/视频生成的稳定提示词。',
-    stepKey: 'polish_prompt',
-    stage: 'visualize',
-    profileKey: 'prompt_polisher',
-    output: '精修 Prompt',
-    rolePrompt: '你是 Prompt 精修 Agent，负责把口语化描述、角色设定、分镜计划改写成适合图片和视频生成的稳定提示词。',
-    useCases: ['提示词润色', '首帧提示词', '视频动作描述'],
+    name: 'Scriptwriter Agent',
+    description: '创作剧本、角色关系、场景节拍和可拆分镜头结构。',
+    stepKey: 'scriptwriter',
+    stage: 'ideate',
+    profileKey: 'scriptwriter',
+    output: '剧本/镜头',
+    rolePrompt: '你是 Scriptwriter Agent，负责生成剧本、角色关系、场景节拍和分镜草案。',
+    useCases: ['剧本创作', '角色关系', '分镜草案'],
     inputTypes: ['text', 'canvas'],
-    outputTypes: ['prompt', 'note'],
+    outputTypes: ['script', 'storyboard_plan'],
     tools: ['read_canvas', 'propose_canvas_patch']
   },
   {
-    name: '制片调度 Agent',
-    description: '整理缺失输入、创建媒体占位，并等待用户确认消耗。',
-    stepKey: 'prepare_generation',
+    name: 'Character Artist Agent',
+    description: '生成角色外观、服装、道具和一致性视觉锚点。',
+    stepKey: 'character_artist',
+    stage: 'visualize',
+    profileKey: 'character_artist',
+    output: '角色图',
+    rolePrompt: '你是 Character Artist Agent，负责把角色描述转成稳定视觉设定和角色图生成计划。',
+    useCases: ['角色设定', '一致性锚点', '角色图生成'],
+    inputTypes: ['text', 'image', 'canvas'],
+    outputTypes: ['character_brief', 'image_placeholder'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: 'Storyboard Artist Agent',
+    description: '为每个镜头规划分镜首帧、构图、景别和画面提示词。',
+    stepKey: 'storyboard_artist',
+    stage: 'visualize',
+    profileKey: 'storyboard_artist',
+    output: '分镜首帧',
+    rolePrompt: '你是 Storyboard Artist Agent，负责把镜头计划转成分镜首帧、构图、景别和画面提示词。',
+    useCases: ['分镜首帧', '构图设计', '画面提示词'],
+    inputTypes: ['text', 'image', 'canvas'],
+    outputTypes: ['storyboard', 'image_prompt', 'image_placeholder'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: 'Video Generator Agent',
+    description: '基于首帧和镜头动作创建视频生成任务，并等待扣费确认。',
+    stepKey: 'video_generator',
     stage: 'animate',
-    profileKey: 'production_planner',
-    output: '生成任务',
-    rolePrompt: '你是制片调度 Agent，负责检查画布中缺失的生成输入，创建图片、视频、音频占位节点，并在任何消耗灵感值的动作前等待用户确认。',
-    useCases: ['任务排期', '媒体占位', '扣费确认'],
-    inputTypes: ['canvas', 'storyboard'],
-    outputTypes: ['image_placeholder', 'video_placeholder', 'report'],
+    profileKey: 'video_generator',
+    output: '视频任务',
+    rolePrompt: '你是 Video Generator Agent，负责根据首帧、镜头运动和动作描述创建视频生成任务；扣费媒体任务必须等待用户确认。',
+    useCases: ['图生视频', '文生视频', '扣费确认'],
+    inputTypes: ['image', 'text', 'storyboard'],
+    outputTypes: ['video_placeholder', 'media_result'],
     tools: ['read_canvas', 'propose_canvas_patch', 'estimate_cost']
+  },
+  {
+    name: 'Video Merger Agent',
+    description: '拼接视频片段，整理最终预览、导出和交付状态。',
+    stepKey: 'video_merger',
+    stage: 'deploy',
+    profileKey: 'video_merger',
+    output: '成片',
+    rolePrompt: '你是 Video Merger Agent，负责把分镜视频合成为最终成片，并整理导出与交付信息。',
+    useCases: ['视频拼接', '成片预览', '导出'],
+    inputTypes: ['video', 'canvas'],
+    outputTypes: ['media_result', 'report'],
+    tools: ['read_canvas', 'propose_canvas_patch']
+  },
+  {
+    name: 'Review Agent',
+    description: '处理用户反馈，判断应从哪位 Agent 重新进入流水线。',
+    stepKey: 'review',
+    stage: 'ideate',
+    profileKey: 'review',
+    output: '反馈路由',
+    rolePrompt: '你是 Review Agent，负责读取用户反馈，判断需要修改的对象和重新进入流水线的 Agent。',
+    useCases: ['反馈分析', '精准重生成', '重路由'],
+    inputTypes: ['text', 'canvas'],
+    outputTypes: ['report', 'route'],
+    tools: ['read_canvas', 'route_agents']
   }
 ]
 const agentStarterTemplates = [
@@ -1970,6 +2077,138 @@ const agentModelOptions = [
   { id: 'deepseek-v4-flash', label: 'DeepSeek v4 Flash' },
   { id: 'deepseek-v4-pro', label: 'DeepSeek v4 Pro' }
 ]
+const agentConversationNameLabels = {
+  onboarding: '需求引导',
+  'onboarding agent': '需求引导',
+  director: '导演',
+  'director agent': '导演',
+  scriptwriter: '编剧',
+  'scriptwriter agent': '编剧',
+  character_artist: '角色设计',
+  'character artist agent': '角色设计',
+  storyboard_artist: '分镜设计',
+  'storyboard artist agent': '分镜设计',
+  video_generator: '视频生成',
+  'video generator agent': '视频生成',
+  video_merger: '成片合成',
+  'video merger agent': '成片合成',
+  review: '审核反馈',
+  'review agent': '审核反馈',
+  'agent team': '协作团队',
+  system: '系统'
+}
+const agentConversationRoleLabels = {
+  onboarding: 'Agent',
+  'onboarding agent': 'Agent',
+  director: 'Agent',
+  'director agent': 'Agent',
+  scriptwriter: 'Agent',
+  'scriptwriter agent': 'Agent',
+  character_artist: 'Agent',
+  'character artist agent': 'Agent',
+  storyboard_artist: 'Agent',
+  'storyboard artist agent': 'Agent',
+  video_generator: 'Agent',
+  'video generator agent': 'Agent',
+  video_merger: 'Agent',
+  'video merger agent': 'Agent',
+  review: 'Agent',
+  'review agent': 'Agent',
+  'agent team': '团队',
+  system: '系统',
+  user: '用户'
+}
+const agentConversationTextReplacements = [
+  ['需求引导 Agent', '需求引导'],
+  ['导演 Agent', '导演'],
+  ['编剧 Agent', '编剧'],
+  ['角色设计 Agent', '角色设计'],
+  ['分镜设计 Agent', '分镜设计'],
+  ['视频生成 Agent', '视频生成'],
+  ['成片合成 Agent', '成片合成'],
+  ['审核反馈 Agent', '审核反馈']
+]
+const onboardingConfigGroups = [
+  {
+    key: 'image.model_code',
+    label: '图片模型',
+    options: [
+      { value: 'nano-banana-pro', label: 'Nano Pro' },
+      { value: 'nano-banana-2', label: 'Nano 2' },
+      { value: 'gpt-image-2-fast', label: 'GPT Image Fast' }
+    ]
+  },
+  {
+    key: 'image.resolution',
+    label: '图片清晰度',
+    options: [
+      { value: '1k', label: '1K' },
+      { value: '2k', label: '2K' },
+      { value: '4k', label: '4K' }
+    ]
+  },
+  {
+    key: 'image.aspect_ratio',
+    label: '图片画幅',
+    options: [
+      { value: '16:9', label: '16:9' },
+      { value: '9:16', label: '9:16' },
+      { value: '1:1', label: '1:1' }
+    ]
+  },
+  {
+    key: 'video.model_code',
+    label: '视频模型',
+    options: [
+      { value: 'seedance_20_fast', label: 'Seedance 2.0 Fast' },
+      { value: 'seedance_20', label: 'Seedance 2.0' }
+    ]
+  },
+  {
+    key: 'video.generation_type',
+    label: '视频方式',
+    options: [
+      { value: 'text_to_video', label: '文生视频' },
+      { value: 'image_to_video', label: '图生视频' },
+      { value: 'reference_to_video', label: '多模态参考' }
+    ]
+  },
+  {
+    key: 'video.duration',
+    label: '视频时长',
+    options: [
+      { value: 5, label: '5秒' },
+      { value: 8, label: '8秒' },
+      { value: 12, label: '12秒' }
+    ]
+  },
+  {
+    key: 'video.resolution',
+    label: '视频清晰度',
+    options: [
+      { value: '720p', label: '720p' },
+      { value: '1080p', label: '1080p' },
+      { value: '2k', label: '2K' }
+    ]
+  },
+  {
+    key: 'video.aspect_ratio',
+    label: '视频画幅',
+    options: [
+      { value: 'adaptive', label: '自适应' },
+      { value: '16:9', label: '16:9' },
+      { value: '9:16', label: '9:16' }
+    ]
+  },
+  {
+    key: 'video.audio_enabled',
+    label: '视频音频',
+    options: [
+      { value: false, label: '无音频' },
+      { value: true, label: '生成音频' }
+    ]
+  }
+]
 const agentPanel = reactive({
   visible: true,
   advancedOpen: false,
@@ -1985,6 +2224,27 @@ const agentPanel = reactive({
   activeRun: null,
   runId: '',
   runs: [],
+  optimisticMessages: [],
+  conversationRevealRunId: '',
+  conversationRevealSchedule: {},
+  conversationRevealLastCursor: 0,
+  onboardingConfig: {
+    image: {
+      model_code: 'nano-banana-pro',
+      resolution: '2k',
+      aspect_ratio: '16:9'
+    },
+    video: {
+      model_code: 'seedance_20_fast',
+      generation_type: 'text_to_video',
+      duration: 5,
+      resolution: '720p',
+      aspect_ratio: 'adaptive',
+      audio_enabled: false,
+      real_person_mode: false,
+      web_search: false
+    }
+  },
   loadingRuns: false,
   confirmingCost: false,
   historyOpen: false,
@@ -2007,6 +2267,14 @@ const agentPanel = reactive({
     toolsText: 'read_canvas, propose_canvas_patch'
   }
 })
+let agentRunEventSource = null
+let agentRunEventStreamId = ''
+const agentConversationClock = ref(Date.now())
+let agentConversationClockTimer = null
+const AGENT_HANDOFF_PAUSE_MS = 760
+const AGENT_THINKING_REVEAL_MS = 980
+const AGENT_MESSAGE_REVEAL_MS = 170
+const AGENT_CONFIRM_REVEAL_MS = 260
 const textNodeComposer = reactive({
   input: '',
   modelCode: 'deepseek-v4-flash',
@@ -2027,8 +2295,8 @@ let previousDocumentKeydown = null
 let previousWindowKeydown = null
 let frameResizeObserver = null
 let uploadTimer = null
-let textNodeEstimateTimer = null
 let autoSaveTimer = null
+let textNodeEstimateTimer = null
 let suppressCanvasSaveScheduling = false
 let suppressAgentSelectionWatch = false
 const imageGenerationTimers = new Map()
@@ -2356,6 +2624,7 @@ const pendingAgentActionCount = computed(() => (agentPanel.pendingAction ? 1 : 0
 const hasAgentTemplateSelection = computed(() => Boolean(getSelectedAgentTemplate()))
 const agentSessionHistory = computed(() => agentPanel.history.slice(0, 8))
 const agentRunHistory = computed(() => agentPanel.runs.slice(0, 8))
+const agentConversationMessages = computed(() => buildAgentConversationMessages(agentPanel.activeRun, agentPanel.optimisticMessages))
 const showStarterStrip = computed(
   () =>
     !canvasActivated.value &&
@@ -2597,6 +2866,7 @@ watch(
   () => [agentPanel.profile, agentPanel.modelCode],
   (next, previous = []) => {
     if (suppressAgentSelectionWatch) return
+    closeAgentRunEventStream()
     agentPanel.sessionId = ''
     agentPanel.runId = ''
     agentPanel.activeRun = null
@@ -2619,6 +2889,7 @@ watch(
 watch(
   () => route.params.projectId,
   () => {
+    closeAgentRunEventStream()
     loadProjectCanvas()
   }
 )
@@ -2631,6 +2902,7 @@ watch(
 )
 
 onMounted(() => {
+  startAgentConversationClock()
   previousDocumentKeydown = document.onkeydown
   previousWindowKeydown = window.onkeydown
   const storedAgentPanelVisible = window.localStorage.getItem(AGENT_PANEL_VISIBILITY_STORAGE_KEY)
@@ -2700,7 +2972,9 @@ onBeforeUnmount(() => {
   window.clearTimeout(autoSaveTimer)
   window.clearTimeout(textNodeEstimateTimer)
   window.clearInterval(uploadTimer)
+  stopAgentConversationClock()
   window.clearTimeout(clipboardPasteFallbackTimer)
+  closeAgentRunEventStream()
   window.cancelAnimationFrame(directPortLayoutRaf)
   clearLocalPreviewUrls()
   clearImageGenerationTimers()
@@ -2890,6 +3164,7 @@ function buildAgentContextSnapshot(options = {}) {
     targetNode: targetNode ? serializeAgentContextNode(targetNode) : null,
     targetNodeId: targetNode?.id || '',
     sourceSurface,
+    onboardingConfig: cloneAgentOnboardingConfig(),
     agentProfile: options.agentProfile || agentTemplateId || agentPanel.profile,
     agentTemplateId,
     agentName,
@@ -2924,7 +3199,11 @@ async function sendAgentPrompt() {
   const content = agentPanel.input.trim()
   if (!content || agentPanel.busy) return
   if (agentPanel.runId && agentPanel.activeRun?.run?.status === 'waiting_user') {
-    await continueAgentRun(content)
+    if (isAgentContinueIntent(content)) {
+      await continueAgentRun(content)
+    } else {
+      await reviseAgentRun(content)
+    }
   } else {
     await runAgentPrompt(content)
   }
@@ -2935,10 +3214,75 @@ async function startAgentWithSelection(content) {
   await runAgentPrompt(content)
 }
 
+function setAgentOptimisticMessages(content, action = 'start') {
+  const cleanContent = String(content || '').trim()
+  if (!cleanContent) {
+    agentPanel.optimisticMessages = []
+    return
+  }
+  const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const isRevise = action === 'revise'
+  const isContinue = action === 'continue'
+  const agentName = isRevise ? 'Review Agent' : agentPanel.activeRun ? getAgentRunAwaitingAgent(agentPanel.activeRun) : 'Onboarding Agent'
+  const agentKey = isRevise ? 'review' : getAgentConversationKey(agentName, 'onboarding')
+  agentPanel.optimisticMessages = [
+    {
+      id: `optimistic-user-${Date.now()}`,
+      type: 'user',
+      agentKey: 'user',
+      agentName: '你',
+      kindLabel: isRevise ? '反馈' : isContinue ? '确认' : '输入',
+      status: 'succeeded',
+      statusLabel: '已发送',
+      timeLabel,
+      content: cleanContent
+    },
+    {
+      id: `optimistic-agent-${Date.now()}`,
+      type: 'agent',
+      agentKey,
+      agentName,
+      kindLabel: '思考中',
+      status: 'running',
+      statusLabel: '处理中',
+      timeLabel,
+      loading: true,
+      content: isRevise
+        ? '我会先理解你的修改意见，再判断应该回到哪一个 Agent 阶段处理。'
+        : isContinue
+          ? '收到确认，正在准备下一位 Agent 的接力上下文。'
+          : '我先分析你的灵感，明确创作边界、执行顺序和需要邀请的 Agent。'
+    }
+  ]
+}
+
+function clearAgentOptimisticMessages() {
+  agentPanel.optimisticMessages = []
+}
+
+function markAgentOptimisticFailure(message) {
+  const content = String(message || '请求失败，请稍后重试。').trim()
+  agentPanel.optimisticMessages = (agentPanel.optimisticMessages || []).map((item) =>
+    item.type === 'agent'
+      ? {
+          ...item,
+          kindLabel: '失败',
+          status: 'failed',
+          statusLabel: '失败',
+          loading: false,
+          content
+        }
+      : item
+  )
+}
+
 async function runAgentPrompt(content, options = {}) {
   setAgentPanelVisible(true)
   agentPanel.busy = true
   agentPanel.error = ''
+  resetAgentConversationReveal('')
+  setAgentOptimisticMessages(content, 'start')
+  agentPanel.input = ''
   agentPanel.pendingAction = null
   agentPanel.targetNodeId = options.targetNode?.id || ''
   agentPanel.sourceSurface = options.sourceSurface || 'panel'
@@ -2959,10 +3303,11 @@ async function runAgentPrompt(content, options = {}) {
       contextSnapshot
     })
     setActiveAgentRun(response)
+    clearAgentOptimisticMessages()
     await Promise.allSettled([loadAgentRuns({ restore: false }), loadAgentHistory(), loadProjectCanvas()])
-    agentPanel.input = ''
   } catch (error) {
     agentPanel.error = error instanceof Error ? error.message : 'Agent Run 创建失败'
+    markAgentOptimisticFailure(agentPanel.error)
     if (error?.status === 401) router.push({ name: 'login', query: { redirect: route.fullPath } })
   } finally {
     agentPanel.busy = false
@@ -2970,20 +3315,47 @@ async function runAgentPrompt(content, options = {}) {
 }
 
 async function continueAgentRun(content) {
+  return submitAgentRunContinuation(content, 'continue')
+}
+
+function isAgentContinueIntent(content) {
+  const normalized = String(content || '').replace(/\s+/g, '').replace(/，/g, ',')
+  return ['满意,继续下一步', '继续下一步', '继续'].includes(normalized)
+}
+
+async function continueAgentRunWithConfirmation() {
+  const feedback = agentPanel.input.trim()
+  const configSummary = buildAgentOnboardingConfigSummary()
+  const lines = ['满意，继续下一步']
+  if (configSummary) lines.push(`基础配置：${configSummary}`)
+  if (feedback) lines.push(`补充意见：${feedback}`)
+  const content = lines.join('\n')
+  return continueAgentRun(content)
+}
+
+async function reviseAgentRun(content) {
+  return submitAgentRunContinuation(content, 'revise')
+}
+
+async function submitAgentRunContinuation(content, action = 'continue') {
   if (!agentPanel.runId || agentPanel.busy) return
   agentPanel.busy = true
   agentPanel.error = ''
+  setAgentOptimisticMessages(content, action)
+  agentPanel.input = ''
   try {
     await saveCanvasNow()
     const response = await continueSluvoAgentRun(agentPanel.runId, {
       content,
+      action,
       contextSnapshot: buildAgentContextSnapshot({ sourceSurface: agentPanel.sourceSurface || 'panel' })
     })
     setActiveAgentRun(response)
+    clearAgentOptimisticMessages()
     await Promise.allSettled([loadAgentRuns({ restore: false }), loadProjectCanvas()])
-    agentPanel.input = ''
   } catch (error) {
     agentPanel.error = error instanceof Error ? error.message : '继续补充失败'
+    markAgentOptimisticFailure(agentPanel.error)
   } finally {
     agentPanel.busy = false
   }
@@ -3179,8 +3551,444 @@ function getAgentHistorySummary(item) {
 
 function getAgentPanelSubtitle() {
   if (agentPanel.busy) return '正在协调 Agent Team'
+  if (isAgentQuestionRun(agentPanel.activeRun)) return ''
   if (agentPanel.activeRun?.run?.status) return getAgentRunStatusLabel(agentPanel.activeRun.run.status)
   return '把目标拆成可执行画布产物'
+}
+
+function getAgentCurrentStageInfo(timeline) {
+  const steps = Array.isArray(timeline?.steps) ? timeline.steps : []
+  const latestWaiting = [...steps].reverse().find((step) => !['succeeded', 'skipped'].includes(step.status))
+  const latestDone = [...steps].reverse().find((step) => step.status === 'succeeded')
+  const stage = latestWaiting?.input?.stage || latestWaiting?.output?.stage || latestDone?.input?.stage || latestDone?.output?.stage || 'ideate'
+  const map = {
+    ideate: { title: '构思阶段', description: '描述你的故事想法，Agent Team 会先理解目标并创作剧本。', mark: 'I' },
+    visualize: { title: '可视化阶段', description: '正在设计角色形象、分镜首帧和画面提示词。', mark: 'V' },
+    animate: { title: '动画阶段', description: '正在准备图片和视频生成任务，扣费动作会等待确认。', mark: 'A' },
+    deploy: { title: '交付阶段', description: '正在整理成片、导出和最终交付状态。', mark: 'D' }
+  }
+  return map[stage] || map.ideate
+}
+
+function getAgentRunAwaitingAgent(timeline) {
+  const summaryAgent = String(timeline?.run?.summary?.awaitingAgent || '').trim()
+  if (summaryAgent) return getAgentConversationDisplayName(summaryAgent)
+  const waitingStep = [...(timeline?.steps || [])].reverse().find((step) => ['waiting_user', 'waiting_cost_confirmation'].includes(step.status))
+  if (waitingStep?.agentName) return getAgentConversationDisplayName(waitingStep.agentName)
+  return getAgentConversationDisplayName('Agent Team')
+}
+
+function getAgentAttachmentSteps(timeline) {
+  return (timeline?.steps || []).filter((step) => {
+    if (step.stepKey === 'answer_question') return false
+    return getVisibleAgentArtifacts(step).length
+  })
+}
+
+function isAgentOnboardingConfigVisible() {
+  if (agentPanel.activeRun?.run?.status !== 'waiting_user') return false
+  const latestStep = [...(agentPanel.activeRun?.steps || [])].reverse().find((step) => step?.stepKey)
+  return latestStep?.stepKey === 'onboarding'
+}
+
+function getAgentOnboardingConfigValue(key) {
+  const keys = String(key || '').split('.').filter(Boolean)
+  return keys.reduce((value, item) => (value && typeof value === 'object' ? value[item] : undefined), agentPanel.onboardingConfig) ?? ''
+}
+
+function setAgentOnboardingConfig(key, value) {
+  const keys = String(key || '').split('.').filter(Boolean)
+  if (!keys.length) return
+  let target = agentPanel.onboardingConfig
+  keys.slice(0, -1).forEach((item) => {
+    if (!target[item] || typeof target[item] !== 'object') target[item] = {}
+    target = target[item]
+  })
+  target[keys.at(-1)] = value
+}
+
+function cloneAgentOnboardingConfig() {
+  return JSON.parse(JSON.stringify(agentPanel.onboardingConfig || {}))
+}
+
+function buildAgentOnboardingConfigSummary() {
+  if (!isAgentOnboardingConfigVisible()) return ''
+  return onboardingConfigGroups
+    .map((group) => {
+      const value = getAgentOnboardingConfigValue(group.key)
+      return value ? `${group.label}：${value}` : ''
+    })
+    .filter(Boolean)
+    .join('；')
+}
+
+function getAgentComposerPlaceholder() {
+  if (agentPanel.activeRun?.run?.status === 'waiting_user') return '输入修改意见，发送后会先回到 Review Agent 重新路由...'
+  if (agentPanel.activeRun?.run?.status === 'waiting_cost_confirmation') return '可补充生成约束；确认扣费请点击上方按钮...'
+  if (agentPanel.busy) return 'Agent 正在处理，你也可以继续补充反馈...'
+  return '输入你的想法或反馈...'
+}
+
+function getAgentConversationTimeLabel(event) {
+  const value = event?.createdAt || event?.created_at || ''
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function getAgentConversationKey(agentName, fallback = 'agent') {
+  const source = String(agentName || fallback || 'agent').trim()
+  const normalized = source
+    .replace(/\s*Agent$/i, '')
+    .replace(/[^a-z0-9_\u4e00-\u9fa5]/gi, '')
+    .trim()
+  return normalized || fallback
+}
+
+function getAgentConversationIdentityKey(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^@/, '')
+    .replace(/-/g, '_')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+}
+
+function startAgentConversationClock() {
+  if (agentConversationClockTimer || typeof window === 'undefined') return
+  agentConversationClock.value = Date.now()
+  agentConversationClockTimer = window.setInterval(() => {
+    agentConversationClock.value = Date.now()
+  }, 120)
+}
+
+function stopAgentConversationClock() {
+  if (typeof window !== 'undefined' && agentConversationClockTimer) {
+    window.clearInterval(agentConversationClockTimer)
+  }
+  agentConversationClockTimer = null
+}
+
+function resetAgentConversationReveal(runId = '') {
+  agentPanel.conversationRevealRunId = runId
+  agentPanel.conversationRevealSchedule = {}
+  agentPanel.conversationRevealLastCursor = 0
+}
+
+function getAgentTimelineEventKey(event, index) {
+  const eventType = event?.eventType || event?.payload?.eventType || 'event'
+  return String(event?.id || `${eventType}-${index}`)
+}
+
+function getAgentThinkingContent(agentKey) {
+  const key = getAgentConversationIdentityKey(agentKey)
+  if (key === 'review') return '我先理解你的修改意见，再判断应该交回哪一位 Agent 处理。'
+  if (key === 'onboarding') return '我先整理创作边界、任务顺序和需要你确认的配置。'
+  return '我正在读取上一阶段产物，规划接下来要处理的内容。'
+}
+
+function getAgentConversationRevealHold(message) {
+  if (message.type === 'handoff') return AGENT_HANDOFF_PAUSE_MS
+  if (message.loading) return AGENT_THINKING_REVEAL_MS
+  if (message.type === 'waiting') return AGENT_CONFIRM_REVEAL_MS
+  if (message.type === 'agent') return AGENT_MESSAGE_REVEAL_MS
+  return 120
+}
+
+function applyAgentConversationRevealSchedule(messages, timeline) {
+  const runId = timeline?.run?.id || ''
+  if (runId && agentPanel.conversationRevealRunId !== runId) {
+    resetAgentConversationReveal(runId)
+  }
+  const now = Date.now()
+  const schedule = agentPanel.conversationRevealSchedule || {}
+  const validIds = new Set(messages.map((message) => message.id))
+  let scheduleChanged = false
+  Object.keys(schedule).forEach((id) => {
+    if (!validIds.has(id)) {
+      delete schedule[id]
+      scheduleChanged = true
+    }
+  })
+  const scheduledTimes = Object.values(schedule)
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0)
+  let cursor = Math.max(now, agentPanel.conversationRevealLastCursor || 0, ...scheduledTimes)
+  messages.forEach((message) => {
+    if (!Number.isFinite(Number(schedule[message.id]))) {
+      schedule[message.id] = cursor
+      scheduleChanged = true
+      cursor += getAgentConversationRevealHold(message)
+    } else {
+      cursor = Math.max(cursor, Number(schedule[message.id]) + getAgentConversationRevealHold(message))
+    }
+  })
+  if (scheduleChanged) {
+    agentPanel.conversationRevealSchedule = schedule
+    agentPanel.conversationRevealLastCursor = cursor
+  }
+  const clock = agentConversationClock.value
+  const decorated = messages.map((message) => ({ ...message, revealAt: Number(schedule[message.id] || now) }))
+  const visibleIds = new Set(decorated.filter((message) => message.revealAt <= clock).map((message) => message.id))
+  return decorated.filter((message) => {
+    if (message.revealAt > clock) return false
+    if (message.loading && message.loadingFor && visibleIds.has(message.loadingFor)) return false
+    return true
+  })
+}
+
+function isAgentConversationUser(messageOrName) {
+  if (typeof messageOrName === 'object') {
+    const key = getAgentConversationIdentityKey(messageOrName?.agentKey || messageOrName?.agentName)
+    return messageOrName?.type === 'user' || key === 'user' || key === '你'
+  }
+  const key = getAgentConversationIdentityKey(messageOrName)
+  return key === 'user' || key === '你'
+}
+
+function getAgentUserDisplayName() {
+  const displayName = String(authStore.displayName || '').trim()
+  return displayName || '你'
+}
+
+function getAgentConversationDisplayName(messageOrName) {
+  if (isAgentConversationUser(messageOrName)) return getAgentUserDisplayName()
+  const name = typeof messageOrName === 'object'
+    ? (messageOrName.agentName || messageOrName.agentKey || '')
+    : messageOrName
+  const key = typeof messageOrName === 'object' ? messageOrName.agentKey : ''
+  const keyLabel = agentConversationNameLabels[getAgentConversationIdentityKey(key)]
+  if (keyLabel) return keyLabel
+  const nameLabel = agentConversationNameLabels[getAgentConversationIdentityKey(name)]
+  return nameLabel || String(name || 'Agent')
+}
+
+function getAgentConversationRoleLabel(message) {
+  if (isAgentConversationUser(message)) return '用户'
+  const keyLabel = agentConversationRoleLabels[getAgentConversationIdentityKey(message?.agentKey)]
+  if (keyLabel) return keyLabel
+  const nameLabel = agentConversationRoleLabels[getAgentConversationIdentityKey(message?.agentName)]
+  if (nameLabel) return nameLabel
+  if (String(message?.agentName || message?.agentKey || '').toLowerCase().includes('agent')) return 'Agent'
+  return getAgentConversationKey(message?.agentName || message?.agentKey || 'agent')
+}
+
+function localizeAgentConversationText(content) {
+  let text = String(content || '')
+  Object.entries(agentConversationNameLabels)
+    .filter(([key]) => key.includes('agent') || key === 'agent team')
+    .sort((a, b) => b[0].length - a[0].length)
+    .forEach(([source, target]) => {
+      const pattern = new RegExp(source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+      text = text.replace(pattern, target)
+    })
+  agentConversationTextReplacements.forEach(([source, target]) => {
+    const pattern = new RegExp(source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    text = text.replace(pattern, target)
+  })
+  return text
+}
+
+function buildAgentConversationMessages(timeline, optimisticMessages = []) {
+  const events = Array.isArray(timeline?.events) ? timeline.events : []
+  const messages = []
+  const joinedAgentKeys = new Set()
+  events.forEach((event, index) => {
+    const payload = event.payload || {}
+    const eventType = event.eventType || payload.eventType || ''
+    const eventKey = getAgentTimelineEventKey(event, index)
+    if (eventType === 'run_started') {
+      messages.push({
+        id: event.id || `run-started-${index}`,
+        sourceEventKey: eventKey,
+        type: 'separator',
+        agentKey: 'system',
+        agentName: 'Agent Team',
+        kindLabel: '开始',
+        status: 'running',
+        statusLabel: '运行中',
+        timeLabel: getAgentConversationTimeLabel(event),
+        content: localizeAgentConversationText('新的创作流程已开始')
+      })
+      return
+    }
+    if (eventType === 'user_message') {
+      const isRevise = payload.action === 'revise'
+      const isContinue = payload.action === 'continue'
+      messages.push({
+        id: event.id || `user-${index}`,
+        sourceEventKey: eventKey,
+        type: 'user',
+        agentKey: 'user',
+        agentName: '你',
+        kindLabel: isRevise ? '反馈' : isContinue ? '确认' : '输入',
+        status: isRevise ? 'waiting_user' : 'succeeded',
+        statusLabel: isRevise ? '反馈' : isContinue ? '已确认' : '已发送',
+        timeLabel: getAgentConversationTimeLabel(event),
+        content: payload.content || ''
+      })
+      return
+    }
+    if (eventType === 'run_message') {
+      const agentName = payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent'
+      const messageId = event.id || `agent-${index}`
+      const agentKey = getAgentConversationKey(payload.agent || agentName)
+      const identityKey = getAgentConversationIdentityKey(agentKey)
+      const hasJoined = joinedAgentKeys.has(identityKey)
+      if (!payload.isLoading) {
+        messages.push({
+          id: `${messageId}-thinking`,
+          sourceEventKey: eventKey,
+          type: 'agent',
+          agentKey,
+          agentName,
+          kindLabel: '思考中',
+          status: 'running',
+          statusLabel: '处理中',
+          timeLabel: getAgentConversationTimeLabel(event),
+          loading: true,
+          loadingFor: messageId,
+          content: getAgentThinkingContent(agentKey)
+        })
+      }
+      messages.push({
+        id: messageId,
+        sourceEventKey: eventKey,
+        type: 'agent',
+        agentKey,
+        agentName,
+        kindLabel: payload.isLoading ? '思考中' : hasJoined ? '继续处理' : '登场',
+        status: payload.isLoading ? 'running' : 'succeeded',
+        statusLabel: payload.isLoading ? '处理中' : '已完成',
+        timeLabel: getAgentConversationTimeLabel(event),
+        loading: Boolean(payload.isLoading),
+        content: localizeAgentConversationText(payload.content || '')
+      })
+      if (!payload.isLoading && identityKey) joinedAgentKeys.add(identityKey)
+      return
+    }
+    if (eventType === 'agent_handoff') {
+      const fromAgent = payload.from_agent || '上一位 Agent'
+      const toAgent = payload.to_agent || '下一位 Agent'
+      const toKey = getAgentConversationIdentityKey(toAgent)
+      const hasJoined = joinedAgentKeys.has(toKey)
+      messages.push({
+        id: event.id || `handoff-${index}`,
+        sourceEventKey: eventKey,
+        type: 'handoff',
+        agentName: 'Agent Handoff',
+        kindLabel: '接力',
+        status: 'succeeded',
+        statusLabel: '接力',
+        timeLabel: getAgentConversationTimeLabel(event),
+        content: payload.from_agent || payload.to_agent
+          ? hasJoined
+            ? `${getAgentConversationDisplayName(fromAgent)} 将反馈交回 ${getAgentConversationDisplayName(toAgent)} 继续处理`
+            : `${getAgentConversationDisplayName(fromAgent)} 邀请 ${getAgentConversationDisplayName(toAgent)} 加入群聊`
+          : localizeAgentConversationText(payload.message || '上一位 Agent 邀请下一位 Agent 加入群聊')
+      })
+      return
+    }
+    if (eventType === 'run_awaiting_confirm') {
+      const agentName = payload.agentName || getAgentProfileLabel(payload.agent) || payload.agent || 'Agent'
+      messages.push({
+        id: event.id || `waiting-${index}`,
+        sourceEventKey: eventKey,
+        type: 'waiting',
+        agentKey: getAgentConversationKey(payload.agent || agentName),
+        agentName,
+        kindLabel: '等待确认',
+        status: 'waiting_user',
+        statusLabel: '待确认',
+        timeLabel: getAgentConversationTimeLabel(event),
+        content: localizeAgentConversationText(payload.message || payload.question || '请确认是否继续下一步。')
+      })
+      return
+    }
+    if (eventType === 'run_confirmed') {
+      messages.push({
+        id: event.id || `confirmed-${index}`,
+        sourceEventKey: eventKey,
+        type: 'system',
+        agentName: 'Agent Team',
+        kindLabel: '确认',
+        status: 'succeeded',
+        statusLabel: '继续',
+        timeLabel: getAgentConversationTimeLabel(event),
+        content: localizeAgentConversationText(payload.message || '已确认，继续执行下一步。')
+      })
+      return
+    }
+    if (eventType === 'run_completed') {
+      messages.push({
+        id: event.id || `completed-${index}`,
+        sourceEventKey: eventKey,
+        type: 'system',
+        agentName: 'Agent Team',
+        kindLabel: '完成',
+        status: 'succeeded',
+        statusLabel: '完成',
+        timeLabel: getAgentConversationTimeLabel(event),
+        content: localizeAgentConversationText('Agent Team 已完成本轮协作。')
+      })
+      return
+    }
+    if (eventType === 'run_failed') {
+      messages.push({
+        id: event.id || `failed-${index}`,
+        sourceEventKey: eventKey,
+        type: 'system',
+        agentName: 'Agent Team',
+        kindLabel: '失败',
+        status: 'failed',
+        statusLabel: '失败',
+        timeLabel: getAgentConversationTimeLabel(event),
+        content: localizeAgentConversationText(payload.error || payload.message || 'Agent Run 执行失败。')
+      })
+    }
+  })
+  const visibleMessages = messages.filter((message) => String(message.content || '').trim())
+  const pendingMessages = Array.isArray(optimisticMessages) ? optimisticMessages.filter((message) => String(message.content || '').trim()) : []
+  const mergedMessages = pendingMessages.length ? [...visibleMessages, ...pendingMessages] : visibleMessages
+  return applyAgentConversationRevealSchedule(mergedMessages, timeline)
+}
+
+function getAgentConversationMessageClass(message) {
+  return {
+    'is-separator-message': message.type === 'separator',
+    'is-user-message': message.type === 'user',
+    'is-agent-message': message.type === 'agent',
+    'is-handoff-message': message.type === 'handoff',
+    'is-waiting-message': message.type === 'waiting',
+    'is-waiting_user': message.status === 'waiting_user',
+    'is-failed': message.status === 'failed',
+    'is-running': message.status === 'running'
+  }
+}
+
+function isAgentRunConfirmationReady() {
+  const timeline = agentPanel.activeRun
+  if (timeline?.run?.status !== 'waiting_user') return false
+  if (agentPanel.busy) return false
+  const visibleMessages = agentConversationMessages.value || []
+  if (visibleMessages.some((message) => message.loading)) return false
+  const events = Array.isArray(timeline.events) ? timeline.events : []
+  const awaitingEntry = [...events.entries()]
+    .reverse()
+    .find(([, event]) => (event.eventType || event.payload?.eventType || '') === 'run_awaiting_confirm')
+  if (!awaitingEntry) return true
+  const [index, event] = awaitingEntry
+  const eventKey = getAgentTimelineEventKey(event, index)
+  return visibleMessages.some((message) => message.type === 'waiting' && message.sourceEventKey === eventKey)
+}
+
+function getAgentConversationAvatar(message) {
+  if (message.type === 'user') return getAgentUserDisplayName().slice(0, 1).toUpperCase() || '你'
+  if (message.type === 'handoff') return 'H'
+  if (message.type === 'system' || message.type === 'separator') return 'S'
+  const name = String(getAgentConversationDisplayName(message) || 'A').trim()
+  return name.slice(0, 1).toUpperCase()
 }
 
 function getAgentRunGoalTitle() {
@@ -3191,12 +3999,77 @@ function getAgentRunGoalTitle() {
 
 function getAgentRunPlainSummary() {
   if (!agentPanel.activeRun?.run) return getAgentPanelModeSummary()
+  if (isAgentQuestionRun(agentPanel.activeRun)) return ''
   const run = agentPanel.activeRun.run
   const steps = agentPanel.activeRun.steps || []
   const doneCount = steps.filter((step) => step.status === 'succeeded').length
   const artifactCount = steps.reduce((sum, step) => sum + (step.artifacts?.length || 0), 0)
   const costText = run.status === 'waiting_cost_confirmation' ? ' · 媒体待确认' : ''
   return `${doneCount}/${steps.length || 0} 阶段 · ${artifactCount} 产物${costText}`
+}
+
+function isAgentQuestionRun(timeline) {
+  if (!timeline?.run) return false
+  const summaryIntent = timeline.run.summary?.intent
+  const contextIntent = timeline.run.contextSnapshot?.intent
+  const stepIntent = timeline.steps?.[0]?.input?.intent
+  const intent = summaryIntent || contextIntent || stepIntent
+  return intent?.intent === 'question' || (timeline.steps || []).some((step) => step.stepKey === 'answer_question')
+}
+
+function getAgentQuestionAnswerText(timeline) {
+  const answerArtifact = (timeline?.steps || [])
+    .flatMap((step) => step.artifacts || [])
+    .find((artifact) => artifact.artifactType === 'report' || artifact.writePolicy === 'readonly')
+  const body = String(answerArtifact?.payload?.body || answerArtifact?.payload?.prompt || '').trim()
+  if (body) return body
+  return '我会先判断你的输入是普通询问、创作灵感还是已有剧本，再决定直接回答或进入创作拆解。'
+}
+
+function buildAgentRunEventStreamUrl(runId) {
+  const params = new URLSearchParams()
+  const token = window.localStorage.getItem('shenlu_token') || ''
+  if (token) params.set('token', token)
+  const query = params.toString()
+  return buildApiUrl(`/api/sluvo/agent/runs/${runId}/events${query ? `?${query}` : ''}`)
+}
+
+function closeAgentRunEventStream() {
+  if (agentRunEventSource) {
+    agentRunEventSource.close()
+  }
+  agentRunEventSource = null
+  agentRunEventStreamId = ''
+}
+
+function subscribeToAgentRunEvents(runId) {
+  if (!runId || typeof window === 'undefined' || typeof window.EventSource === 'undefined') return
+  if (agentRunEventSource && agentRunEventStreamId === runId) return
+  closeAgentRunEventStream()
+  agentRunEventStreamId = runId
+  const source = new window.EventSource(buildAgentRunEventStreamUrl(runId))
+  source.addEventListener('snapshot', (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}')
+      const timeline = payload.timeline || payload.snapshot
+      if (timeline?.run?.id && timeline.run.id === agentPanel.runId) {
+        setActiveAgentRun(timeline)
+      }
+    } catch {
+      // Ignore malformed stream frames and keep the EventSource retry loop alive.
+    }
+  })
+  source.addEventListener('status', (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}')
+      if (payload.status === 'error') {
+        agentPanel.error = payload.detail || 'Agent Run 实时通道异常'
+      }
+    } catch {
+      agentPanel.error = 'Agent Run 实时通道异常'
+    }
+  })
+  agentRunEventSource = source
 }
 
 function setActiveAgentRun(timeline) {
@@ -3210,6 +4083,11 @@ function setActiveAgentRun(timeline) {
   if (assignments && typeof assignments === 'object') {
     agentPanel.agentAssignments = { ...assignments }
   }
+  const index = agentPanel.runs.findIndex((item) => item?.run?.id === timeline.run.id)
+  if (index >= 0) {
+    agentPanel.runs[index] = timeline
+  }
+  subscribeToAgentRunEvents(timeline.run.id)
 }
 
 function getAgentRunHistorySummary(item) {
@@ -3269,6 +4147,7 @@ function getAgentArtifactTypeLabel(type) {
     video_placeholder: '视频占位',
     audio_placeholder: '音频占位',
     media_result: '媒体结果',
+    planning_brief: '规划',
     report: '报告'
   }[type] || type || '产物'
 }
@@ -3300,7 +4179,7 @@ function getAgentStageProgress(timeline) {
       label: getAgentStageLabel(stage),
       steps: steps.filter((step) => (step.input?.stage || step.output?.stage) === stage)
     }))
-    .filter((stage) => stage.steps.length || stage.key !== 'deploy')
+    .filter((stage) => stage.steps.length)
   const currentStage = [...steps].reverse().find((step) => !['succeeded', 'skipped'].includes(step.status))?.input?.stage
     || [...steps].reverse().find((step) => step.status === 'succeeded')?.input?.stage
   return stages.map((stage) => {
@@ -3361,6 +4240,10 @@ function getAgentStepArtifactSummary(step) {
   const extra = artifacts.length > 3 ? `等 ${artifacts.length} 项` : ''
   const suffix = waiting ? `，${waiting} 项待确认` : written ? `，${written} 项已写入` : ''
   return `${completed || names}${completed ? `；产物：${names}${extra}${suffix}` : `${extra}${suffix}`}${next ? `；${next}` : ''}`
+}
+
+function getVisibleAgentArtifacts(step) {
+  return (step?.artifacts || []).filter((artifact) => artifact.writePolicy !== 'readonly' && artifact.artifactType !== 'report')
 }
 
 function getAgentStepConversationText(step) {
@@ -3802,6 +4685,22 @@ function renderMarkdownInline(value) {
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
 }
 
+function isAgentArtifactNode(node) {
+  return Boolean(node?.agentArtifactId || node?.agentRunId)
+}
+
+function getAgentArtifactKindLabel(node) {
+  if (!isAgentArtifactNode(node)) return ''
+  const title = String(node?.title || '')
+  if (title.includes('剧本')) return 'Script'
+  if (title.includes('角色')) return 'Cast'
+  if (title.includes('场景')) return 'Scene'
+  if (title.includes('道具')) return 'Prop'
+  if (title.includes('分镜')) return 'Shot'
+  if (title.includes('Prompt')) return 'Prompt'
+  return 'Agent'
+}
+
 function escapeHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -4048,6 +4947,9 @@ function mapBackendNodeToDirectNode(node) {
     audioSettingsOpen: Boolean(data.audioSettingsOpen),
     audioEstimatePoints: Number.isFinite(Number(data.audioEstimatePoints)) ? Number(data.audioEstimatePoints) : null,
     audioEstimateStatus: data.audioEstimateStatus || 'idle',
+    agentRunId: data.agentRunId || '',
+    agentArtifactId: data.agentArtifactId || '',
+    writePolicy: data.writePolicy || '',
     agentProfile: data.agentProfile || 'canvas_agent',
     agentTemplateId: data.agentTemplateId || '',
     agentName: data.agentName || '',
@@ -4856,6 +5758,9 @@ function serializeDirectNodeForSave(node, index = 0) {
       audioSettingsOpen: Boolean(node.audioSettingsOpen),
       audioEstimatePoints: node.audioEstimatePoints ?? null,
       audioEstimateStatus: node.audioEstimateStatus || 'idle',
+      agentRunId: node.agentRunId || '',
+      agentArtifactId: node.agentArtifactId || '',
+      writePolicy: node.writePolicy || '',
       agentProfile: node.agentProfile || '',
       agentTemplateId: node.agentTemplateId || '',
       agentName: node.agentName || '',
@@ -5763,7 +6668,7 @@ function finishDirectConnection(event) {
   const point = { ...directConnection.current }
   const sourceId = directConnection.sourceId
   const sourceSide = directConnection.sourceSide
-  const targetId = findDirectConnectionTarget(event, sourceId, point, sourceSide)
+  const targetId = findDirectConnectionTarget(event, sourceId, point)
   pendingDirectConnection.sourceId = directConnection.sourceId
   pendingDirectConnection.sourceSide = sourceSide
   pendingDirectConnection.start = { ...directConnection.start }
@@ -5802,17 +6707,17 @@ function finishDirectConnection(event) {
   contextMenu.visible = false
 }
 
-function findDirectConnectionTarget(event, sourceId, flowPoint = null, sourceSide = 'right') {
+function findDirectConnectionTarget(event, sourceId, flowPoint = null) {
   const point = getPointerPoint(event)
 
   if (point) {
     const hovered = document.elementFromPoint(point.x, point.y)
     const directNodeId = hovered?.closest?.('.direct-workflow-node')?.getAttribute('data-direct-node-id') || ''
-    if (directNodeId && isValidDirectConnectionTarget(sourceId, directNodeId, sourceSide)) return directNodeId
+    if (directNodeId && isValidDirectConnectionTarget(sourceId, directNodeId)) return directNodeId
   }
 
   const targetNode = directNodes.value.find((node) => {
-    if (!isValidDirectConnectionTarget(sourceId, node.id, sourceSide)) return false
+    if (!isValidDirectConnectionTarget(sourceId, node.id)) return false
     if (point) {
       const rect = getDirectNodeScreenRect(node)
       return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height
@@ -5826,12 +6731,14 @@ function findDirectConnectionTarget(event, sourceId, flowPoint = null, sourceSid
   return targetNode?.id || ''
 }
 
-function isValidDirectConnectionTarget(sourceId, targetId, sourceSide = 'right') {
+function isValidDirectConnectionTarget(sourceId, targetId) {
   if (!targetId || targetId === sourceId) return false
   if (isDirectGroupId(sourceId) && getDirectGroupMemberIds(sourceId).includes(targetId)) return false
-  const edgeSourceId = sourceSide === 'left' ? targetId : sourceId
-  const edgeTargetId = sourceSide === 'left' ? sourceId : targetId
-  return canConnectDirectEndpoints(edgeSourceId, edgeTargetId)
+  if (isDirectImageOnlyGroup(sourceId)) {
+    const target = directNodes.value.find((node) => node.id === targetId)
+    return target?.type === 'image_unit' || target?.type === 'video_unit'
+  }
+  return true
 }
 
 function isDirectEndpointAvailable(endpointId) {
@@ -5862,58 +6769,11 @@ function isDirectImageOnlyGroup(groupId) {
   return members.length > 0 && members.every(isDirectImageReferenceSource)
 }
 
-function getPendingConnectionDisabledMenuItems() {
-  if (!pendingDirectConnection.sourceId) return []
-  return getDisabledMenuItemsForConnection({
-    endpointId: pendingDirectConnection.sourceId,
-    endpointSide: pendingDirectConnection.sourceSide
-  })
-}
-
-function getReferenceMenuDisabledItems() {
-  const sourceId = pendingDirectConnection.sourceId || referenceMenu.sourceId
-  const sourceSide = pendingDirectConnection.sourceId ? pendingDirectConnection.sourceSide : 'right'
-  if (!sourceId) return []
-  return getDisabledMenuItemsForConnection({ endpointId: sourceId, endpointSide: sourceSide })
-}
-
-function getDisabledMenuItemsForConnection({ endpointId, endpointSide = 'right' }) {
-  return referenceMenuItemIds.filter((itemId) => {
-    const itemType = referenceMenuNodeTypes[itemId]
-    if (!itemType) return false
-    const sourceType = endpointSide === 'left' ? itemType : getDirectEndpointConnectionType(endpointId)
-    const targetType = endpointSide === 'left' ? getDirectEndpointConnectionType(endpointId) : itemType
-    return !canConnectNodeTypes(sourceType, targetType)
-  })
-}
-
-function canConnectDirectEndpoints(sourceId, targetId) {
-  return canConnectNodeTypes(getDirectEndpointConnectionType(sourceId), getDirectEndpointConnectionType(targetId))
-}
-
-function canConnectNodeTypes(sourceType, targetType) {
-  if (!sourceType || !targetType) return false
-  const allowed = downstreamConnectionRules[sourceType] || []
-  return allowed.includes(targetType)
-}
-
-function getDirectEndpointConnectionType(endpointId) {
-  const node = directNodes.value.find((item) => item.id === endpointId)
-  if (node) return getDirectNodeConnectionType(node)
-  const workflowNode = nodes.value.find((item) => item.id === endpointId)
-  if (workflowNode) return workflowNode.data?.nodeType || 'prompt_note'
-  if (isDirectImageOnlyGroup(endpointId)) return 'image_unit'
-  return isDirectGroupId(endpointId) ? 'prompt_note' : ''
-}
-
-function getDirectNodeConnectionType(node) {
-  if (!node) return ''
-  if (node.type !== 'uploaded_asset') return node.type
-  const kind = node.media?.kind || ''
-  if (kind === 'image') return 'image_unit'
-  if (kind === 'video') return 'video_unit'
-  if (kind === 'audio') return 'audio_unit'
-  return ''
+function getPendingConnectionAllowedMenuItems() {
+  if (pendingDirectConnection.sourceId && isDirectImageOnlyGroup(pendingDirectConnection.sourceId)) {
+    return ['image', 'video']
+  }
+  return []
 }
 
 function upsertDirectEdge(sourceId, targetId) {
@@ -6501,10 +7361,6 @@ function handleMenuSelect(selection) {
 }
 
 function createDirectNodeFromPendingConnection(item) {
-  if (!canCreateNodeFromPendingConnection(item)) {
-    showToast('该节点类型不能接在这里')
-    return
-  }
   canvasActivated.value = true
   rememberHistory()
   closeFloatingPanels(false)
@@ -6531,10 +7387,6 @@ function handleReferenceSelect(selection) {
   }
 
   if (!referenceMenu.sourceId) return
-  if (!canConnectNodeTypes(getDirectEndpointConnectionType(referenceMenu.sourceId), item.type)) {
-    showToast('该节点类型不能接在这里')
-    return
-  }
 
   canvasActivated.value = true
   rememberHistory()
@@ -6550,19 +7402,6 @@ function handleReferenceSelect(selection) {
   selectOnly(createdNode.id)
   referenceMenu.visible = false
   showToast('已引用节点生成')
-}
-
-function canCreateNodeFromPendingConnection(item) {
-  if (!pendingDirectConnection.sourceId || !item?.type) return false
-  const sourceType =
-    pendingDirectConnection.sourceSide === 'left'
-      ? item.type
-      : getDirectEndpointConnectionType(pendingDirectConnection.sourceId)
-  const targetType =
-    pendingDirectConnection.sourceSide === 'left'
-      ? getDirectEndpointConnectionType(pendingDirectConnection.sourceId)
-      : item.type
-  return canConnectNodeTypes(sourceType, targetType)
 }
 
 function normalizeMenuSelection(selection) {
@@ -6954,7 +7793,6 @@ function startCanvasAssetUpload(file, options = {}) {
           }
         : node
     )
-    pruneInvalidDirectEdgesForEndpoint(existingId)
   } else {
     const position = options.flowPosition || getViewportCenter()
     const node = createDirectNodeAtFlow('uploaded_asset', position, {
@@ -6967,7 +7805,7 @@ function startCanvasAssetUpload(file, options = {}) {
   }
 
   uploadFileMap.set(nodeId, file)
-  rememberLocalUploadPreview(nodeId, url)
+  rememberLocalUploadPreview(nodeId, kind === 'image' ? url : '')
   activeUploadSignatures.set(signature, nodeId)
   uploadSignatureByNodeId.set(nodeId, signature)
   selectedDirectNodeIds.value = [nodeId]
@@ -6987,16 +7825,6 @@ function startCanvasAssetUpload(file, options = {}) {
   }
   uploadFileForNode(nodeId, file, kind, url)
   return nodeId
-}
-
-function pruneInvalidDirectEdgesForEndpoint(endpointId) {
-  if (!endpointId) return
-  const before = directEdges.value.length
-  directEdges.value = directEdges.value.filter((edge) => {
-    if (edge.sourceId !== endpointId && edge.targetId !== endpointId) return true
-    return canConnectDirectEndpoints(edge.sourceId, edge.targetId)
-  })
-  if (directEdges.value.length !== before) scheduleCanvasSave(180)
 }
 
 function getUploadFileSignature(file) {
@@ -7225,7 +8053,7 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
   if (!nextUrl) {
     throw new Error('上传接口未返回文件地址')
   }
-  rememberLocalUploadPreview(nodeId, localUrl)
+  rememberLocalUploadPreview(nodeId, kind === 'image' ? localUrl : '')
   directNodes.value = directNodes.value.map((node) =>
     node.id === nodeId
       ? {
@@ -7233,7 +8061,7 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
           media: {
             kind,
             url: nextUrl,
-            previewUrl: localUrl?.startsWith('blob:') ? localUrl : '',
+            previewUrl: kind === 'image' && localUrl?.startsWith('blob:') ? localUrl : '',
             thumbnailUrl: response?.thumbnailUrl || asset.thumbnailUrl || '',
             name: file.name,
             mime: file.type,
@@ -7256,6 +8084,7 @@ function completeUploadedNode(nodeId, response, file, kind, localUrl, metadata =
         }
       : node
   )
+  if (localUrl?.startsWith('blob:') && kind !== 'image') URL.revokeObjectURL(localUrl)
   releaseUploadSignature(nodeId)
   dedupeUploadedAssetNodes({ preferId: nodeId, silent: true })
   showToast('上传成功')
@@ -7362,16 +8191,6 @@ function getUploadedImageSrc(node) {
   return getLocalUploadPreviewUrl(node) || media.previewUrl || media.thumbnailUrl || media.url || ''
 }
 
-function getUploadedVideoSrc(node) {
-  const media = node?.media || {}
-  return normalizeDisplayVideoSrc(getLocalUploadPreviewUrl(node) || media.previewUrl || media.url || '')
-}
-
-function getUploadedAudioSrc(node) {
-  const media = node?.media || {}
-  return normalizeDisplayAudioSrc(getLocalUploadPreviewUrl(node) || media.previewUrl || media.url || '')
-}
-
 function getGeneratedImageSrc(node) {
   const image = node?.generatedImage || {}
   return normalizeDisplayImageSrc(image.url || image.previewUrl || image.thumbnailUrl || '')
@@ -7398,7 +8217,7 @@ function normalizeDisplayImageSrc(value) {
   if (source.startsWith('//')) return `${window.location.protocol}${source}`
   if (/^(https?:|data:image\/|blob:)/i.test(source)) return source
   if (source.startsWith('/')) return buildApiUrl(source)
-  return buildApiUrl(`/${source}`)
+  return source
 }
 
 function normalizeDisplayVideoSrc(value) {
@@ -7407,7 +8226,7 @@ function normalizeDisplayVideoSrc(value) {
   if (source.startsWith('//')) return `${window.location.protocol}${source}`
   if (/^(https?:|blob:)/i.test(source)) return source
   if (source.startsWith('/')) return buildApiUrl(source)
-  return buildApiUrl(`/${source}`)
+  return source
 }
 
 function normalizeDisplayAudioSrc(value) {
@@ -7416,7 +8235,7 @@ function normalizeDisplayAudioSrc(value) {
   if (source.startsWith('//')) return `${window.location.protocol}${source}`
   if (/^(https?:|blob:|data:audio\/)/i.test(source)) return source
   if (source.startsWith('/')) return buildApiUrl(source)
-  return buildApiUrl(`/${source}`)
+  return source
 }
 
 function registerGeneratedAudioElement(nodeId, element) {
@@ -8530,12 +9349,7 @@ function getDirectVideoReferenceItems(nodeId) {
       const source = directNodes.value.find((item) => item.id === edge.sourceId)
       const generatedVideoUrl = source?.generatedVideo?.url || ''
       const generatedAudioUrl = source?.generatedAudio?.url || ''
-      const mediaUrl =
-        source?.media?.kind === 'audio'
-          ? getUploadedAudioSrc(source)
-          : source?.media?.kind === 'video'
-            ? getUploadedVideoSrc(source)
-            : source?.media?.url || ''
+      const mediaUrl = source?.media?.url || ''
       const kind =
         source?.type === 'video_unit' && generatedVideoUrl
           ? 'video'
@@ -8571,29 +9385,6 @@ function getDirectVideoReferenceItems(nodeId) {
   const ordered = order.map((id) => itemMap.get(id)).filter(Boolean)
   const orderedIds = new Set(ordered.map((item) => item.id))
   return [...ordered, ...items.filter((item) => !orderedIds.has(item.id))]
-}
-
-function getDirectConnectedMediaReferenceKinds(nodeId) {
-  const kinds = new Set()
-  getDirectImageReferenceItems(nodeId).forEach((reference) => {
-    if (reference.url || reference.previewUrl) kinds.add('image')
-  })
-  directEdges.value
-    .filter((edge) => edge.targetId === nodeId)
-    .forEach((edge) => {
-      const source = directNodes.value.find((item) => item.id === edge.sourceId)
-      if (source?.type === 'video_unit' && source.generatedVideo?.url) kinds.add('video')
-      if (source?.type === 'audio_unit' && source.generatedAudio?.url) kinds.add('audio')
-      const mediaKind = source?.media?.kind || ''
-      const mediaUrl =
-        mediaKind === 'audio'
-          ? getUploadedAudioSrc(source)
-          : mediaKind === 'video'
-            ? getUploadedVideoSrc(source)
-            : source?.media?.url || source?.media?.previewUrl || ''
-      if (['image', 'video', 'audio'].includes(mediaKind) && mediaUrl) kinds.add(mediaKind)
-    })
-  return kinds
 }
 
 function getDirectVideoReferencePayload(nodeId, generationType = '') {
@@ -8802,11 +9593,9 @@ function getVideoGenerationType(node) {
   const model = findVideoModelOption(node?.videoModelId || fallbackVideoModelOptions[0].id)
   const features = model?.features?.length ? model.features : buildFallbackVideoFeatures(model?.id || node?.videoModelId)
   const requested = String(node?.videoGenerationType || '').trim()
-  const mediaKinds = node?.id ? getDirectConnectedMediaReferenceKinds(node.id) : new Set()
-  if (requested && requested !== 'text_to_video' && features.some((feature) => feature.generationType === requested)) return requested
-  if ((mediaKinds.has('video') || mediaKinds.has('audio')) && features.some((feature) => feature.generationType === 'reference_to_video')) return 'reference_to_video'
-  if (mediaKinds.has('image') && features.some((feature) => feature.generationType === 'image_to_video')) return 'image_to_video'
   if (requested && features.some((feature) => feature.generationType === requested)) return requested
+  const imageRefs = node?.id ? getDirectImageReferenceUrls(node.id) : []
+  if (imageRefs.length > 0 && features.some((feature) => feature.generationType === 'image_to_video')) return 'image_to_video'
   return model?.defaultGenerationType || features[0]?.generationType || 'text_to_video'
 }
 
@@ -9104,9 +9893,6 @@ function normalizeImageQualityValue(quality) {
 function buildDirectVideoPayload(node, options = {}) {
   const generationType = getVideoGenerationType(node)
   const refs = getDirectVideoReferencePayload(node?.id || '', generationType)
-  const prompt = options.promptResolved
-    ? String(options.prompt ?? '')
-    : buildDirectPromptWithUpstreamReferences(node, options.prompt ?? node?.prompt ?? '')
   const payload = {
     ownership_mode: 'standalone',
     model_code: node?.videoModelId || fallbackVideoModelOptions[0].id,
@@ -9125,7 +9911,7 @@ function buildDirectVideoPayload(node, options = {}) {
     last_frame: refs.lastFrame || '',
     motion_strength: node?.videoMotionStrength || undefined,
     quality_mode: node?.videoQualityMode || undefined,
-    prompt
+    prompt: options.prompt ?? node?.prompt ?? ''
   }
   Object.keys(payload).forEach((key) => {
     if (payload[key] === undefined || payload[key] === '') delete payload[key]
@@ -9191,7 +9977,7 @@ async function estimateDirectVideoNode(nodeId) {
 }
 
 async function runDirectImageNode(node) {
-  const prompt = buildDirectPromptWithUpstreamReferences(node, node.prompt)
+  const prompt = node.prompt.trim()
   if (!prompt) {
     showToast('请先输入图片提示词')
     return
@@ -9379,7 +10165,7 @@ async function fetchLatestMatchingImageRecord(prompt, taskId = '', recordId = ''
 }
 
 async function runDirectVideoNode(node) {
-  const prompt = buildDirectPromptWithUpstreamReferences(node, node.prompt)
+  const prompt = node.prompt.trim()
   if (!prompt) {
     showToast('请先输入视频提示词')
     return
@@ -9391,7 +10177,7 @@ async function runDirectVideoNode(node) {
 
   rememberHistory()
   clearVideoGenerationTimer(node.id)
-  const settings = buildDirectVideoPayload(node, { prompt, promptResolved: true })
+  const settings = buildDirectVideoPayload(node, { prompt })
   updateDirectNode(node.id, {
     videoModelId: settings.model_code,
     videoGenerationType: settings.generation_type,
@@ -10857,11 +11643,12 @@ function handleCreateWorkflow() {
 
   if (nodes.value.length === 0) {
     const createdNodes = [
-      buildCanvasNode('prompt_note', { x: 80, y: 120 }, { title: '\u521b\u610f\u6587\u672c' }),
+      buildCanvasNode('script_episode', { x: 80, y: 120 }, { title: '\u9996\u5e27\u56fe\u7247\u751f\u6210' }),
       buildCanvasNode('asset_table', { x: 430, y: 120 }, { title: '\u89d2\u8272\u4e09\u89c6\u56fe' }),
       buildCanvasNode('storyboard_table', { x: 780, y: 120 }, { title: '\u5206\u955c\u62c6\u89e3' }),
       buildCanvasNode('image_unit', { x: 1130, y: 120 }, { title: '\u9996\u5e27\u56fe\u7247\u751f\u6210' }),
-      buildCanvasNode('video_unit', { x: 1480, y: 120 }, { title: '\u5206\u955c\u62c6\u89e3' })
+      buildCanvasNode('video_unit', { x: 1480, y: 120 }, { title: '\u5206\u955c\u62c6\u89e3' }),
+      buildCanvasNode('media_board', { x: 1830, y: 120 }, { title: '\u5206\u955c\u62c6\u89e3' })
     ]
 
     nodes.value = createdNodes

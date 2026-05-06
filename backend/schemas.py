@@ -1459,8 +1459,9 @@ class SluvoAgentRunCreateRequest(BaseModel):
 
 
 class SluvoAgentRunContinueRequest(BaseModel):
-    content: str
+    content: Optional[str] = None
     contextSnapshot: Dict[str, Any] = PydanticField(default_factory=dict)
+    action: Optional[str] = "continue"
 
 
 class SluvoAgentRunConfirmCostRequest(BaseModel):

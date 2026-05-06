@@ -83,12 +83,14 @@ These are the primary browser contracts for the standalone Sluvo product line.
 | Create Agent workflow run | POST | `/api/sluvo/projects/{project_id}/agent/runs` |
 | List project Agent workflow runs | GET | `/api/sluvo/projects/{project_id}/agent/runs` |
 | Read Agent workflow run timeline | GET | `/api/sluvo/agent/runs/{run_id}` |
+| Stream Agent workflow run events | GET | `/api/sluvo/agent/runs/{run_id}/events` |
 | Continue Agent workflow run | POST | `/api/sluvo/agent/runs/{run_id}/continue` |
 | Confirm Agent media cost | POST | `/api/sluvo/agent/runs/{run_id}/confirm-cost` |
 | Retry Agent workflow step | POST | `/api/sluvo/agent/steps/{step_id}/retry` |
 | Read canvas Agent session | GET | `/api/sluvo/agent/sessions/{session_id}` |
 | Send Agent message/proposed action | POST | `/api/sluvo/agent/sessions/{session_id}/messages` |
 | Analyze text node locally | POST | `/api/sluvo/projects/{project_id}/text-node/analyze` |
+| Estimate text node local analysis cost | POST | `/api/sluvo/projects/{project_id}/text-node/estimate` |
 | Approve Agent action | POST | `/api/sluvo/agent/actions/{action_id}/approve` |
 | Cancel Agent action | POST | `/api/sluvo/agent/actions/{action_id}/cancel` |
 | List/create user Agent templates | GET/POST | `/api/sluvo/agents` |
@@ -122,7 +124,9 @@ Frontend write mapping:
 - Agent model choices currently allow `deepseek-v4-flash` and `deepseek-v4-pro`. Unknown values normalize to `deepseek-v4-flash`; when `DEEPSEEK_API_KEY` exists, the selected model is used to draft proposal content, with deterministic fallback on failure. Future models should be added server-side before exposing them in the frontend.
 - User Agent template ids may be sent as `agentProfile` or `agentTemplateId`; the backend uses the template's role prompt, use cases, input/output types, tools, approval policy, and default model when building the Agent prompt and action context.
 - Agent-node runs include `sourceSurface: "node"` and `targetNodeId`; after approval/cancel/failure, the backend updates the target Agent node's last action state in node `data`.
-- Text node local analysis uses the same DeepSeek model policy but is not part of the Agent action lifecycle. It returns `{ content, modelCode, llmUsed, summary }`; callers persist the returned Markdown through normal canvas saving.
+- Agent runs persist multi-Agent conversation event payloads on `SluvoAgentEvent`: `run_started`, `run_progress`, `run_message`, `agent_handoff`, `run_awaiting_confirm`, `run_confirmed`, `run_completed`, and failure/status events. `GET /api/sluvo/agent/runs/{run_id}/events` streams snapshots over SSE and should be routed through a no-buffering proxy path.
+- Agent run continuation distinguishes typed feedback from explicit progression: `POST /api/sluvo/agent/runs/{run_id}/continue` accepts `action: "revise"` to add Review Agent feedback routing for the current waiting step, while `action: "continue"` advances to the next Agent stage and carries previous artifacts as context.
+- Text node local analysis uses the same DeepSeek model policy but is not part of the Agent action lifecycle. The estimate endpoint returns `{ modelCode, estimatePoints, pricing }`; analyze returns `{ content, modelCode, llmUsed, estimatePoints, pricing, summary }`. Callers persist the returned Markdown through normal canvas saving.
 
 ## 5. Legacy Project Workspace APIs
 
